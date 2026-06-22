@@ -38,3 +38,11 @@ out/
 
 ### Local Config ###
 src/main/resources/application.yml
+
+### Frontend ###
+frontend/node_modules/
+frontend/dist/
+
+### Local Logs ###
+server.log
+server-error.log
