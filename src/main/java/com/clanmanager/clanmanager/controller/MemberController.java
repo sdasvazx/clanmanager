@@ -224,6 +224,36 @@ public class MemberController {
         return Map.of("message", "비밀번호 변경 완료", "memberId", member.getMemberId());
     }
 
+    @PatchMapping("/{memberId}/password/reset")
+    public Map<String, Object> resetPassword(
+            @PathVariable Long memberId,
+            @RequestParam Long adminMemberId,
+            @RequestBody(required = false) PasswordResetRequest request
+    ) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 비밀번호를 초기화할 수 있습니다.");
+        }
+
+        String nextPassword = request == null ? null : request.getNewPassword();
+        if (nextPassword == null || nextPassword.trim().isBlank()) {
+            nextPassword = "112200";
+        }
+        if (nextPassword.trim().length() < 4) {
+            throw new IllegalArgumentException("새 비밀번호는 4자리 이상으로 입력해 주세요.");
+        }
+
+        Member member = findMember(memberId);
+        member.setPassword(nextPassword.trim());
+        memberRepository.save(member);
+
+        return Map.of(
+                "message", "비밀번호 초기화 완료",
+                "memberId", member.getMemberId(),
+                "characterName", member.getCharacterName()
+        );
+    }
+
     @PatchMapping("/{memberId}/role")
     public Map<String, Object> updateRole(
             @PathVariable Long memberId,
@@ -327,6 +357,12 @@ public class MemberController {
     @Setter
     public static class PasswordChangeRequest {
         private String currentPassword;
+        private String newPassword;
+    }
+
+    @Getter
+    @Setter
+    public static class PasswordResetRequest {
         private String newPassword;
     }
 }

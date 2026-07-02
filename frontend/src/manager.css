@@ -126,6 +126,7 @@
 
 .admin-edit-form,
 .admin-create-form,
+.admin-reset-form,
 .password-form {
   display: grid;
   grid-template-columns: repeat(5, minmax(120px, 1fr)) auto auto;
@@ -146,6 +147,19 @@
   grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
   align-items: end;
   margin: 12px 0;
+}
+
+.admin-reset-form {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 280px) auto auto;
+}
+
+.admin-reset-form > div {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-reset-form small {
+  color: #718096;
 }
 
 .boss-register-card {
@@ -391,6 +405,7 @@
 
 .admin-edit-form label,
 .admin-create-form label,
+.admin-reset-form label,
 .password-form label {
   display: grid;
   gap: 6px;
@@ -403,6 +418,7 @@
 .admin-edit-form select,
 .admin-create-form input,
 .admin-create-form select,
+.admin-reset-form input,
 .password-form input {
   width: 100%;
   padding: 10px 12px;
@@ -410,6 +426,11 @@
   border-radius: 9px;
   background: #fff;
   outline: 0;
+}
+
+.key-button {
+  min-width: 38px;
+  font-size: 1rem;
 }
 
 @media (max-width: 1000px) {
@@ -421,6 +442,7 @@
   .detail-grid,
   .admin-edit-form,
   .admin-create-form,
+  .admin-reset-form,
   .password-form,
   .boss-form,
   .boss-roster-groups {

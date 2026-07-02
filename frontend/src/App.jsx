@@ -606,6 +606,8 @@ function Admin({ member, setPage, onMemberUpdate }) {
   const [message, setMessage] = useState('');
   const [loadingId, setLoadingId] = useState(null);
   const [editId, setEditId] = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPassword, setResetPassword] = useState('112200');
   const [editForm, setEditForm] = useState(emptyEditForm);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
   const load = () => request('/members').then(setMembers).catch((err) => setMessage(err.message));
@@ -674,6 +676,28 @@ function Admin({ member, setPage, onMemberUpdate }) {
     } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
   };
 
+  const startPasswordReset = (targetMember) => {
+    setResetTarget(targetMember);
+    setResetPassword('112200');
+    setMessage('');
+  };
+
+  const savePasswordReset = async (event) => {
+    event.preventDefault();
+    if (!resetTarget) return;
+    setLoadingId(resetTarget.memberId);
+    setMessage('');
+    try {
+      await request(`/members/${resetTarget.memberId}/password/reset?adminMemberId=${member.memberId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ newPassword: resetPassword || '112200' }),
+      });
+      setMessage(`${resetTarget.characterName}의 비밀번호를 초기화했습니다. 새 비밀번호: ${resetPassword || '112200'}`);
+      setResetTarget(null);
+      setResetPassword('112200');
+    } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
+  };
+
   return (
     <>
       <div className="page-title"><h1>관리자 설정</h1><p>클랜 운영에 필요한 설정 메뉴입니다.</p></div>
@@ -722,9 +746,20 @@ function Admin({ member, setPage, onMemberUpdate }) {
             <button type="button" className="role-button" onClick={() => setEditId(null)}>취소</button>
           </form>
         )}
+        {resetTarget && (
+          <form className="admin-reset-form" onSubmit={savePasswordReset}>
+            <div>
+              <b>{resetTarget.characterName}</b>
+              <small>비밀번호 초기화</small>
+            </div>
+            <label>새 비밀번호<input required minLength="4" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /></label>
+            <button className="primary-button" disabled={loadingId === resetTarget.memberId}>초기화</button>
+            <button type="button" className="role-button" onClick={() => setResetTarget(null)}>취소</button>
+          </form>
+        )}
         <div className="table-wrap">
           <table className="data-table role-table">
-            <thead><tr><th>닉네임</th><th>길드</th><th>클래스</th><th>레벨</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>권한변경</th></tr></thead>
+            <thead><tr><th>닉네임</th><th>길드</th><th>클래스</th><th>레벨</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>비밀번호</th><th>권한변경</th></tr></thead>
             <tbody>{members.map((row) => (
               <tr key={row.memberId}>
                 <td>{row.characterName}</td>
@@ -736,6 +771,7 @@ function Admin({ member, setPage, onMemberUpdate }) {
                 <td>{row.active ? (row.status || '활성') : '비활성'}</td>
                 <td><span className={row.role === 'ADMIN' ? 'role-pill admin' : 'role-pill member'}>{row.role === 'ADMIN' ? '운영자' : '클랜원'}</span></td>
                 <td><button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>수정</button></td>
+                <td><button className="role-button key-button" title="비밀번호 초기화" disabled={loadingId === row.memberId} onClick={() => startPasswordReset(row)}>🔑</button></td>
                 <td>{row.role === 'ADMIN'
                   ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button>
                   : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td>
