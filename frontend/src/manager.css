@@ -398,6 +398,19 @@
   font-weight: 850;
 }
 
+.boss-action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.roster-button.roulette-button {
+  border-color: #c4b5fd;
+  background: #f3efff;
+  color: #6d28d9;
+}
+
 .boss-roster-card {
   max-width: 1180px;
   margin: 0 auto 18px;

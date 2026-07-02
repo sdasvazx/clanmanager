@@ -6,6 +6,7 @@ import './manager.css';
 import './notice.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api';
+const ROULETTE_URL = 'https://lazygyu.github.io/roulette/';
 
 const menu = [
   ['lobby', '로', '로비'],
@@ -53,6 +54,21 @@ const today = () => new Date().toISOString().slice(0, 10);
 const toMemberId = (value) => {
   const id = Number(value?.member?.memberId ?? value?.memberId ?? value);
   return Number.isFinite(id) ? id : null;
+};
+const copyToClipboard = async (text) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
 };
 const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망', '게헨나', '미분류'];
@@ -478,6 +494,20 @@ function Attendance({ member }) {
     }
   };
 
+  const copyRouletteNames = async (record) => {
+    setMessage('');
+    try {
+      const rows = await request(`/boss-participations/${record.recordId}/members`);
+      const names = rows.map((row) => row.characterName).filter(Boolean);
+      if (!names.length) throw new Error('핀볼에 넣을 참여 명단이 없습니다.');
+      await copyToClipboard(names.join(','));
+      window.open(ROULETTE_URL, '_blank', 'noopener,noreferrer');
+      setMessage(`${record.bossName} 참여자 ${names.length}명 핀볼 목록을 복사했습니다. 열린 룰렛 사이트 이름칸에 붙여넣어 주세요.`);
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
   const groupedSelectedMembers = useMemo(() => selectedMembers.reduce((acc, row) => {
     const key = row.clanName || '미분류';
     acc[key] = [...(acc[key] || []), row];
@@ -556,7 +586,7 @@ function Attendance({ member }) {
                   <td>{record.bossName}</td>
                   <td><ClanCountBadges record={record} /></td>
                   <td><b>{record.score}</b></td>
-                  <td><button className="roster-button" onClick={() => openRoster(record)}>명단보기</button></td>
+                  <td><div className="boss-action-buttons"><button className="roster-button" onClick={() => openRoster(record)}>명단보기</button><button className="roster-button roulette-button" onClick={() => copyRouletteNames(record)}>핀볼복사</button></div></td>
                 </tr>
               ))}
             </tbody>
