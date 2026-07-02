@@ -266,8 +266,61 @@ function Lobby({ member, setPage }) {
 }
 
 function ParticipationRanking({ rows, totalCount }) {
-  const groups = groupByClan(rows);
-  return <section className="white-card lobby-participation-card"><h2>🏆 클랜별 참여율 순위</h2>{groups.map(([clan, list]) => <div className="clan-ranking-block" key={clan}><div className="section-heading"><h3>{clan}</h3><span className="result-count">{list.length}명</span></div><table className="lobby-ranking-table"><thead><tr><th>순위</th><th>닉네임</th><th>참여점수</th><th>참여율(%)</th></tr></thead><tbody>{list.slice(0, 10).map((m, i) => <tr key={m.memberId}><td>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td><td>{m.characterName}</td><td>{m.attendanceCount}</td><td>{m.participationRate}%</td></tr>)}</tbody></table><p className="ranking-footnote">상위 10명 표시 중 (클랜 총 {list.length}명)</p></div>)}{rows.length ? <p className="ranking-footnote">전체 등록 클랜원 {totalCount}명 기준</p> : <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section>;
+  const targetClans = clanDisplayOrder.slice(0, 4);
+  const grouped = new Map(groupByClan(rows));
+
+  return (
+    <section className="white-card lobby-participation-card">
+      <div className="section-heading">
+        <div>
+          <h2>🏆 클랜별 참여율 순위</h2>
+          <p className="subtle">각 클랜별 상위 10명을 2x2로 보기 좋게 표시합니다.</p>
+        </div>
+        <span className="result-count">전체 {totalCount}명</span>
+      </div>
+      <div className="lobby-ranking-grid">
+        {targetClans.map((clan) => {
+          const list = grouped.get(clan) ?? [];
+          return (
+            <div className="clan-ranking-block lobby-ranking-card" key={clan}>
+              <div className="section-heading">
+                <h3>{clan}</h3>
+                <span className="result-count">{list.length}명</span>
+              </div>
+              {list.length ? (
+                <>
+                  <table className="lobby-ranking-table">
+                    <thead>
+                      <tr>
+                        <th>순위</th>
+                        <th>닉네임</th>
+                        <th>참여점수</th>
+                        <th>참여율</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {list.slice(0, 10).map((m, i) => (
+                        <tr key={m.memberId}>
+                          <td>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td>
+                          <td>{m.characterName}</td>
+                          <td>{m.attendanceCount}</td>
+                          <td>{m.participationRate}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="ranking-footnote">상위 10명 표시 중</p>
+                </>
+              ) : (
+                <div className="empty-state compact">아직 참여 데이터가 없습니다.</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {!rows.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
+    </section>
+  );
 }
 
 function Ranking({ title, rows, field, power, participation }) {

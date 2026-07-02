@@ -69,14 +69,27 @@
 }
 
 .lobby-participation-card {
-  max-width: 980px;
+  max-width: 1280px;
   margin: 0 auto 22px;
   padding: 28px 28px 22px;
 }
 
 .lobby-participation-card h2 {
-  margin-bottom: 18px;
+  margin: 0 0 5px;
   font-size: 1.25rem;
+}
+
+.lobby-ranking-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.lobby-ranking-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 430px;
 }
 
 .lobby-ranking-table {
@@ -87,24 +100,27 @@
 
 .lobby-ranking-table th,
 .lobby-ranking-table td {
-  padding: 11px 14px;
+  padding: 9px 8px;
   border-bottom: 1px solid #e7edf5;
   text-align: center;
 }
 
 .lobby-ranking-table th {
   color: #0f172a;
-  font-size: .95rem;
+  font-size: .86rem;
   font-weight: 850;
 }
 
 .lobby-ranking-table td {
   color: #12213a;
-  font-size: .96rem;
+  font-size: .9rem;
 }
 
 .lobby-ranking-table td:nth-child(2) {
   font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lobby-ranking-table tr:hover {
@@ -130,6 +146,23 @@
   color: #64748b;
   font-size: .9rem;
   text-align: center;
+}
+
+.empty-state.compact {
+  min-height: 250px;
+  display: grid;
+  place-items: center;
+  margin-top: 12px;
+}
+
+@media (max-width: 1100px) {
+  .lobby-ranking-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-ranking-card {
+    min-height: auto;
+  }
 }
 
 .lobby-secondary-grid {
