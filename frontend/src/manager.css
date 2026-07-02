@@ -419,6 +419,33 @@
   justify-content: center;
 }
 
+.pinball-draft {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #d8ccff;
+  border-radius: 14px;
+  background: #fbf9ff;
+}
+
+.pinball-draft h3 {
+  margin: 0 0 5px;
+}
+
+.pinball-draft textarea {
+  width: 100%;
+  min-height: 105px;
+  margin: 14px 0 12px;
+  padding: 13px;
+  border: 1px solid #c9bdf7;
+  border-radius: 10px;
+  outline: 0;
+  resize: vertical;
+}
+
+.pinball-draft-actions {
+  justify-content: flex-start;
+}
+
 .boss-roster-card {
   max-width: 1180px;
   margin: 0 auto 18px;

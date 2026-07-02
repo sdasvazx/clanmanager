@@ -650,6 +650,7 @@ function PinballPage() {
   const [records, setRecords] = useState([]);
   const [message, setMessage] = useState('');
   const [loadingId, setLoadingId] = useState(null);
+  const [pinballDraft, setPinballDraft] = useState(null);
 
   const load = () => request('/boss-participations')
     .then(setRecords)
@@ -664,7 +665,9 @@ function PinballPage() {
       const rows = await request(`/boss-participations/${record.recordId}/members`);
       const names = rows.map((row) => row.characterName).filter(Boolean);
       if (!names.length) throw new Error('핀볼에 넣을 참여 명단이 없습니다.');
-      await copyToClipboard(names.join(','));
+      const namesText = names.join(',');
+      setPinballDraft({ record, namesText, count: names.length });
+      await copyToClipboard(namesText);
       window.open(ROULETTE_URL, '_blank', 'noopener,noreferrer');
       setMessage(`${record.bossDate} ${record.bossName} 참여자 ${names.length}명을 복사했습니다. 열린 핀볼 사이트에 붙여넣어 주세요.`);
     } catch (err) {
@@ -672,6 +675,13 @@ function PinballPage() {
     } finally {
       setLoadingId(null);
     }
+  };
+
+  const copyDraft = async () => {
+    if (!pinballDraft?.namesText?.trim()) return;
+    await copyToClipboard(pinballDraft.namesText);
+    window.open(ROULETTE_URL, '_blank', 'noopener,noreferrer');
+    setMessage(`${pinballDraft.count}명 핀볼 이름 목록을 다시 복사했습니다.`);
   };
 
   return (
@@ -689,6 +699,22 @@ function PinballPage() {
           <a className="outline-button no-margin" href={ROULETTE_URL} target="_blank" rel="noreferrer">핀볼 사이트 열기</a>
         </div>
         {message && <p className="vault-message">{message}</p>}
+        {pinballDraft && (
+          <div className="pinball-draft">
+            <div className="section-heading">
+              <div>
+                <h3>{pinballDraft.record.bossDate} · {pinballDraft.record.bossName} 핀볼 이름</h3>
+                <p className="subtle">아래 이름이 핀볼 사이트에 넣을 목록입니다. 잘못 인식된 이름은 직접 수정한 뒤 다시 복사하세요.</p>
+              </div>
+              <span className="result-count">{namesFromText(pinballDraft.namesText).length}명</span>
+            </div>
+            <textarea value={pinballDraft.namesText} onChange={(e) => setPinballDraft({ ...pinballDraft, namesText: e.target.value, count: namesFromText(e.target.value).length })} />
+            <div className="boss-action-buttons pinball-draft-actions">
+              <button className="roster-button roulette-button" onClick={copyDraft}>이 목록 복사 + 핀볼 열기</button>
+              <a className="outline-button no-margin" href={ROULETTE_URL} target="_blank" rel="noreferrer">핀볼 사이트만 열기</a>
+            </div>
+          </div>
+        )}
         <div className="table-wrap">
           <table className="data-table pinball-table">
             <thead>
