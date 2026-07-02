@@ -23,7 +23,7 @@ const menu = [
   ['admin', '관', '관리자 설정'],
 ];
 
-const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin']);
+const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball']);
 
 const adminCards = [
   ['✓', '출석체크', 'mint', 'roster'],
@@ -36,6 +36,7 @@ const adminCards = [
   ['▣', '스펙/장비 수정기록', 'amber', 'collection'],
   ['▥', '참여율 선택조회', 'cyan', 'participation'],
   ['⚠', '게헨나감지', 'red', 'roster'],
+  ['🎯', '핀볼', 'purple', 'pinball'],
 ];
 
 async function request(path, options = {}) {
@@ -633,6 +634,81 @@ function TimeBadge({ value, dateTime = false }) {
   return <>{period && <span className="time-badge">{period}</span>} {time}</>;
 }
 
+function PinballPage() {
+  const [records, setRecords] = useState([]);
+  const [message, setMessage] = useState('');
+  const [loadingId, setLoadingId] = useState(null);
+
+  const load = () => request('/boss-participations')
+    .then(setRecords)
+    .catch((err) => setMessage(err.message));
+
+  useEffect(() => { load(); }, []);
+
+  const copyRouletteNames = async (record) => {
+    setLoadingId(record.recordId);
+    setMessage('');
+    try {
+      const rows = await request(`/boss-participations/${record.recordId}/members`);
+      const names = rows.map((row) => row.characterName).filter(Boolean);
+      if (!names.length) throw new Error('핀볼에 넣을 참여 명단이 없습니다.');
+      await copyToClipboard(names.join(','));
+      window.open(ROULETTE_URL, '_blank', 'noopener,noreferrer');
+      setMessage(`${record.bossDate} ${record.bossName} 참여자 ${names.length}명을 복사했습니다. 열린 핀볼 사이트에 붙여넣어 주세요.`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="page-title">
+        <h1>핀볼</h1>
+        <p>보스별 참여자 명단을 핀볼 룰렛에 바로 넣을 수 있게 복사합니다.</p>
+      </div>
+      <section className="white-card">
+        <div className="section-heading">
+          <div>
+            <h2>보스 참여자 핀볼 세팅</h2>
+            <p className="subtle">원하는 보스 기록의 핀볼복사를 누르면 참여자 이름이 복사되고 룰렛 사이트가 열립니다.</p>
+          </div>
+          <a className="outline-button no-margin" href={ROULETTE_URL} target="_blank" rel="noreferrer">핀볼 사이트 열기</a>
+        </div>
+        {message && <p className="vault-message">{message}</p>}
+        <div className="table-wrap">
+          <table className="data-table pinball-table">
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>컷시간</th>
+                <th>보스명</th>
+                <th>참여인원</th>
+                <th>점수</th>
+                <th>핀볼</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.slice(0, 100).map((record) => (
+                <tr key={record.recordId}>
+                  <td>{record.bossDate}</td>
+                  <td><TimeBadge value={record.cutTime} /></td>
+                  <td>{record.bossName}</td>
+                  <td><ClanCountBadges record={record} /></td>
+                  <td><b>{record.score}</b></td>
+                  <td><button className="roster-button roulette-button" disabled={loadingId === record.recordId} onClick={() => copyRouletteNames(record)}>{loadingId === record.recordId ? '복사중...' : '핀볼복사'}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!records.length && <div className="empty-state">등록된 보스 참여내역이 없습니다.</div>}
+      </section>
+    </>
+  );
+}
+
 function LegacyAttendance({ member }) {
   const [rows, setRows] = useState([]);
   const [members, setMembers] = useState([]);
@@ -1005,6 +1081,6 @@ export default function App() {
   const logout = () => { sessionStorage.removeItem('clanMember'); setMember(null); setPage('lobby'); };
   if (!member) return <AuthScreen onLogin={login} />;
   if (member.role !== 'ADMIN' && adminOnlyPages.has(page)) return <Shell member={member} page={page} setPage={setPage} onLogout={logout}><AccessDenied /></Shell>;
-  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation /> : page === 'attendance' ? <Attendance member={member} /> : page === 'payment' ? <PaymentPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScan /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : page === 'member-admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} memberOnly /> : <Lobby member={member} setPage={setPage} />;
+  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation /> : page === 'attendance' ? <Attendance member={member} /> : page === 'payment' ? <PaymentPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScan /> : page === 'pinball' ? <PinballPage /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : page === 'member-admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} memberOnly /> : <Lobby member={member} setPage={setPage} />;
   return <Shell member={member} page={page} setPage={setPage} onLogout={logout}>{view}</Shell>;
 }
