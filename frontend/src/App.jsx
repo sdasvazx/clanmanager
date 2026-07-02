@@ -72,9 +72,9 @@ const copyToClipboard = async (text) => {
   document.body.removeChild(textarea);
 };
 const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
-const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망', '게헨나', '미분류'];
+const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
-const clanDisplayOrder = ['귀신', '운좋은사람들', '귀신Z', '로망', '게헨나', '미분류'];
+const clanDisplayOrder = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 
 function canonicalClanName(value) {
   const name = String(value ?? '').trim();
@@ -1004,7 +1004,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
         <form className="admin-create-form" onSubmit={createMember}>
           <label>닉네임<input required value={createForm.characterName} onChange={(e) => setCreateForm({ ...createForm, characterName: e.target.value })} /></label>
           <label>임시 비밀번호<input required value={createForm.initialPassword} onChange={(e) => setCreateForm({ ...createForm, initialPassword: e.target.value })} /></label>
-          <label>클랜<select value={createForm.guildName} onChange={(e) => setCreateForm({ ...createForm, guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.slice(0, 5).map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
+          <label>클랜<select value={createForm.guildName} onChange={(e) => setCreateForm({ ...createForm, guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
           <label>클래스<input value={createForm.characterClass} onChange={(e) => setCreateForm({ ...createForm, characterClass: e.target.value })} /></label>
           <label>레벨<input type="number" min="0" value={createForm.level} onChange={(e) => setCreateForm({ ...createForm, level: e.target.value })} /></label>
           <label>전투력<input type="number" min="0" value={createForm.combatPower} onChange={(e) => setCreateForm({ ...createForm, combatPower: e.target.value })} /></label>
@@ -1057,7 +1057,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
                     <td colSpan="12">
                       <form className="admin-edit-form inline-member-edit" onSubmit={saveProfile}>
                         <label>닉네임<input required value={editForm.characterName} onChange={(e) => setEditForm({ ...editForm, characterName: e.target.value })} /></label>
-                        <label>클랜<select value={editForm.guildName} onChange={(e) => setEditForm({ ...editForm, guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.slice(0, 5).map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
+                        <label>클랜<select value={editForm.guildName} onChange={(e) => setEditForm({ ...editForm, guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
                         <label>클래스<input value={editForm.characterClass} onChange={(e) => setEditForm({ ...editForm, characterClass: e.target.value })} /></label>
                         <label>레벨<input type="number" min="0" value={editForm.level} onChange={(e) => setEditForm({ ...editForm, level: e.target.value })} /></label>
                         <label>전투력<input required type="number" min="0" value={editForm.combatPower} onChange={(e) => setEditForm({ ...editForm, combatPower: e.target.value })} /></label>
