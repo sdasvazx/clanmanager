@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -81,9 +82,45 @@ public class BossParticipationController {
                 .createdBy(admin)
                 .build());
 
-        ActivityType activityType = resolveActivityType(bossName);
+        saveRecordMembers(record, request.getMembers());
 
-        request.getMembers().stream()
+        return toResponse(record);
+    }
+
+    @PutMapping("/{recordId}/members")
+    @Transactional
+    public List<BossParticipationMemberDto> updateRecordMembers(
+            @PathVariable Long recordId,
+            @RequestParam Long adminMemberId,
+            @RequestBody BossParticipationRequestDto request
+    ) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 보스 참여명단을 수정할 수 있습니다.");
+        }
+
+        if (request.getMembers() == null || request.getMembers().isEmpty()) {
+            throw new IllegalArgumentException("참여 명단을 1명 이상 입력해 주세요.");
+        }
+
+        BossParticipationRecord record = findRecord(recordId);
+        List<BossParticipationMember> previousMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
+        participationMemberRepository.deleteByRecord(record);
+        saveRecordMembers(record, request.getMembers());
+
+        List<BossParticipationMember> currentMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
+        removeAttendanceForDeletedMembers(record, previousMembers, currentMembers);
+
+        return currentMembers
+                .stream()
+                .map(BossParticipationMemberDto::from)
+                .toList();
+    }
+
+    private void saveRecordMembers(BossParticipationRecord record, List<BossParticipationRequestDto.MemberEntry> members) {
+        ActivityType activityType = resolveActivityType(record.getBossName());
+
+        members.stream()
                 .map(this::normalizeEntry)
                 .filter(Objects::nonNull)
                 .distinct()
@@ -106,8 +143,33 @@ public class BossParticipationController {
                                 .build());
                     }
                 });
+    }
 
-        return toResponse(record);
+    private void removeAttendanceForDeletedMembers(
+            BossParticipationRecord record,
+            List<BossParticipationMember> previousMembers,
+            List<BossParticipationMember> currentMembers
+    ) {
+        ActivityType activityType = resolveActivityType(record.getBossName());
+        if (activityType == null) {
+            return;
+        }
+
+        Set<Long> currentMemberIds = currentMembers.stream()
+                .map(BossParticipationMember::getMember)
+                .filter(Objects::nonNull)
+                .map(Member::getMemberId)
+                .collect(Collectors.toSet());
+
+        previousMembers.stream()
+                .map(BossParticipationMember::getMember)
+                .filter(Objects::nonNull)
+                .filter(previous -> !currentMemberIds.contains(previous.getMemberId()))
+                .forEach(previous -> activityAttendanceRepository.deleteByMemberAndActivityTypeAndAttendanceDate(
+                        previous,
+                        activityType,
+                        record.getBossDate()
+                ));
     }
 
     private BossParticipationResponseDto toResponse(BossParticipationRecord record) {

@@ -512,6 +512,44 @@
   gap: 14px;
 }
 
+.boss-roster-editor {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid #d8e6f8;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.boss-roster-editor h3 {
+  margin: 0 0 6px;
+}
+
+.boss-roster-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.boss-roster-edit-grid label {
+  display: grid;
+  gap: 7px;
+  color: #41516a;
+  font-size: .9rem;
+  font-weight: 800;
+}
+
+.boss-roster-edit-grid textarea {
+  width: 100%;
+  min-height: 130px;
+  padding: 12px;
+  border: 1px solid #cbd8e8;
+  border-radius: 10px;
+  background: #fff;
+  outline: 0;
+  resize: vertical;
+}
+
 .boss-roster-group {
   padding: 16px;
   border: 1px solid #dce6f1;

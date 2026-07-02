@@ -1,6 +1,7 @@
 package com.clanmanager.clanmanager.repository;
 
 import com.clanmanager.clanmanager.entity.ActivityAttendance;
+import com.clanmanager.clanmanager.entity.ActivityType;
 import com.clanmanager.clanmanager.entity.AttendanceStatus;
 import com.clanmanager.clanmanager.entity.Member;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -17,6 +18,8 @@ public interface ActivityAttendanceRepository extends JpaRepository<ActivityAtte
     List<ActivityAttendance> findByAttendanceDate(LocalDate attendanceDate);
 
     boolean existsByMemberAndActivityTypeAndAttendanceDate(Member member, com.clanmanager.clanmanager.entity.ActivityType activityType, LocalDate attendanceDate);
+
+    void deleteByMemberAndActivityTypeAndAttendanceDate(Member member, ActivityType activityType, LocalDate attendanceDate);
 
     long countByMemberAndStatus(Member member, AttendanceStatus status);
 

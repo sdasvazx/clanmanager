@@ -11,4 +11,6 @@ public interface BossParticipationMemberRepository extends JpaRepository<BossPar
     List<BossParticipationMember> findByRecordOrderByClanNameAscCharacterNameAsc(BossParticipationRecord record);
 
     long countByRecord(BossParticipationRecord record);
+
+    void deleteByRecord(BossParticipationRecord record);
 }

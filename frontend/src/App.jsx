@@ -417,6 +417,8 @@ function Attendance({ member }) {
   const [members, setMembers] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedMembers, setSelectedMembers] = useState([]);
+  const [selectedDraftByClan, setSelectedDraftByClan] = useState({});
+  const [savingRoster, setSavingRoster] = useState(false);
   const [form, setForm] = useState({ bossDate: today(), cutTime: '21:00', bossName: '21시 보스', score: 1, clanName: '로망', memo: '' });
   const [draftByClan, setDraftByClan] = useState({});
   const [file, setFile] = useState(null);
@@ -428,6 +430,11 @@ function Attendance({ member }) {
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
   const updateCurrentDraft = (value) => setDraftByClan((prev) => ({ ...prev, [form.clanName]: value }));
+  const rowsToDraftByClan = (rows) => rows.reduce((acc, row) => {
+    const clanName = clanOptions.includes(row.clanName) ? row.clanName : clanOptions[0];
+    acc[clanName] = [...namesFromText(acc[clanName] || ''), row.characterName].filter(Boolean).join('\n');
+    return acc;
+  }, {});
 
   const load = () => Promise.all([request('/boss-participations'), request('/members')])
     .then(([recordRows, memberRows]) => { setRecords(recordRows); setMembers(memberRows); })
@@ -500,10 +507,39 @@ function Attendance({ member }) {
   const openRoster = async (record) => {
     setSelectedRecord(record);
     setSelectedMembers([]);
+    setSelectedDraftByClan({});
     try {
-      setSelectedMembers(await request(`/boss-participations/${record.recordId}/members`));
+      const rows = await request(`/boss-participations/${record.recordId}/members`);
+      setSelectedMembers(rows);
+      setSelectedDraftByClan(rowsToDraftByClan(rows));
     } catch (err) {
       setMessage(err.message);
+    }
+  };
+
+  const saveSelectedRoster = async () => {
+    if (!selectedRecord) return;
+    const entries = Object.entries(selectedDraftByClan)
+      .flatMap(([clanName, text]) => namesFromText(text).map((characterName) => ({ characterName, clanName })));
+    if (!entries.length) {
+      setMessage('참여 명단을 1명 이상 입력해 주세요.');
+      return;
+    }
+    setSavingRoster(true);
+    setMessage('');
+    try {
+      const rows = await request(`/boss-participations/${selectedRecord.recordId}/members?adminMemberId=${member.memberId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ members: entries }),
+      });
+      setSelectedMembers(rows);
+      setSelectedDraftByClan(rowsToDraftByClan(rows));
+      await load();
+      setMessage(`${selectedRecord.bossName} 참여명단을 수정했습니다.`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSavingRoster(false);
     }
   };
 
@@ -617,6 +653,24 @@ function Attendance({ member }) {
             </div>
             <button className="outline-button no-margin" onClick={() => setSelectedRecord(null)}>닫기</button>
           </div>
+          {member.role === 'ADMIN' && (
+            <div className="boss-roster-editor">
+              <div className="section-heading">
+                <div>
+                  <h3>참여명단 수정</h3>
+                  <p className="subtle">잘못 들어간 이름은 지우고, 빠진 이름은 한 줄에 한 명씩 추가하세요.</p>
+                </div>
+                <button className="primary-button no-margin" onClick={saveSelectedRoster} disabled={savingRoster}>{savingRoster ? '저장중...' : '명단 저장'}</button>
+              </div>
+              <div className="boss-roster-edit-grid">
+                {clanOptions.map((clan) => (
+                  <label key={clan}>{clan}
+                    <textarea value={selectedDraftByClan[clan] || ''} onChange={(e) => setSelectedDraftByClan((prev) => ({ ...prev, [clan]: e.target.value }))} placeholder={`${clan} 참여자 이름`} />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="boss-roster-groups">
             {Object.entries(groupedSelectedMembers).map(([clanName, list]) => (
               <div className="boss-roster-group" key={clanName}>
