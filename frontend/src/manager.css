@@ -456,6 +456,47 @@
   resize: vertical;
 }
 
+.inline-pinball {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  margin: 6px 0 14px;
+  padding: 16px;
+  border: 1px solid #e2d8ff;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffffff, #f4f0ff);
+}
+
+.pinball-orb {
+  display: grid;
+  place-items: center;
+  min-height: 118px;
+  padding: 14px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, #ffffff 0, #d7caff 35%, #7c3aed 100%);
+  color: #fff;
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 900;
+  word-break: keep-all;
+  box-shadow: 0 12px 28px rgba(94, 59, 203, .26);
+}
+
+.pinball-orb.spinning {
+  animation: pinball-pop .14s infinite alternate;
+}
+
+.pinball-control-panel {
+  display: grid;
+  gap: 8px;
+}
+
+@keyframes pinball-pop {
+  from { transform: scale(.97) rotate(-2deg); }
+  to { transform: scale(1.03) rotate(2deg); }
+}
+
 .pinball-draft-actions {
   justify-content: flex-start;
 }

@@ -651,6 +651,8 @@ function PinballPage() {
   const [message, setMessage] = useState('');
   const [loadingId, setLoadingId] = useState(null);
   const [pinballDraft, setPinballDraft] = useState(null);
+  const [pinballWinner, setPinballWinner] = useState('');
+  const [pinballSpinning, setPinballSpinning] = useState(false);
 
   const load = () => request('/boss-participations')
     .then(setRecords)
@@ -667,9 +669,9 @@ function PinballPage() {
       if (!names.length) throw new Error('핀볼에 넣을 참여 명단이 없습니다.');
       const namesText = names.join(',');
       setPinballDraft({ record, namesText, count: names.length });
+      setPinballWinner('');
       await copyToClipboard(namesText);
-      window.open(ROULETTE_URL, '_blank', 'noopener,noreferrer');
-      setMessage(`${record.bossDate} ${record.bossName} 참여자 ${names.length}명을 복사했습니다. 열린 핀볼 사이트에 붙여넣어 주세요.`);
+      setMessage(`${record.bossDate} ${record.bossName} 참여자 ${names.length}명을 내장 핀볼에 바로 등록했습니다. 외부 사이트용 이름 목록도 복사했습니다.`);
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -682,6 +684,26 @@ function PinballPage() {
     await copyToClipboard(pinballDraft.namesText);
     window.open(ROULETTE_URL, '_blank', 'noopener,noreferrer');
     setMessage(`${pinballDraft.count}명 핀볼 이름 목록을 다시 복사했습니다.`);
+  };
+
+  const spinPinball = () => {
+    const names = namesFromText(pinballDraft?.namesText || '');
+    if (!names.length || pinballSpinning) return;
+    setPinballSpinning(true);
+    setMessage('');
+    let tick = 0;
+    const timer = window.setInterval(() => {
+      const picked = names[Math.floor(Math.random() * names.length)];
+      setPinballWinner(picked);
+      tick += 1;
+      if (tick >= 24) {
+        window.clearInterval(timer);
+        const winner = names[Math.floor(Math.random() * names.length)];
+        setPinballWinner(winner);
+        setPinballSpinning(false);
+        setMessage(`핀볼 결과: ${winner}`);
+      }
+    }, 70);
   };
 
   return (
@@ -709,6 +731,17 @@ function PinballPage() {
               <span className="result-count">{namesFromText(pinballDraft.namesText).length}명</span>
             </div>
             <textarea value={pinballDraft.namesText} onChange={(e) => setPinballDraft({ ...pinballDraft, namesText: e.target.value, count: namesFromText(e.target.value).length })} />
+            <div className="inline-pinball">
+              <div className={`pinball-orb ${pinballSpinning ? 'spinning' : ''}`}>{pinballWinner || '?'}</div>
+              <div className="pinball-control-panel">
+                <strong>내장 핀볼</strong>
+                <p className="subtle">위 명단이 바로 후보로 들어갑니다. 이름을 수정하면 수정된 목록 기준으로 추첨합니다.</p>
+                <div className="boss-action-buttons">
+                  <button className="primary-button no-margin" onClick={spinPinball} disabled={pinballSpinning || !namesFromText(pinballDraft.namesText).length}>{pinballSpinning ? '돌리는 중...' : '핀볼 돌리기'}</button>
+                  <button className="role-button" onClick={() => setPinballWinner('')} disabled={pinballSpinning}>결과 초기화</button>
+                </div>
+              </div>
+            </div>
             <div className="boss-action-buttons pinball-draft-actions">
               <button className="roster-button roulette-button" onClick={copyDraft}>이 목록 복사 + 핀볼 열기</button>
               <a className="outline-button no-margin" href={ROULETTE_URL} target="_blank" rel="noreferrer">핀볼 사이트만 열기</a>
