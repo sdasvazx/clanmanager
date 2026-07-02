@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,6 +63,39 @@ public class MemberController {
         return memberRepository.findByCharacterNameContaining(keyword);
     }
 
+    @PostMapping
+    public Member createMember(
+            @RequestParam Long adminMemberId,
+            @RequestBody CreateMemberRequest request
+    ) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 클랜원을 미리 등록할 수 있습니다.");
+        }
+
+        String characterName = request.getCharacterName() == null ? "" : request.getCharacterName().trim();
+        if (characterName.isBlank()) {
+            throw new IllegalArgumentException("캐릭터 이름은 비워둘 수 없습니다.");
+        }
+        if (memberRepository.existsByCharacterName(characterName)) {
+            throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
+        }
+
+        String initialPassword = request.getInitialPassword() == null || request.getInitialPassword().isBlank()
+                ? "112200"
+                : request.getInitialPassword();
+
+        return memberRepository.save(Member.builder()
+                .characterName(characterName)
+                .password(initialPassword)
+                .combatPower(request.getCombatPower() == null ? 0 : request.getCombatPower())
+                .rank(blankToNull(request.getRank()))
+                .status(blankToNull(request.getStatus()))
+                .role(MemberRole.MEMBER)
+                .active(request.getActive() == null ? true : request.getActive())
+                .build());
+    }
+
     @PatchMapping("/{memberId}/rank")
     public Map<String, Object> updateRank(@PathVariable Long memberId, @RequestParam String rank) {
         Member member = findMember(memberId);
@@ -104,6 +138,24 @@ public class MemberController {
         member.setStatus(blankToNull(request.getStatus()));
         member.setActive(request.getActive() == null ? true : request.getActive());
         return memberRepository.save(member);
+    }
+
+    @PatchMapping("/{memberId}/password")
+    public Map<String, Object> changePassword(
+            @PathVariable Long memberId,
+            @RequestBody PasswordChangeRequest request
+    ) {
+        Member member = findMember(memberId);
+        if (request.getCurrentPassword() == null || !member.getPassword().equals(request.getCurrentPassword())) {
+            throw new IllegalArgumentException("현재 비밀번호가 일치하지 않습니다.");
+        }
+        if (request.getNewPassword() == null || request.getNewPassword().trim().length() < 4) {
+            throw new IllegalArgumentException("새 비밀번호는 4자리 이상으로 입력해 주세요.");
+        }
+
+        member.setPassword(request.getNewPassword());
+        memberRepository.save(member);
+        return Map.of("message", "비밀번호 변경 완료", "memberId", member.getMemberId());
     }
 
     @PatchMapping("/{memberId}/role")
@@ -164,5 +216,23 @@ public class MemberController {
         private String rank;
         private String status;
         private Boolean active;
+    }
+
+    @Getter
+    @Setter
+    public static class CreateMemberRequest {
+        private String characterName;
+        private String initialPassword;
+        private Integer combatPower;
+        private String rank;
+        private String status;
+        private Boolean active;
+    }
+
+    @Getter
+    @Setter
+    public static class PasswordChangeRequest {
+        private String currentPassword;
+        private String newPassword;
     }
 }

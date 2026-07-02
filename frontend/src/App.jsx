@@ -17,7 +17,6 @@ const menu = [
   ['inventory', '재', '재고현황'],
   ['bidding', '아', '아이템입찰'],
   ['collection', '컬', '컬렉템 지급현황'],
-  ['roster', '인', '클랜원 관리'],
   ['mypage', '마', '마이페이지'],
   ['admin', '관', '관리자 설정'],
 ];
@@ -25,9 +24,9 @@ const menu = [
 const adminOnlyPages = new Set(['ledger', 'roster', 'admin']);
 
 const adminCards = [
-  ['✓', '출석체크', 'mint', 'attendance'],
+  ['✓', '출석체크', 'mint', 'roster'],
   ['♕', '출석보스 설정', 'rose', 'attendance'],
-  ['♙', '클랜원 관리', 'blue', 'roster'],
+  ['♙', '클랜원 정보수정', 'blue', 'admin'],
   ['◴', '출석기록 관리', 'purple', 'attendance'],
   ['⚙', '가중치 설정', 'orange', 'participation'],
   ['ϟ', '전투력 관리', 'gold', 'roster'],
@@ -157,14 +156,24 @@ function NoticePanel({ member, notices, onReload }) {
 function Lobby({ member, setPage }) {
   const [notices, setNotices] = useState([]);
   const [members, setMembers] = useState([]);
-  const load = () => Promise.all([request('/notices'), request('/members')]).then(([a, b]) => { setNotices(a); setMembers(b); }).catch(() => {});
+  const [attendances, setAttendances] = useState([]);
+  const load = () => Promise.all([request('/notices'), request('/members'), request('/attendances')]).then(([a, b, c]) => { setNotices(a); setMembers(b); setAttendances(c); }).catch(() => {});
   useEffect(() => { load(); }, []);
+  const participationRows = useMemo(() => {
+    const counts = new Map();
+    attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => counts.set(row.member?.memberId, (counts.get(row.member?.memberId) || 0) + 1));
+    const top = Math.max(0, ...counts.values());
+    return members.map((m) => {
+      const count = counts.get(m.memberId) || 0;
+      return { ...m, attendanceCount: count, participationRate: top ? Math.round((count / top) * 1000) / 10 : 0 };
+    }).sort((a, b) => b.attendanceCount - a.attendanceCount || (b.combatPower || 0) - (a.combatPower || 0));
+  }, [members, attendances]);
   return (
     <>
       <NoticePanel member={member} notices={notices} onReload={load} />
       <div className="page-title center"><h1>클랜 종합정보</h1><p>클랜원들의 참여율과 전투력을 기반으로 한 순위 정보</p></div>
-      <div className="dashboard-grid">
-        <Ranking title="🏅 참여율 순위" rows={members} field="참여율" />
+      <ParticipationRanking rows={participationRows} totalCount={members.length} />
+      <div className="dashboard-grid lobby-secondary-grid">
         <Ranking title="⚔ 전투력 순위" rows={[...members].sort((a, b) => (b.combatPower || 0) - (a.combatPower || 0))} field="전투력" power />
       </div>
       <section className="white-card quick-actions"><h2>빠른 메뉴</h2><div><button onClick={() => setPage('attendance')}>오늘의 출석 확인</button><button onClick={() => setPage('participation')}>참여율 조회</button>{member.role === 'ADMIN' && <button onClick={() => setPage('ledger')}>클랜금고 관리</button>}</div></section>
@@ -172,8 +181,12 @@ function Lobby({ member, setPage }) {
   );
 }
 
-function Ranking({ title, rows, field, power }) {
-  return <section className="white-card ranking"><h2>{title}</h2><table><thead><tr><th>순위</th><th>닉네임</th><th>{field}</th></tr></thead><tbody>{rows.slice(0, 10).map((m, i) => <tr key={m.memberId}><td>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td><td>{m.characterName}</td><td>{power ? formatNumber(m.combatPower) : '-'}</td></tr>)}</tbody></table>{!rows.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section>;
+function ParticipationRanking({ rows, totalCount }) {
+  return <section className="white-card lobby-participation-card"><h2>🏆 참여율 순위</h2><table className="lobby-ranking-table"><thead><tr><th>순위</th><th>닉네임</th><th>참여점수</th><th>참여율(%)</th></tr></thead><tbody>{rows.slice(0, 10).map((m, i) => <tr key={m.memberId}><td>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td><td>{m.characterName}</td><td>{m.attendanceCount}</td><td>{m.participationRate}%</td></tr>)}</tbody></table>{rows.length ? <p className="ranking-footnote">상위 10명 표시 중 (총 {totalCount}명)</p> : <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section>;
+}
+
+function Ranking({ title, rows, field, power, participation }) {
+  return <section className="white-card ranking"><h2>{title}</h2><table><thead><tr><th>순위</th><th>닉네임</th>{participation ? <><th>참여횟수</th><th>참여율</th></> : <th>{field}</th>}</tr></thead><tbody>{rows.slice(0, 10).map((m, i) => <tr key={m.memberId}><td>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td><td>{m.characterName}</td>{participation ? <><td>{m.attendanceCount}회</td><td className="blue-text">{m.participationRate}%</td></> : <td>{power ? formatNumber(m.combatPower) : '-'}</td>}</tr>)}</tbody></table>{!rows.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section>;
 }
 
 function MyInfo({ member }) {
@@ -308,9 +321,27 @@ function CrudPage({ title, description, canManage, form, rows, getId, columns, r
 
 function MyPage({ member }) {
   const [info, setInfo] = useState(null);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [passwordMessage, setPasswordMessage] = useState('');
   useEffect(() => { request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {}); }, [member.memberId]);
   if (!info) return <LoadingCard />;
-  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><ProfileCard member={member} info={info} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div></section></>;
+  const changePassword = async (event) => {
+    event.preventDefault();
+    setPasswordMessage('');
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordMessage('새 비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
+    try {
+      await request(`/members/${member.memberId}/password`, {
+        method: 'PATCH',
+        body: JSON.stringify({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword }),
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPasswordMessage('비밀번호를 변경했습니다. 다음 로그인부터 새 비밀번호를 사용하세요.');
+    } catch (err) { setPasswordMessage(err.message); }
+  };
+  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><ProfileCard member={member} info={info} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div></section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
 }
 
 function Admin({ member, setPage, onMemberUpdate }) {
@@ -319,8 +350,22 @@ function Admin({ member, setPage, onMemberUpdate }) {
   const [loadingId, setLoadingId] = useState(null);
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState({ characterName: '', combatPower: '', rank: '', status: '', active: true });
+  const [createForm, setCreateForm] = useState({ characterName: '', initialPassword: '112200', combatPower: '', rank: '', status: '활동중', active: true });
   const load = () => request('/members').then(setMembers).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
+  const createMember = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    try {
+      const saved = await request(`/members?adminMemberId=${member.memberId}`, {
+        method: 'POST',
+        body: JSON.stringify({ ...createForm, combatPower: Number(createForm.combatPower || 0) }),
+      });
+      setCreateForm({ characterName: '', initialPassword: '112200', combatPower: '', rank: '', status: '활동중', active: true });
+      await load();
+      setMessage(`${saved.characterName} 클랜원을 미리 등록했습니다. 임시 비밀번호는 등록한 값으로 로그인하면 됩니다.`);
+    } catch (err) { setMessage(err.message); }
+  };
   const startEdit = (targetMember) => {
     setEditId(targetMember.memberId);
     setMessage('');
@@ -358,7 +403,7 @@ function Admin({ member, setPage, onMemberUpdate }) {
       setMessage(`${targetMember.characterName}의 권한을 ${role === 'ADMIN' ? '운영자' : '클랜원'}로 변경했습니다.`);
     } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
   };
-  return <><div className="page-title"><h1>관리자 설정</h1><p>클랜 운영에 필요한 설정 메뉴입니다.</p></div><div className="admin-grid">{adminCards.map(([icon, title, color, target]) => <button className={`admin-card ${color}`} key={title} onClick={() => setPage(target)}><span>{icon}</span><b>{title}</b><small>{title === '클랜원 관리' ? '운영자 권한 관리 가능' : '바로 이동'}</small></button>)}</div><section className="white-card role-card"><div className="section-heading"><div><h2>클랜원 마이페이지 수정</h2><p className="subtle">운영자는 닉네임, 전투력, 직급, 상태, 활성 여부를 수정할 수 있습니다.</p></div><span className="result-count">{members.length}명</span></div>{message && <p className="vault-message">{message}</p>}{editId && <form className="admin-edit-form" onSubmit={saveProfile}><label>닉네임<input required value={editForm.characterName} onChange={(e) => setEditForm({ ...editForm, characterName: e.target.value })} /></label><label>전투력<input required type="number" min="0" value={editForm.combatPower} onChange={(e) => setEditForm({ ...editForm, combatPower: e.target.value })} /></label><label>직급<input placeholder="예: 장로, 정예, 일반" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} /></label><label>상태<input placeholder="예: 활동중, 휴면, 탈퇴예정" value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} /></label><label>활성<select value={editForm.active ? 'true' : 'false'} onChange={(e) => setEditForm({ ...editForm, active: e.target.value === 'true' })}><option value="true">활성</option><option value="false">비활성</option></select></label><button className="primary-button" disabled={loadingId === editId}>저장</button><button type="button" className="role-button" onClick={() => setEditId(null)}>취소</button></form>}<div className="table-wrap"><table className="data-table role-table"><thead><tr><th>닉네임</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>권한변경</th></tr></thead><tbody>{members.map((row) => <tr key={row.memberId}><td>{row.characterName}</td><td>{formatNumber(row.combatPower)}</td><td>{row.rank || '-'}</td><td>{row.active ? (row.status || '활성') : '비활성'}</td><td><span className={row.role === 'ADMIN' ? 'role-pill admin' : 'role-pill member'}>{row.role === 'ADMIN' ? '운영자' : '클랜원'}</span></td><td><button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>수정</button></td><td>{row.role === 'ADMIN' ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button> : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td></tr>)}</tbody></table></div>{!members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section></>;
+  return <><div className="page-title"><h1>관리자 설정</h1><p>클랜 운영에 필요한 설정 메뉴입니다.</p></div><div className="admin-grid">{adminCards.map(([icon, title, color, target]) => <button className={`admin-card ${color}`} key={title} onClick={() => setPage(target)}><span>{icon}</span><b>{title}</b><small>{title === '출석체크' ? '사진 인식으로 출석 확인' : title === '클랜원 정보수정' ? '마이페이지 정보 수정' : '바로 이동'}</small></button>)}</div><section className="white-card role-card"><div className="section-heading"><div><h2>클랜원 미리 등록</h2><p className="subtle">운영자가 캐릭터 정보를 먼저 넣어두면, 클랜원은 임시 비밀번호로 로그인한 뒤 마이페이지에서 직접 변경할 수 있습니다.</p></div></div><form className="admin-create-form" onSubmit={createMember}><label>닉네임<input required value={createForm.characterName} onChange={(e) => setCreateForm({ ...createForm, characterName: e.target.value })} /></label><label>임시 비밀번호<input required value={createForm.initialPassword} onChange={(e) => setCreateForm({ ...createForm, initialPassword: e.target.value })} /></label><label>전투력<input type="number" min="0" value={createForm.combatPower} onChange={(e) => setCreateForm({ ...createForm, combatPower: e.target.value })} /></label><label>직급<input placeholder="예: 장로, 정예, 일반" value={createForm.rank} onChange={(e) => setCreateForm({ ...createForm, rank: e.target.value })} /></label><label>상태<input value={createForm.status} onChange={(e) => setCreateForm({ ...createForm, status: e.target.value })} /></label><button className="primary-button">미리 등록</button></form></section><section className="white-card role-card"><div className="section-heading"><div><h2>클랜원 마이페이지 수정</h2><p className="subtle">운영자는 닉네임, 전투력, 직급, 상태, 활성 여부를 수정할 수 있습니다.</p></div><span className="result-count">{members.length}명</span></div>{message && <p className="vault-message">{message}</p>}{editId && <form className="admin-edit-form" onSubmit={saveProfile}><label>닉네임<input required value={editForm.characterName} onChange={(e) => setEditForm({ ...editForm, characterName: e.target.value })} /></label><label>전투력<input required type="number" min="0" value={editForm.combatPower} onChange={(e) => setEditForm({ ...editForm, combatPower: e.target.value })} /></label><label>직급<input placeholder="예: 장로, 정예, 일반" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} /></label><label>상태<input placeholder="예: 활동중, 휴면, 탈퇴예정" value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} /></label><label>활성<select value={editForm.active ? 'true' : 'false'} onChange={(e) => setEditForm({ ...editForm, active: e.target.value === 'true' })}><option value="true">활성</option><option value="false">비활성</option></select></label><button className="primary-button" disabled={loadingId === editId}>저장</button><button type="button" className="role-button" onClick={() => setEditId(null)}>취소</button></form>}<div className="table-wrap"><table className="data-table role-table"><thead><tr><th>닉네임</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>권한변경</th></tr></thead><tbody>{members.map((row) => <tr key={row.memberId}><td>{row.characterName}</td><td>{formatNumber(row.combatPower)}</td><td>{row.rank || '-'}</td><td>{row.active ? (row.status || '활성') : '비활성'}</td><td><span className={row.role === 'ADMIN' ? 'role-pill admin' : 'role-pill member'}>{row.role === 'ADMIN' ? '운영자' : '클랜원'}</span></td><td><button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>수정</button></td><td>{row.role === 'ADMIN' ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button> : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td></tr>)}</tbody></table></div>{!members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section></>;
 }
 
 function RosterScan() {
@@ -392,7 +437,7 @@ function RosterScan() {
       setProgress(100);
     }
   };
-  return <><div className="page-title"><h1>클랜원 관리</h1><p>파티 구성 스크린샷에서 캐릭터 이름을 읽어 클랜원 목록과 비교합니다.</p></div><section className="white-card roster-card"><div className="roster-head"><div><h2>파티 구성 불러오기</h2><p>스크린샷은 브라우저 안에서만 분석하며, 자동으로 클랜원을 추가하지 않습니다.</p></div><span className="local-badge">기기 OCR</span></div><div className="roster-layout"><label className="upload-zone"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectFile} />{preview ? <img src={preview} alt="업로드한 파티 구성" /> : <><b>↥</b><strong>파티 스크린샷 업로드</strong><span>PNG, JPG, WEBP</span></>}</label><div className="scan-guide"><h3>인식 안내</h3><ol><li>캐릭터 이름이 선명하게 보이도록 올려주세요.</li><li>등록된 이름은 자동으로 일치 처리합니다.</li><li>오인식 후보는 운영자가 검토합니다.</li></ol><button className="primary-button" disabled={!file || status.includes('읽는 중')} onClick={scan}>{status.includes('읽는 중') ? `글자 인식 중 ${progress}%` : '이름 인식 시작'}</button></div></div>{status && <div className="scan-status">{status}</div>}</section>{(result.length > 0 || text) && <section className="white-card"><div className="section-heading"><div><h2>인식 결과 검토</h2><p className="subtle">자동으로 출석이나 회원 등록을 처리하지 않습니다.</p></div><span className="result-count">{result.length}개 후보</span></div><div className="scan-results">{result.map((item, index) => <div className="scan-result" key={`${item.name}-${index}`}><span className={item.state === 'registered' ? 'match-icon yes' : 'match-icon wait'}>{item.state === 'registered' ? '✓' : '?'}</span><div><b>{item.name}</b><small>{item.detail}</small></div><span className={item.state === 'registered' ? 'match-state registered' : 'match-state review'}>{item.state === 'registered' ? '등록됨' : '확인 필요'}</span></div>)}</div><details className="raw-ocr"><summary>OCR 원문 보기</summary><pre>{text}</pre></details></section>}</>;
+  return <><div className="page-title"><h1>출석체크</h1><p>파티 구성 스크린샷에서 캐릭터 이름을 읽어 클랜원 목록과 비교합니다.</p></div><section className="white-card roster-card"><div className="roster-head"><div><h2>파티 구성 불러오기</h2><p>스크린샷은 브라우저 안에서만 분석하며, 등록된 클랜원과 일치하는지 확인합니다.</p></div><span className="local-badge">기기 OCR</span></div><div className="roster-layout"><label className="upload-zone"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectFile} />{preview ? <img src={preview} alt="업로드한 파티 구성" /> : <><b>↥</b><strong>파티 스크린샷 업로드</strong><span>PNG, JPG, WEBP</span></>}</label><div className="scan-guide"><h3>인식 안내</h3><ol><li>캐릭터 이름이 선명하게 보이도록 올려주세요.</li><li>등록된 이름은 자동으로 일치 처리합니다.</li><li>오인식 후보는 운영자가 검토합니다.</li></ol><button className="primary-button" disabled={!file || status.includes('읽는 중')} onClick={scan}>{status.includes('읽는 중') ? `글자 인식 중 ${progress}%` : '이름 인식 시작'}</button></div></div>{status && <div className="scan-status">{status}</div>}</section>{(result.length > 0 || text) && <section className="white-card"><div className="section-heading"><div><h2>인식 결과 검토</h2><p className="subtle">현재는 후보 검토 화면이며, 다음 단계에서 선택한 인원을 출석 기록으로 저장하게 연결하면 됩니다.</p></div><span className="result-count">{result.length}개 후보</span></div><div className="scan-results">{result.map((item, index) => <div className="scan-result" key={`${item.name}-${index}`}><span className={item.state === 'registered' ? 'match-icon yes' : 'match-icon wait'}>{item.state === 'registered' ? '✓' : '?'}</span><div><b>{item.name}</b><small>{item.detail}</small></div><span className={item.state === 'registered' ? 'match-state registered' : 'match-state review'}>{item.state === 'registered' ? '등록됨' : '확인 필요'}</span></div>)}</div><details className="raw-ocr"><summary>OCR 원문 보기</summary><pre>{text}</pre></details></section>}</>;
 }
 
 function AccessDenied() { return <section className="placeholder-page"><div className="white-card"><span>🔒</span><h1>운영자 전용 화면</h1><p>이 메뉴는 운영자만 사용할 수 있습니다.<br />일반 클랜원은 조회 메뉴를 이용할 수 있습니다.</p></div></section>; }
