@@ -56,6 +56,11 @@ npm.cmd run dev
 
 테스트는 MySQL 대신 인메모리 H2 데이터베이스를 사용합니다.
 
+## 배포
+
+월 $10 안쪽 MVP 운영은 Railway 백엔드 + Railway MySQL + Vercel 프론트 조합을 권장합니다.
+자세한 단계와 환경변수는 [DEPLOYMENT.md](./DEPLOYMENT.md)를 참고하세요.
+
 ## Postman API
 
 가져오기(Import)로 `postman/Clan Manager.postman_collection.json`을 추가하세요. 컬렉션 변수 `baseUrl`의 기본값은 `http://localhost:8080/api`입니다.
