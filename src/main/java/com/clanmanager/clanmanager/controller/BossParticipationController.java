@@ -3,10 +3,15 @@ package com.clanmanager.clanmanager.controller;
 import com.clanmanager.clanmanager.dto.BossParticipationMemberDto;
 import com.clanmanager.clanmanager.dto.BossParticipationRequestDto;
 import com.clanmanager.clanmanager.dto.BossParticipationResponseDto;
+import com.clanmanager.clanmanager.entity.ActivityAttendance;
+import com.clanmanager.clanmanager.entity.ActivityType;
+import com.clanmanager.clanmanager.entity.AttendanceStatus;
 import com.clanmanager.clanmanager.entity.BossParticipationMember;
 import com.clanmanager.clanmanager.entity.BossParticipationRecord;
 import com.clanmanager.clanmanager.entity.Member;
 import com.clanmanager.clanmanager.entity.MemberRole;
+import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
+import com.clanmanager.clanmanager.repository.ActivityTypeRepository;
 import com.clanmanager.clanmanager.repository.BossParticipationMemberRepository;
 import com.clanmanager.clanmanager.repository.BossParticipationRecordRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
@@ -30,6 +35,8 @@ public class BossParticipationController {
     private final BossParticipationRecordRepository recordRepository;
     private final BossParticipationMemberRepository participationMemberRepository;
     private final MemberRepository memberRepository;
+    private final ActivityTypeRepository activityTypeRepository;
+    private final ActivityAttendanceRepository activityAttendanceRepository;
 
     @GetMapping
     public List<BossParticipationResponseDto> getRecords() {
@@ -74,6 +81,8 @@ public class BossParticipationController {
                 .createdBy(admin)
                 .build());
 
+        ActivityType activityType = resolveActivityType(bossName);
+
         request.getMembers().stream()
                 .map(this::normalizeEntry)
                 .filter(Objects::nonNull)
@@ -87,6 +96,15 @@ public class BossParticipationController {
                             .clanName(entry.clanName())
                             .matched(matched != null)
                             .build());
+                    if (matched != null && matched.getActive() && activityType != null
+                            && !activityAttendanceRepository.existsByMemberAndActivityTypeAndAttendanceDate(matched, activityType, record.getBossDate())) {
+                        activityAttendanceRepository.save(ActivityAttendance.builder()
+                                .member(matched)
+                                .activityType(activityType)
+                                .attendanceDate(record.getBossDate())
+                                .status(AttendanceStatus.ATTENDED)
+                                .build());
+                    }
                 });
 
         return toResponse(record);
@@ -127,6 +145,38 @@ public class BossParticipationController {
 
     private String clean(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private ActivityType resolveActivityType(String bossName) {
+        String name = clean(bossName);
+        if (name.contains("13")) {
+            return activityTypeRepository.findByTypeName("13시 보스").orElse(null);
+        }
+        if (name.contains("17")) {
+            return activityTypeRepository.findByTypeName("17시 보스").orElse(null);
+        }
+        if (name.contains("21")) {
+            return activityTypeRepository.findByTypeName("21시 보스").orElse(null);
+        }
+        if (name.contains("에노크")) {
+            return activityTypeRepository.findByTypeName("에노크").orElse(null);
+        }
+        if (name.contains("마슈미드")) {
+            return activityTypeRepository.findByTypeName("마슈미드").orElse(null);
+        }
+        if (name.contains("정예")) {
+            return activityTypeRepository.findByTypeName("정예던전보스").orElse(null);
+        }
+        if (name.contains("클랜임무")) {
+            return activityTypeRepository.findByTypeName("클랜임무").orElse(null);
+        }
+        if (name.contains("수호")) {
+            return activityTypeRepository.findByTypeName("수호").orElse(null);
+        }
+        if (name.contains("쟁탈")) {
+            return activityTypeRepository.findByTypeName("쟁탈전").orElse(null);
+        }
+        return activityTypeRepository.findByTypeName(name).orElse(null);
     }
 
     private record NormalizedEntry(String characterName, String clanName) {

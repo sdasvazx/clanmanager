@@ -21,15 +21,15 @@ const menu = [
   ['admin', '관', '관리자 설정'],
 ];
 
-const adminOnlyPages = new Set(['ledger', 'roster', 'admin']);
+const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin']);
 
 const adminCards = [
   ['✓', '출석체크', 'mint', 'roster'],
   ['♕', '출석보스 설정', 'rose', 'attendance'],
-  ['♙', '클랜원 정보수정', 'blue', 'admin'],
+  ['♙', '클랜원 정보수정', 'blue', 'member-admin'],
   ['◴', '출석기록 관리', 'purple', 'attendance'],
   ['⚙', '가중치 설정', 'orange', 'participation'],
-  ['ϟ', '전투력 관리', 'gold', 'roster'],
+  ['ϟ', '전투력 관리', 'gold', 'member-admin'],
   ['✿', '기타 설정', 'indigo', 'admin'],
   ['▣', '스펙/장비 수정기록', 'amber', 'collection'],
   ['▥', '참여율 선택조회', 'cyan', 'participation'],
@@ -50,8 +50,34 @@ const formatNumber = (value) => Number(value || 0).toLocaleString();
 const money = (value) => `${formatNumber(value)} 다이아`;
 const today = () => new Date().toISOString().slice(0, 10);
 const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
-const clanOptions = ['귀신', '귀신Z', '로망', '운좋은', '게헨나', '미분류'];
+const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망', '게헨나', '미분류'];
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
+const clanDisplayOrder = ['귀신', '운좋은사람들', '귀신Z', '로망', '게헨나', '미분류'];
+
+function canonicalClanName(value) {
+  const name = String(value ?? '').trim();
+  const key = normalize(name);
+  if (!key) return '미분류';
+  if (key.includes('귀신z') || key.includes('귀신제트')) return '귀신Z';
+  if (key.includes('운좋은')) return '운좋은사람들';
+  if (key.includes('로망')) return '로망';
+  if (key.includes('게헨나')) return '게헨나';
+  if (key.includes('귀신')) return '귀신';
+  return name;
+}
+
+function groupByClan(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const clan = canonicalClanName(row.guildName || row.clanName);
+    map.set(clan, [...(map.get(clan) || []), row]);
+  });
+  return [...map.entries()].sort(([a], [b]) => {
+    const ai = clanDisplayOrder.indexOf(a);
+    const bi = clanDisplayOrder.indexOf(b);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi) || a.localeCompare(b, 'ko-KR');
+  });
+}
 
 function extractOcrNames(text, registeredMembers = []) {
   const memberByNormalized = new Map(registeredMembers.map((m) => [normalize(m.characterName), m.characterName]));
@@ -197,7 +223,7 @@ function Lobby({ member, setPage }) {
   const participationRows = useMemo(() => {
     const counts = new Map();
     attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => counts.set(row.member?.memberId, (counts.get(row.member?.memberId) || 0) + 1));
-    const top = Math.max(0, ...counts.values());
+    const top = Math.max(0, ...members.map((m) => counts.get(m.memberId) || 0));
     return members.map((m) => {
       const count = counts.get(m.memberId) || 0;
       return { ...m, attendanceCount: count, participationRate: top ? Math.round((count / top) * 1000) / 10 : 0 };
@@ -206,18 +232,16 @@ function Lobby({ member, setPage }) {
   return (
     <>
       <NoticePanel member={member} notices={notices} onReload={load} />
-      <div className="page-title center"><h1>클랜 종합정보</h1><p>클랜원들의 참여율과 전투력을 기반으로 한 순위 정보</p></div>
+      <div className="page-title center"><h1>클랜 종합정보</h1><p>클랜별 참여율과 참여점수를 한눈에 확인합니다.</p></div>
       <ParticipationRanking rows={participationRows} totalCount={members.length} />
-      <div className="dashboard-grid lobby-secondary-grid">
-        <Ranking title="⚔ 전투력 순위" rows={[...members].sort((a, b) => (b.combatPower || 0) - (a.combatPower || 0))} field="전투력" power />
-      </div>
       <section className="white-card quick-actions"><h2>빠른 메뉴</h2><div><button onClick={() => setPage('attendance')}>오늘의 출석 확인</button><button onClick={() => setPage('participation')}>참여율 조회</button>{member.role === 'ADMIN' && <button onClick={() => setPage('ledger')}>클랜금고 관리</button>}</div></section>
     </>
   );
 }
 
 function ParticipationRanking({ rows, totalCount }) {
-  return <section className="white-card lobby-participation-card"><h2>🏆 참여율 순위</h2><table className="lobby-ranking-table"><thead><tr><th>순위</th><th>닉네임</th><th>참여점수</th><th>참여율(%)</th></tr></thead><tbody>{rows.slice(0, 10).map((m, i) => <tr key={m.memberId}><td>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td><td>{m.characterName}</td><td>{m.attendanceCount}</td><td>{m.participationRate}%</td></tr>)}</tbody></table>{rows.length ? <p className="ranking-footnote">상위 10명 표시 중 (총 {totalCount}명)</p> : <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section>;
+  const groups = groupByClan(rows);
+  return <section className="white-card lobby-participation-card"><h2>🏆 클랜별 참여율 순위</h2>{groups.map(([clan, list]) => <div className="clan-ranking-block" key={clan}><div className="section-heading"><h3>{clan}</h3><span className="result-count">{list.length}명</span></div><table className="lobby-ranking-table"><thead><tr><th>순위</th><th>닉네임</th><th>참여점수</th><th>참여율(%)</th></tr></thead><tbody>{list.slice(0, 10).map((m, i) => <tr key={m.memberId}><td>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td><td>{m.characterName}</td><td>{m.attendanceCount}</td><td>{m.participationRate}%</td></tr>)}</tbody></table><p className="ranking-footnote">상위 10명 표시 중 (클랜 총 {list.length}명)</p></div>)}{rows.length ? <p className="ranking-footnote">전체 등록 클랜원 {totalCount}명 기준</p> : <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section>;
 }
 
 function Ranking({ title, rows, field, power, participation }) {
@@ -250,13 +274,14 @@ function Participation() {
   const rows = useMemo(() => {
     const counts = new Map();
     attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => counts.set(row.member?.memberId, (counts.get(row.member?.memberId) || 0) + 1));
-    const top = Math.max(0, ...counts.values());
+    const top = Math.max(0, ...members.map((m) => counts.get(m.memberId) || 0));
     return members.map((m) => {
       const count = counts.get(m.memberId) || 0;
       return { ...m, count, rate: top ? Math.round((count / top) * 1000) / 10 : 0 };
     }).sort((a, b) => b.count - a.count || (b.combatPower || 0) - (a.combatPower || 0));
   }, [members, attendances]);
-  return <><div className="page-title"><h1>참여율·기여율 조회</h1><p>가장 많이 참석한 캐릭터를 100%로 잡고 계산합니다.</p></div><section className="white-card"><div className="info-banner"><b>참여율 계산 기준</b><span>내 참석 횟수 / 1등 참석 횟수 × 100</span></div><div className="table-wrap"><table className="data-table"><thead><tr><th>순위</th><th>닉네임</th><th>전투력</th><th>참석</th><th>참여율</th><th>기여율</th></tr></thead><tbody>{rows.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td>{formatNumber(m.combatPower)}</td><td>{m.count}회</td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.rate}%</td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">클랜원이 등록되면 이곳에 순위가 표시됩니다.</div>}</section></>;
+  const groups = groupByClan(rows);
+  return <><div className="page-title"><h1>참여율·기여율 조회</h1><p>가장 많이 참석한 캐릭터를 100%로 잡고, 클랜별로 나눠 계산 결과를 표시합니다.</p></div><section className="white-card"><div className="info-banner"><b>참여율 계산 기준</b><span>내 참석 횟수 / 1등 참석 횟수 × 100</span></div>{groups.map(([clan, list]) => <div className="clan-ranking-block" key={clan}><div className="section-heading"><h2>{clan}</h2><span className="result-count">{list.length}명</span></div><div className="table-wrap"><table className="data-table"><thead><tr><th>순위</th><th>닉네임</th><th>참석</th><th>참여율</th><th>기여율</th></tr></thead><tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td>{m.count}회</td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.rate}%</td></tr>)}</tbody></table></div></div>)}{!rows.length && <div className="empty-state">클랜원이 등록되면 이곳에 순위가 표시됩니다.</div>}</section></>;
 }
 
 function Attendance({ member }) {
@@ -599,7 +624,7 @@ function MyPage({ member }) {
   return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><ProfileCard member={member} info={info} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div></section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
 }
 
-function Admin({ member, setPage, onMemberUpdate }) {
+function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
   const emptyCreateForm = { characterName: '', initialPassword: '112200', guildName: '', characterClass: '', level: '', combatPower: '', rank: '', status: '활동중', active: true };
   const emptyEditForm = { characterName: '', guildName: '', characterClass: '', level: '', combatPower: '', rank: '', status: '', active: true };
   const [members, setMembers] = useState([]);
@@ -698,16 +723,36 @@ function Admin({ member, setPage, onMemberUpdate }) {
     } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
   };
 
+  const deleteMember = async (targetMember) => {
+    if (!window.confirm(`${targetMember.characterName} 클랜원을 삭제할까요? 과거 기록은 보존되고 목록에서는 숨김 처리됩니다.`)) return;
+    setLoadingId(targetMember.memberId);
+    setMessage('');
+    try {
+      await request(`/members/${targetMember.memberId}?adminMemberId=${member.memberId}`, { method: 'DELETE' });
+      await load();
+      setMessage(`${targetMember.characterName} 클랜원을 삭제했습니다.`);
+    } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
+  };
+
+  if (!memberOnly) {
+    return (
+      <>
+        <div className="page-title"><h1>관리자 설정</h1><p>클랜 운영에 필요한 설정 메뉴입니다.</p></div>
+        <div className="admin-grid">
+          {adminCards.map(([icon, title, color, target]) => (
+            <button className={`admin-card ${color}`} key={title} onClick={() => setPage(target)}>
+              <span>{icon}</span><b>{title}</b><small>{title === '출석체크' ? '사진 인식으로 출석 확인' : title === '클랜원 정보수정' || title === '전투력 관리' ? '클랜원 관리 화면' : '바로 이동'}</small>
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
-      <div className="page-title"><h1>관리자 설정</h1><p>클랜 운영에 필요한 설정 메뉴입니다.</p></div>
-      <div className="admin-grid">
-        {adminCards.map(([icon, title, color, target]) => (
-          <button className={`admin-card ${color}`} key={title} onClick={() => setPage(target)}>
-            <span>{icon}</span><b>{title}</b><small>{title === '출석체크' ? '사진 인식으로 출석 확인' : title === '클랜원 정보수정' ? '마이페이지 정보 수정' : '바로 이동'}</small>
-          </button>
-        ))}
-      </div>
+      <div className="page-title"><h1>클랜원 정보수정</h1><p>클랜원 정보, 비밀번호, 권한, 삭제 여부를 관리합니다.</p></div>
+      <button className="outline-button no-margin" onClick={() => setPage('admin')}>← 관리자 설정으로</button>
 
       <section className="white-card role-card">
         <div className="section-heading">
@@ -759,7 +804,7 @@ function Admin({ member, setPage, onMemberUpdate }) {
         )}
         <div className="table-wrap">
           <table className="data-table role-table">
-            <thead><tr><th>닉네임</th><th>길드</th><th>클래스</th><th>레벨</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>비밀번호</th><th>권한변경</th></tr></thead>
+            <thead><tr><th>닉네임</th><th>길드</th><th>클래스</th><th>레벨</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>비밀번호</th><th>권한변경</th><th>삭제</th></tr></thead>
             <tbody>{members.map((row) => (
               <tr key={row.memberId}>
                 <td>{row.characterName}</td>
@@ -775,6 +820,7 @@ function Admin({ member, setPage, onMemberUpdate }) {
                 <td>{row.role === 'ADMIN'
                   ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button>
                   : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td>
+                <td><button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => deleteMember(row)}>{row.memberId === member.memberId ? '본인 삭제 불가' : '삭제'}</button></td>
               </tr>
             ))}</tbody>
           </table>
@@ -830,6 +876,6 @@ export default function App() {
   const logout = () => { sessionStorage.removeItem('clanMember'); setMember(null); setPage('lobby'); };
   if (!member) return <AuthScreen onLogin={login} />;
   if (member.role !== 'ADMIN' && adminOnlyPages.has(page)) return <Shell member={member} page={page} setPage={setPage} onLogout={logout}><AccessDenied /></Shell>;
-  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation /> : page === 'attendance' ? <Attendance member={member} /> : page === 'payment' ? <PaymentPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScan /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : <Lobby member={member} setPage={setPage} />;
+  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation /> : page === 'attendance' ? <Attendance member={member} /> : page === 'payment' ? <PaymentPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScan /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : page === 'member-admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} memberOnly /> : <Lobby member={member} setPage={setPage} />;
   return <Shell member={member} page={page} setPage={setPage} onLogout={logout}>{view}</Shell>;
 }

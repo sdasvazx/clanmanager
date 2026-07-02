@@ -11,6 +11,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,7 +54,7 @@ public class MemberController {
 
     @GetMapping
     public List<Member> getAllMembers() {
-        return memberRepository.findAll();
+        return memberRepository.findByActiveTrueOrderByMemberIdAsc();
     }
 
     @GetMapping("/{memberId}")
@@ -249,6 +250,35 @@ public class MemberController {
 
         return Map.of(
                 "message", "비밀번호 초기화 완료",
+                "memberId", member.getMemberId(),
+                "characterName", member.getCharacterName()
+        );
+    }
+
+    @DeleteMapping("/{memberId}")
+    public Map<String, Object> deleteMember(
+            @PathVariable Long memberId,
+            @RequestParam Long adminMemberId
+    ) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 클랜원을 삭제할 수 있습니다.");
+        }
+        if (memberId.equals(adminMemberId)) {
+            throw new IllegalArgumentException("본인 계정은 삭제할 수 없습니다.");
+        }
+
+        Member member = findMember(memberId);
+        if (member.getRole() == MemberRole.ADMIN && memberRepository.countByRole(MemberRole.ADMIN) <= 1) {
+            throw new IllegalArgumentException("마지막 운영자는 삭제할 수 없습니다.");
+        }
+
+        member.setActive(false);
+        member.setStatus("삭제됨");
+        memberRepository.save(member);
+
+        return Map.of(
+                "message", "클랜원 삭제 완료",
                 "memberId", member.getMemberId(),
                 "characterName", member.getCharacterName()
         );

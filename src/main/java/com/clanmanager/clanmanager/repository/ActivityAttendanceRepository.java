@@ -16,12 +16,15 @@ public interface ActivityAttendanceRepository extends JpaRepository<ActivityAtte
 
     List<ActivityAttendance> findByAttendanceDate(LocalDate attendanceDate);
 
+    boolean existsByMemberAndActivityTypeAndAttendanceDate(Member member, com.clanmanager.clanmanager.entity.ActivityType activityType, LocalDate attendanceDate);
+
     long countByMemberAndStatus(Member member, AttendanceStatus status);
 
     @Query("""
             select count(a)
             from ActivityAttendance a
             where a.status = com.clanmanager.clanmanager.entity.AttendanceStatus.ATTENDED
+            and a.member.active = true
             group by a.member
             order by count(a) desc
             """)
