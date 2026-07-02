@@ -29,6 +29,14 @@ public class Member {
     @Column(nullable = false)
     private Integer combatPower;
 
+    @Column(length = 30)
+    private String guildName;
+
+    @Column(length = 50)
+    private String characterClass;
+
+    private Integer level;
+
     @Column(name = "member_rank", length = 30)
     private String rank;
 
@@ -49,6 +57,7 @@ public class Member {
     @PrePersist
     public void prePersist() {
         this.combatPower = this.combatPower == null ? 0 : this.combatPower;
+        this.level = this.level == null ? 0 : this.level;
         this.role = this.role == null ? MemberRole.MEMBER : this.role;
         this.active = this.active == null ? true : this.active;
         this.createdAt = LocalDateTime.now();

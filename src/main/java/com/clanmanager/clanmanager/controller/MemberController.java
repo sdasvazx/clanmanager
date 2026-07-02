@@ -42,6 +42,9 @@ public class MemberController {
                 .memberId(member.getMemberId())
                 .characterName(member.getCharacterName())
                 .combatPower(member.getCombatPower())
+                .guildName(member.getGuildName())
+                .characterClass(member.getCharacterClass())
+                .level(member.getLevel())
                 .myAttendanceCount(myCount)
                 .topAttendanceCount(topCount)
                 .participationRate(Math.round(participationRate * 10) / 10.0)
@@ -89,6 +92,9 @@ public class MemberController {
                 .characterName(characterName)
                 .password(initialPassword)
                 .combatPower(request.getCombatPower() == null ? 0 : request.getCombatPower())
+                .guildName(blankToNull(request.getGuildName()))
+                .characterClass(blankToNull(request.getCharacterClass()))
+                .level(request.getLevel() == null ? 0 : request.getLevel())
                 .rank(blankToNull(request.getRank()))
                 .status(blankToNull(request.getStatus()))
                 .role(MemberRole.MEMBER)
@@ -134,10 +140,70 @@ public class MemberController {
 
         member.setCharacterName(characterName);
         member.setCombatPower(request.getCombatPower() == null ? 0 : request.getCombatPower());
+        member.setGuildName(blankToNull(request.getGuildName()));
+        member.setCharacterClass(blankToNull(request.getCharacterClass()));
+        member.setLevel(request.getLevel() == null ? 0 : request.getLevel());
         member.setRank(blankToNull(request.getRank()));
         member.setStatus(blankToNull(request.getStatus()));
         member.setActive(request.getActive() == null ? true : request.getActive());
         return memberRepository.save(member);
+    }
+
+    @PostMapping("/bulk-import")
+    public Map<String, Object> bulkImportMembers(@RequestBody MemberBulkImportRequest request) {
+        Member admin = findMember(request.getAdminMemberId());
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 클랜원 명단을 일괄 등록할 수 있습니다.");
+        }
+        if (request.getMembers() == null || request.getMembers().isEmpty()) {
+            throw new IllegalArgumentException("등록할 클랜원 명단이 비어 있습니다.");
+        }
+
+        int created = 0;
+        int updated = 0;
+        for (BulkMemberRequest row : request.getMembers()) {
+            String characterName = row.getCharacterName() == null ? "" : row.getCharacterName().trim();
+            if (characterName.isBlank()) {
+                continue;
+            }
+
+            Member member = memberRepository.findByCharacterName(characterName).orElse(null);
+            boolean isNew = member == null;
+            if (isNew) {
+                member = Member.builder()
+                        .characterName(characterName)
+                        .password(row.getInitialPassword() == null || row.getInitialPassword().isBlank() ? "112200" : row.getInitialPassword())
+                        .active(true)
+                        .build();
+            }
+
+            member.setCombatPower(row.getCombatPower() == null ? 0 : row.getCombatPower());
+            member.setGuildName(blankToNull(row.getGuildName()));
+            member.setCharacterClass(blankToNull(row.getCharacterClass()));
+            member.setLevel(row.getLevel() == null ? 0 : row.getLevel());
+            member.setRank(blankToNull(row.getRank()));
+            member.setStatus(blankToNull(row.getStatus()) == null ? "활동중" : blankToNull(row.getStatus()));
+            member.setActive(row.getActive() == null ? true : row.getActive());
+            if (row.getAdmin() != null) {
+                member.setRole(row.getAdmin() ? MemberRole.ADMIN : MemberRole.MEMBER);
+            } else if (member.getRole() == null) {
+                member.setRole(MemberRole.MEMBER);
+            }
+
+            memberRepository.save(member);
+            if (isNew) {
+                created++;
+            } else {
+                updated++;
+            }
+        }
+
+        return Map.of(
+                "message", "클랜원 명단 일괄 등록 완료",
+                "created", created,
+                "updated", updated,
+                "total", created + updated
+        );
     }
 
     @PatchMapping("/{memberId}/password")
@@ -213,6 +279,9 @@ public class MemberController {
     public static class MemberProfileRequest {
         private String characterName;
         private Integer combatPower;
+        private String guildName;
+        private String characterClass;
+        private Integer level;
         private String rank;
         private String status;
         private Boolean active;
@@ -224,9 +293,34 @@ public class MemberController {
         private String characterName;
         private String initialPassword;
         private Integer combatPower;
+        private String guildName;
+        private String characterClass;
+        private Integer level;
         private String rank;
         private String status;
         private Boolean active;
+    }
+
+    @Getter
+    @Setter
+    public static class MemberBulkImportRequest {
+        private Long adminMemberId;
+        private List<BulkMemberRequest> members;
+    }
+
+    @Getter
+    @Setter
+    public static class BulkMemberRequest {
+        private String characterName;
+        private String initialPassword;
+        private Integer combatPower;
+        private String guildName;
+        private String characterClass;
+        private Integer level;
+        private String rank;
+        private String status;
+        private Boolean active;
+        private Boolean admin;
     }
 
     @Getter

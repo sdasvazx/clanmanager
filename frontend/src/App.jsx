@@ -600,38 +600,52 @@ function MyPage({ member }) {
 }
 
 function Admin({ member, setPage, onMemberUpdate }) {
+  const emptyCreateForm = { characterName: '', initialPassword: '112200', guildName: '', characterClass: '', level: '', combatPower: '', rank: '', status: '활동중', active: true };
+  const emptyEditForm = { characterName: '', guildName: '', characterClass: '', level: '', combatPower: '', rank: '', status: '', active: true };
   const [members, setMembers] = useState([]);
   const [message, setMessage] = useState('');
   const [loadingId, setLoadingId] = useState(null);
   const [editId, setEditId] = useState(null);
-  const [editForm, setEditForm] = useState({ characterName: '', combatPower: '', rank: '', status: '', active: true });
-  const [createForm, setCreateForm] = useState({ characterName: '', initialPassword: '112200', combatPower: '', rank: '', status: '활동중', active: true });
+  const [editForm, setEditForm] = useState(emptyEditForm);
+  const [createForm, setCreateForm] = useState(emptyCreateForm);
   const load = () => request('/members').then(setMembers).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
+
+  const memberPayload = (form) => ({
+    ...form,
+    combatPower: Number(form.combatPower || 0),
+    level: Number(form.level || 0),
+  });
+
   const createMember = async (event) => {
     event.preventDefault();
     setMessage('');
     try {
       const saved = await request(`/members?adminMemberId=${member.memberId}`, {
         method: 'POST',
-        body: JSON.stringify({ ...createForm, combatPower: Number(createForm.combatPower || 0) }),
+        body: JSON.stringify(memberPayload(createForm)),
       });
-      setCreateForm({ characterName: '', initialPassword: '112200', combatPower: '', rank: '', status: '활동중', active: true });
+      setCreateForm(emptyCreateForm);
       await load();
       setMessage(`${saved.characterName} 클랜원을 미리 등록했습니다. 임시 비밀번호는 등록한 값으로 로그인하면 됩니다.`);
     } catch (err) { setMessage(err.message); }
   };
+
   const startEdit = (targetMember) => {
     setEditId(targetMember.memberId);
     setMessage('');
     setEditForm({
       characterName: targetMember.characterName ?? '',
+      guildName: targetMember.guildName ?? '',
+      characterClass: targetMember.characterClass ?? '',
+      level: targetMember.level ?? 0,
       combatPower: targetMember.combatPower ?? 0,
       rank: targetMember.rank ?? '',
       status: targetMember.status ?? '',
       active: targetMember.active ?? true,
     });
   };
+
   const saveProfile = async (event) => {
     event.preventDefault();
     setLoadingId(editId);
@@ -639,16 +653,17 @@ function Admin({ member, setPage, onMemberUpdate }) {
     try {
       const saved = await request(`/members/${editId}/profile?adminMemberId=${member.memberId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ ...editForm, combatPower: Number(editForm.combatPower || 0) }),
+        body: JSON.stringify(memberPayload(editForm)),
       });
       await load();
       setEditId(null);
-      setMessage(`${saved.characterName}의 마이페이지 정보를 수정했습니다.`);
+      setMessage(`${saved.characterName}의 정보를 수정했습니다.`);
       if (saved.memberId === member.memberId) {
         onMemberUpdate({ ...member, characterName: saved.characterName });
       }
     } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
   };
+
   const changeRole = async (targetMember, role) => {
     setLoadingId(targetMember.memberId);
     setMessage('');
@@ -658,7 +673,80 @@ function Admin({ member, setPage, onMemberUpdate }) {
       setMessage(`${targetMember.characterName}의 권한을 ${role === 'ADMIN' ? '운영자' : '클랜원'}로 변경했습니다.`);
     } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
   };
-  return <><div className="page-title"><h1>관리자 설정</h1><p>클랜 운영에 필요한 설정 메뉴입니다.</p></div><div className="admin-grid">{adminCards.map(([icon, title, color, target]) => <button className={`admin-card ${color}`} key={title} onClick={() => setPage(target)}><span>{icon}</span><b>{title}</b><small>{title === '출석체크' ? '사진 인식으로 출석 확인' : title === '클랜원 정보수정' ? '마이페이지 정보 수정' : '바로 이동'}</small></button>)}</div><section className="white-card role-card"><div className="section-heading"><div><h2>클랜원 미리 등록</h2><p className="subtle">운영자가 캐릭터 정보를 먼저 넣어두면, 클랜원은 임시 비밀번호로 로그인한 뒤 마이페이지에서 직접 변경할 수 있습니다.</p></div></div><form className="admin-create-form" onSubmit={createMember}><label>닉네임<input required value={createForm.characterName} onChange={(e) => setCreateForm({ ...createForm, characterName: e.target.value })} /></label><label>임시 비밀번호<input required value={createForm.initialPassword} onChange={(e) => setCreateForm({ ...createForm, initialPassword: e.target.value })} /></label><label>전투력<input type="number" min="0" value={createForm.combatPower} onChange={(e) => setCreateForm({ ...createForm, combatPower: e.target.value })} /></label><label>직급<input placeholder="예: 장로, 정예, 일반" value={createForm.rank} onChange={(e) => setCreateForm({ ...createForm, rank: e.target.value })} /></label><label>상태<input value={createForm.status} onChange={(e) => setCreateForm({ ...createForm, status: e.target.value })} /></label><button className="primary-button">미리 등록</button></form></section><section className="white-card role-card"><div className="section-heading"><div><h2>클랜원 마이페이지 수정</h2><p className="subtle">운영자는 닉네임, 전투력, 직급, 상태, 활성 여부를 수정할 수 있습니다.</p></div><span className="result-count">{members.length}명</span></div>{message && <p className="vault-message">{message}</p>}{editId && <form className="admin-edit-form" onSubmit={saveProfile}><label>닉네임<input required value={editForm.characterName} onChange={(e) => setEditForm({ ...editForm, characterName: e.target.value })} /></label><label>전투력<input required type="number" min="0" value={editForm.combatPower} onChange={(e) => setEditForm({ ...editForm, combatPower: e.target.value })} /></label><label>직급<input placeholder="예: 장로, 정예, 일반" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} /></label><label>상태<input placeholder="예: 활동중, 휴면, 탈퇴예정" value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} /></label><label>활성<select value={editForm.active ? 'true' : 'false'} onChange={(e) => setEditForm({ ...editForm, active: e.target.value === 'true' })}><option value="true">활성</option><option value="false">비활성</option></select></label><button className="primary-button" disabled={loadingId === editId}>저장</button><button type="button" className="role-button" onClick={() => setEditId(null)}>취소</button></form>}<div className="table-wrap"><table className="data-table role-table"><thead><tr><th>닉네임</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>권한변경</th></tr></thead><tbody>{members.map((row) => <tr key={row.memberId}><td>{row.characterName}</td><td>{formatNumber(row.combatPower)}</td><td>{row.rank || '-'}</td><td>{row.active ? (row.status || '활성') : '비활성'}</td><td><span className={row.role === 'ADMIN' ? 'role-pill admin' : 'role-pill member'}>{row.role === 'ADMIN' ? '운영자' : '클랜원'}</span></td><td><button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>수정</button></td><td>{row.role === 'ADMIN' ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button> : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td></tr>)}</tbody></table></div>{!members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section></>;
+
+  return (
+    <>
+      <div className="page-title"><h1>관리자 설정</h1><p>클랜 운영에 필요한 설정 메뉴입니다.</p></div>
+      <div className="admin-grid">
+        {adminCards.map(([icon, title, color, target]) => (
+          <button className={`admin-card ${color}`} key={title} onClick={() => setPage(target)}>
+            <span>{icon}</span><b>{title}</b><small>{title === '출석체크' ? '사진 인식으로 출석 확인' : title === '클랜원 정보수정' ? '마이페이지 정보 수정' : '바로 이동'}</small>
+          </button>
+        ))}
+      </div>
+
+      <section className="white-card role-card">
+        <div className="section-heading">
+          <div><h2>클랜원 미리 등록</h2><p className="subtle">운영자가 캐릭터 정보를 먼저 넣어두면, 클랜원은 임시 비밀번호로 로그인한 뒤 마이페이지에서 직접 변경할 수 있습니다.</p></div>
+        </div>
+        <form className="admin-create-form" onSubmit={createMember}>
+          <label>닉네임<input required value={createForm.characterName} onChange={(e) => setCreateForm({ ...createForm, characterName: e.target.value })} /></label>
+          <label>임시 비밀번호<input required value={createForm.initialPassword} onChange={(e) => setCreateForm({ ...createForm, initialPassword: e.target.value })} /></label>
+          <label>길드<input value={createForm.guildName} onChange={(e) => setCreateForm({ ...createForm, guildName: e.target.value })} /></label>
+          <label>클래스<input value={createForm.characterClass} onChange={(e) => setCreateForm({ ...createForm, characterClass: e.target.value })} /></label>
+          <label>레벨<input type="number" min="0" value={createForm.level} onChange={(e) => setCreateForm({ ...createForm, level: e.target.value })} /></label>
+          <label>전투력<input type="number" min="0" value={createForm.combatPower} onChange={(e) => setCreateForm({ ...createForm, combatPower: e.target.value })} /></label>
+          <label>직급<input placeholder="예: 장로, 정예, 일반" value={createForm.rank} onChange={(e) => setCreateForm({ ...createForm, rank: e.target.value })} /></label>
+          <label>상태<input value={createForm.status} onChange={(e) => setCreateForm({ ...createForm, status: e.target.value })} /></label>
+          <button className="primary-button">미리 등록</button>
+        </form>
+      </section>
+
+      <section className="white-card role-card">
+        <div className="section-heading">
+          <div><h2>클랜원 관리</h2><p className="subtle">닉네임, 길드, 클래스, 레벨, 전투력, 상태, 권한을 관리합니다.</p></div>
+          <span className="result-count">{members.length}명</span>
+        </div>
+        {message && <p className="vault-message">{message}</p>}
+        {editId && (
+          <form className="admin-edit-form" onSubmit={saveProfile}>
+            <label>닉네임<input required value={editForm.characterName} onChange={(e) => setEditForm({ ...editForm, characterName: e.target.value })} /></label>
+            <label>길드<input value={editForm.guildName} onChange={(e) => setEditForm({ ...editForm, guildName: e.target.value })} /></label>
+            <label>클래스<input value={editForm.characterClass} onChange={(e) => setEditForm({ ...editForm, characterClass: e.target.value })} /></label>
+            <label>레벨<input type="number" min="0" value={editForm.level} onChange={(e) => setEditForm({ ...editForm, level: e.target.value })} /></label>
+            <label>전투력<input required type="number" min="0" value={editForm.combatPower} onChange={(e) => setEditForm({ ...editForm, combatPower: e.target.value })} /></label>
+            <label>직급<input placeholder="예: 장로, 정예, 일반" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} /></label>
+            <label>상태<input placeholder="예: 활동중, 휴면, 탈퇴예정" value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} /></label>
+            <label>활성<select value={editForm.active ? 'true' : 'false'} onChange={(e) => setEditForm({ ...editForm, active: e.target.value === 'true' })}><option value="true">활성</option><option value="false">비활성</option></select></label>
+            <button className="primary-button" disabled={loadingId === editId}>저장</button>
+            <button type="button" className="role-button" onClick={() => setEditId(null)}>취소</button>
+          </form>
+        )}
+        <div className="table-wrap">
+          <table className="data-table role-table">
+            <thead><tr><th>닉네임</th><th>길드</th><th>클래스</th><th>레벨</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>권한변경</th></tr></thead>
+            <tbody>{members.map((row) => (
+              <tr key={row.memberId}>
+                <td>{row.characterName}</td>
+                <td>{row.guildName || '-'}</td>
+                <td>{row.characterClass || '-'}</td>
+                <td>{row.level ? `Lv.${row.level}` : '-'}</td>
+                <td>{formatNumber(row.combatPower)}</td>
+                <td>{row.rank || '-'}</td>
+                <td>{row.active ? (row.status || '활성') : '비활성'}</td>
+                <td><span className={row.role === 'ADMIN' ? 'role-pill admin' : 'role-pill member'}>{row.role === 'ADMIN' ? '운영자' : '클랜원'}</span></td>
+                <td><button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>수정</button></td>
+                <td>{row.role === 'ADMIN'
+                  ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button>
+                  : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        {!members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
+      </section>
+    </>
+  );
 }
 
 function RosterScan() {
