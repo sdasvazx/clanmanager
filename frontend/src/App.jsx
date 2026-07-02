@@ -104,18 +104,30 @@ function groupByClan(rows) {
 function extractOcrNames(text, registeredMembers = []) {
   const memberByNormalized = new Map(registeredMembers.map((m) => [normalize(m.characterName), m.characterName]));
   const wholeText = String(text ?? '');
+  const normalizedText = normalize(wholeText);
   const matched = registeredMembers
-    .filter((m) => normalize(m.characterName).length > 1 && normalize(wholeText).includes(normalize(m.characterName)))
+    .filter((m) => normalize(m.characterName).length > 1 && normalizedText.includes(normalize(m.characterName)))
     .map((m) => m.characterName);
+  const matchedKeys = new Set(matched.map(normalize));
+  const blockedWords = new Set(['귀신', '귀신z', '로망', '운좋은', '운좋은사람들', '게헨나', '미분류', 'lv', 'level']);
   const guessed = wholeText
     .split(/\r?\n/)
-    .flatMap((line) => line.split(/\s{2,}|\t|,/))
-    .map((line) => line.replace(/Lv\.?\s*\d+/gi, '').replace(/레벨\s*\d+/g, '').replace(/[|()[\]{}]/g, ' ').trim())
-    .filter((line) => /^[0-9A-Za-z가-힣_-]{2,12}$/.test(line))
-    .map((line) => memberByNormalized.get(normalize(line)) ?? line);
+    .flatMap((line) => line
+      .replace(/Lv\.?\s*\d+/gi, ' ')
+      .replace(/Level\s*\d+/gi, ' ')
+      .replace(/[|()[\]{}"'\`~!@#$%^&*_+=:;<>?/\\]/g, ' ')
+      .split(/\s+|,|·|ㆍ|•|-/)
+    )
+    .map((name) => name.trim())
+    .filter((name) => /[가-힣]/.test(name))
+    .map((name) => name.replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, ''))
+    .filter((name) => /^[0-9A-Za-z가-힣]{2,10}$/.test(name))
+    .filter((name) => !/^[A-Za-z0-9]+$/.test(name))
+    .filter((name) => !blockedWords.has(normalize(name)))
+    .map((name) => memberByNormalized.get(normalize(name)) ?? name)
+    .filter((name) => !matchedKeys.has(normalize(name)) || memberByNormalized.has(normalize(name)));
   return [...new Set([...matched, ...guessed])];
 }
-
 function namesFromText(value) {
   return [...new Set(String(value ?? '').split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean))];
 }
@@ -1055,12 +1067,16 @@ function RosterScan() {
       const { data } = await worker.recognize(file);
       await worker.terminate();
       setText(data.text);
-      const cleanText = normalize(data.text);
-      const matched = members.filter((m) => normalize(m.characterName).length > 1 && cleanText.includes(normalize(m.characterName)));
-      const lines = data.text.split(/\r?\n/).map((line) => line.replace(/\bLv\.?\s*\d+.*/i, '').trim()).filter((line) => line.length > 1 && !/^lv\.?\s*\d+/i.test(line));
-      const uniqueLines = [...new Set(lines)].slice(0, 30);
-      setResult([...matched.map((m) => ({ name: m.characterName, state: 'registered', detail: '등록된 클랜원과 일치' })), ...uniqueLines.filter((line) => !matched.some((m) => normalize(m.characterName) === normalize(line))).map((line) => ({ name: line, state: 'review', detail: 'OCR 인식 결과 · 확인 필요' }))]);
-      setStatus(matched.length ? `${matched.length}명의 등록 클랜원을 찾았습니다.` : '자동 일치된 클랜원이 없습니다. 인식 결과를 확인해 주세요.');
+      const memberByNormalized = new Map(members.map((m) => [normalize(m.characterName), m.characterName]));
+      const names = extractOcrNames(data.text, members).slice(0, 40);
+      const registeredCount = names.filter((name) => memberByNormalized.has(normalize(name))).length;
+      setResult(names.map((name) => {
+        const registeredName = memberByNormalized.get(normalize(name));
+        return registeredName
+          ? { name: registeredName, state: 'registered', detail: '등록된 클랜원과 일치' }
+          : { name, state: 'review', detail: 'OCR 인식 결과 · 확인 필요' };
+      }));
+      setStatus(registeredCount ? `${registeredCount}명의 등록 클랜원을 찾았습니다.` : '자동 일치된 클랜원이 없습니다. 인식 결과를 확인해 주세요.');
     } catch {
       setStatus('이미지를 읽지 못했습니다. 이름 부분이 선명하게 보이는 사진으로 다시 시도해 주세요.');
     } finally {
