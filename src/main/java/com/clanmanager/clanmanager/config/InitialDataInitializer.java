@@ -3,8 +3,12 @@ package com.clanmanager.clanmanager.config;
 import com.clanmanager.clanmanager.entity.ActivityCategory;
 import com.clanmanager.clanmanager.entity.ActivitySchedule;
 import com.clanmanager.clanmanager.entity.ActivityType;
+import com.clanmanager.clanmanager.entity.ClanVault;
+import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.repository.ActivityScheduleRepository;
 import com.clanmanager.clanmanager.repository.ActivityTypeRepository;
+import com.clanmanager.clanmanager.repository.ClanVaultRepository;
+import com.clanmanager.clanmanager.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -21,6 +25,8 @@ public class InitialDataInitializer implements ApplicationRunner {
 
     private final ActivityTypeRepository activityTypeRepository;
     private final ActivityScheduleRepository activityScheduleRepository;
+    private final ClanVaultRepository clanVaultRepository;
+    private final MemberRepository memberRepository;
 
     @Override
     @Transactional
@@ -45,6 +51,8 @@ public class InitialDataInitializer implements ApplicationRunner {
 
         deactivateObsoleteTimedTypes();
         deactivateInvalidSchedules();
+        createClanVault();
+        promoteFirstMemberToAdminIfNeeded();
     }
 
     private ActivityType createType(String typeName, ActivityCategory category) {
@@ -83,5 +91,23 @@ public class InitialDataInitializer implements ApplicationRunner {
     private void deactivateInvalidSchedules() {
         activityScheduleRepository.findByDayOfWeekIsNullAndActivityDateIsNull()
                 .forEach(schedule -> schedule.setActive(false));
+    }
+
+    private void createClanVault() {
+        if (!clanVaultRepository.existsById(1L)) {
+            clanVaultRepository.save(ClanVault.builder()
+                    .vaultId(1L)
+                    .balanceDiamonds(0L)
+                    .build());
+        }
+    }
+
+    private void promoteFirstMemberToAdminIfNeeded() {
+        if (!memberRepository.existsByRole(MemberRole.ADMIN)) {
+            memberRepository.findFirstByOrderByMemberIdAsc().ifPresent(member -> {
+                member.setRole(MemberRole.ADMIN);
+                memberRepository.save(member);
+            });
+        }
     }
 }

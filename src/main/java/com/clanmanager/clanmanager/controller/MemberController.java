@@ -3,6 +3,7 @@ package com.clanmanager.clanmanager.controller;
 import com.clanmanager.clanmanager.dto.MemberInfoResponseDto;
 import com.clanmanager.clanmanager.entity.AttendanceStatus;
 import com.clanmanager.clanmanager.entity.Member;
+import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -72,6 +73,44 @@ public class MemberController {
         member.setStatus(status);
         memberRepository.save(member);
         return Map.of("message", "상태 변경 완료", "memberId", member.getMemberId(), "status", member.getStatus());
+    }
+
+    @PatchMapping("/{memberId}/role")
+    public Map<String, Object> updateRole(
+            @PathVariable Long memberId,
+            @RequestParam String role,
+            @RequestParam Long adminMemberId
+    ) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 권한을 변경할 수 있습니다.");
+        }
+
+        Member member = findMember(memberId);
+        MemberRole nextRole;
+        try {
+            nextRole = MemberRole.valueOf(role.toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("존재하지 않는 권한입니다.");
+        }
+
+        if (member.getRole() == MemberRole.ADMIN && nextRole == MemberRole.MEMBER
+                && memberRepository.countByRole(MemberRole.ADMIN) <= 1) {
+            throw new IllegalArgumentException("마지막 운영자는 일반 클랜원으로 변경할 수 없습니다.");
+        }
+
+        if (member.getMemberId().equals(adminMemberId) && nextRole == MemberRole.MEMBER) {
+            throw new IllegalArgumentException("본인의 운영자 권한은 직접 해제할 수 없습니다.");
+        }
+
+        member.setRole(nextRole);
+        memberRepository.save(member);
+        return Map.of(
+                "message", "권한 변경 완료",
+                "memberId", member.getMemberId(),
+                "characterName", member.getCharacterName(),
+                "role", member.getRole().name()
+        );
     }
 
     private Member findMember(Long memberId) {

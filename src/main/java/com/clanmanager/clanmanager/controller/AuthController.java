@@ -30,14 +30,15 @@ public class AuthController {
                 .characterName(request.getCharacterName())
                 .password(request.getPassword())
                 .combatPower(request.getCombatPower())
-                .role(MemberRole.MEMBER)
+                .role(memberRepository.count() == 0 ? MemberRole.ADMIN : MemberRole.MEMBER)
                 .active(true)
                 .build());
 
         return Map.of(
                 "message", "회원가입 성공",
                 "memberId", savedMember.getMemberId(),
-                "characterName", savedMember.getCharacterName()
+                "characterName", savedMember.getCharacterName(),
+                "role", savedMember.getRole().name()
         );
     }
 

@@ -1,0 +1,175 @@
+.vault-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(420px, 1.6fr);
+  gap: 18px;
+}
+
+.vault-balance {
+  min-height: 270px;
+  display: grid;
+  align-content: center;
+  text-align: center;
+  background: linear-gradient(135deg, #f4f8ff, #fff);
+}
+
+.vault-icon {
+  font-size: 3rem;
+}
+
+.vault-balance p {
+  margin: 12px 0 5px;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.vault-balance strong {
+  display: block;
+  color: #155eef;
+  font-size: 2.45rem;
+}
+
+.vault-balance small {
+  margin-top: 12px;
+  color: #7b8aa0;
+}
+
+.vault-form-card .section-heading h2 {
+  margin-bottom: 0;
+}
+
+.vault-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.vault-tabs button {
+  padding: 9px 13px;
+  border: 1px solid #cfe0f3;
+  border-radius: 9px;
+  background: #f8fbff;
+  color: #41516a;
+  font-weight: 800;
+}
+
+.vault-tabs button.active {
+  border-color: #2f7df0;
+  background: #2f7df0;
+  color: #fff;
+}
+
+.vault-form {
+  display: grid;
+  gap: 13px;
+}
+
+.vault-form label {
+  display: grid;
+  gap: 7px;
+  color: #40516a;
+  font-weight: 750;
+}
+
+.vault-form input,
+.vault-form select {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid #cbd8e8;
+  border-radius: 9px;
+  background: #fff;
+  outline: 0;
+}
+
+.vault-message {
+  margin: 0;
+  color: #2563eb;
+  font-weight: 750;
+}
+
+.vault-table {
+  min-width: 900px;
+}
+
+.vault-type {
+  display: inline-flex;
+  min-width: 68px;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: .8rem;
+  font-weight: 900;
+}
+
+.vault-type.green {
+  background: #12a36d;
+}
+
+.vault-type.blue {
+  background: #2878e8;
+}
+
+.vault-type.red {
+  background: #e23b4f;
+}
+
+.vault-type.purple {
+  background: #7c3aed;
+}
+
+.role-card {
+  margin-top: 20px;
+}
+
+.role-table {
+  min-width: 760px;
+}
+
+.role-pill {
+  display: inline-flex;
+  min-width: 62px;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 900;
+}
+
+.role-pill.admin {
+  background: #fff4d9;
+  color: #b77900;
+}
+
+.role-pill.member {
+  background: #edf3fa;
+  color: #52627a;
+}
+
+.role-button {
+  padding: 7px 11px;
+  border-radius: 8px;
+  background: #eaf3ff;
+  color: #1d66d5;
+  font-weight: 800;
+}
+
+.role-button.danger {
+  background: #fff1f3;
+  color: #d82743;
+}
+
+.role-button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+@media (max-width: 800px) {
+  .vault-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-balance strong {
+    font-size: 2rem;
+  }
+}

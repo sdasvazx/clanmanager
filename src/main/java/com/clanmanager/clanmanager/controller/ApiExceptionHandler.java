@@ -16,6 +16,11 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(Map.of("message", exception.getMessage()));
     }
 
+    @ExceptionHandler(SecurityException.class)
+    public ResponseEntity<Map<String, String>> handleForbidden(SecurityException exception) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", exception.getMessage()));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDuplicate(DataIntegrityViolationException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
