@@ -3,6 +3,7 @@ import { createWorker } from 'tesseract.js';
 import './roster.css';
 import './vault.css';
 import './manager.css';
+import './notice.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api';
 
@@ -206,6 +207,17 @@ function NoticePanel({ member, notices, onReload }) {
     }
   };
 
+  const remove = async (notice) => {
+    if (!window.confirm(`공지 "${notice.title}"을 삭제할까요?`)) return;
+    setMessage('');
+    try {
+      await request(`/notices/${notice.noticeId}?memberId=${member.memberId}`, { method: 'DELETE' });
+      await onReload();
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
   return (
     <section className="white-card notices">
       <div className="section-heading">
@@ -213,7 +225,7 @@ function NoticePanel({ member, notices, onReload }) {
         {canManage && <button className="small-primary" onClick={() => setOpen(!open)}>+ 추가</button>}
       </div>
       {open && <form className="inline-form" onSubmit={save}><input required placeholder="공지 제목" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /><textarea required placeholder="공지 내용" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /><button className="primary-button">공지 등록</button>{message && <p className="form-error">{message}</p>}</form>}
-      {notices.length ? notices.map((n) => <article key={n.noticeId} className="notice-row"><b>{n.title}</b><p>{n.content}</p><small>{new Date(n.createdAt).toLocaleString('ko-KR')}</small></article>) : <div className="empty-state">아직 등록된 공지사항이 없습니다.</div>}
+      {notices.length ? notices.map((n) => <article key={n.noticeId} className="notice-row"><div className="notice-row-head"><b>{n.title}</b>{canManage && <button className="notice-delete-button" onClick={() => remove(n)}>삭제</button>}</div><p>{n.content}</p><small>{new Date(n.createdAt).toLocaleString('ko-KR')}</small></article>) : <div className="empty-state">아직 등록된 공지사항이 없습니다.</div>}
     </section>
   );
 }

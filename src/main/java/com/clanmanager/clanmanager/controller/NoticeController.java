@@ -49,4 +49,18 @@ public class NoticeController {
                 .build());
         return NoticeResponseDto.from(saved);
     }
+
+    @DeleteMapping("/{noticeId}")
+    public void deleteNotice(@PathVariable Long noticeId, @RequestParam Long memberId) {
+        Member requester = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 클랜원입니다."));
+        if (requester.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 공지사항을 삭제할 수 있습니다.");
+        }
+
+        Notice notice = noticeRepository.findById(noticeId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 공지사항입니다."));
+        notice.setVisible(false);
+        noticeRepository.save(notice);
+    }
 }
