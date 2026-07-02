@@ -141,6 +141,74 @@
   font-size: 1.05rem;
 }
 
+.participation-period-card {
+  display: grid;
+  gap: 14px;
+}
+
+.participation-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, .8fr) minmax(240px, 1fr) minmax(220px, .8fr);
+  gap: 12px;
+}
+
+.participation-controls label {
+  display: grid;
+  gap: 7px;
+  color: #41516a;
+  font-size: .9rem;
+  font-weight: 800;
+}
+
+.participation-controls input,
+.participation-controls select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #cbd8e8;
+  border-radius: 10px;
+  background: #fff;
+  outline: 0;
+}
+
+.period-save-button {
+  justify-self: start;
+}
+
+.participation-search-result {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(130px, .7fr));
+  gap: 12px;
+  align-items: stretch;
+  padding: 14px;
+  border: 1px solid #d8e6f8;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.participation-search-result > div,
+.participation-search-result > p {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.participation-search-result b {
+  font-size: 1.05rem;
+}
+
+.participation-search-result span,
+.participation-search-result small {
+  color: #64748b;
+}
+
+.participation-search-result strong {
+  font-size: 1.35rem;
+  color: #2563eb;
+}
+
 .ranking-footnote {
   margin: 13px 0 0;
   color: #64748b;
@@ -162,6 +230,11 @@
 
   .lobby-ranking-card {
     min-height: auto;
+  }
+
+  .participation-controls,
+  .participation-search-result {
+    grid-template-columns: 1fr;
   }
 }
 

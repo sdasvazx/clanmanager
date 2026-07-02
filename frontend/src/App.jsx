@@ -52,6 +52,28 @@ async function request(path, options = {}) {
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 const money = (value) => `${formatNumber(value)} 다이아`;
 const today = () => new Date().toISOString().slice(0, 10);
+const PARTICIPATION_PERIOD_START = '2026-07-08';
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const formatLocalDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const dateOnly = (value) => {
+  const date = new Date(`${value}T00:00:00`);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+const addDays = (value, days) => {
+  const date = dateOnly(value);
+  date.setDate(date.getDate() + days);
+  return formatLocalDate(date);
+};
+const getParticipationPeriod = (index) => {
+  const start = addDays(PARTICIPATION_PERIOD_START, index * 14);
+  const end = addDays(start, 14);
+  return { index, start, end };
+};
+const getCurrentParticipationPeriodIndex = () => {
+  const diff = Math.floor((dateOnly(today()) - dateOnly(PARTICIPATION_PERIOD_START)) / MS_PER_DAY);
+  return Math.max(0, Math.floor(diff / 14));
+};
+const defaultPeriodName = ({ index, start, end }) => `${index + 1}회차 (${start} ~ ${end})`;
 const toMemberId = (value) => {
   const id = Number(value?.member?.memberId ?? value?.memberId ?? value);
   return Number.isFinite(id) ? id : null;
@@ -387,29 +409,136 @@ function ProfileCard({ member, info }) {
 
 function Metric({ label, value, caption, tone }) { return <div className={`metric ${tone}`}><p>{label}</p><strong>{value}</strong><small>{caption}</small></div>; }
 
-function Participation() {
+function Participation({ member }) {
   const [members, setMembers] = useState([]);
   const [attendances, setAttendances] = useState([]);
+  const [periodIndex, setPeriodIndex] = useState(getCurrentParticipationPeriodIndex());
+  const [periodNames, setPeriodNames] = useState({});
+  const [editingPeriodName, setEditingPeriodName] = useState('');
+  const [periodMessage, setPeriodMessage] = useState('');
+  const [searchName, setSearchName] = useState('');
+
   useEffect(() => {
-    Promise.allSettled([request('/members'), request('/attendances')]).then(([memberResult, attendanceResult]) => {
+    Promise.allSettled([request('/members'), request('/attendances'), request('/participation-periods')]).then(([memberResult, attendanceResult, periodResult]) => {
       if (memberResult.status === 'fulfilled') setMembers(Array.isArray(memberResult.value) ? memberResult.value : []);
       if (attendanceResult.status === 'fulfilled') setAttendances(Array.isArray(attendanceResult.value) ? attendanceResult.value : []);
+      if (periodResult.status === 'fulfilled' && Array.isArray(periodResult.value)) {
+        setPeriodNames(Object.fromEntries(periodResult.value.map((period) => [period.periodIndex, period.periodName])));
+      }
     });
   }, []);
+
+  const period = getParticipationPeriod(periodIndex);
+  const periodName = periodNames[periodIndex] || defaultPeriodName(period);
+  useEffect(() => { setEditingPeriodName(periodName); }, [periodName]);
+  const periodOptions = useMemo(() => {
+    const current = getCurrentParticipationPeriodIndex();
+    const maxIndex = Math.max(current + 2, periodIndex + 1);
+    return Array.from({ length: maxIndex + 1 }, (_, index) => getParticipationPeriod(index));
+  }, [periodIndex]);
+
+  const filteredAttendances = useMemo(() => attendances.filter((row) => {
+    if (row.status !== 'ATTENDED') return false;
+    const attendanceDate = row.attendanceDate;
+    return attendanceDate >= period.start && attendanceDate < period.end;
+  }), [attendances, period.start, period.end]);
+
   const rows = useMemo(() => {
     const counts = new Map();
-    attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => {
+    filteredAttendances.forEach((row) => {
       const memberId = toMemberId(row);
       if (memberId !== null) counts.set(memberId, (counts.get(memberId) || 0) + 1);
     });
     const top = Math.max(0, ...members.map((m) => counts.get(toMemberId(m)) || 0));
     return members.map((m) => {
       const count = counts.get(toMemberId(m)) || 0;
-      return { ...m, count, rate: top ? Math.round((count / top) * 1000) / 10 : 0 };
+      return { ...m, count, rate: top ? Math.round((count / top) * 1000) / 10 : 0, topCount: top };
     }).sort((a, b) => b.count - a.count || (b.combatPower || 0) - (a.combatPower || 0));
-  }, [members, attendances]);
+  }, [members, filteredAttendances]);
+
   const groups = groupByClan(rows);
-  return <><div className="page-title"><h1>참여율·기여율 조회</h1><p>가장 많이 참석한 캐릭터를 100%로 잡고, 클랜별로 나눠 계산 결과를 표시합니다.</p></div><section className="white-card"><div className="info-banner"><b>참여율 계산 기준</b><span>내 참석 횟수 / 1등 참석 횟수 × 100</span></div>{groups.map(([clan, list]) => <div className="clan-ranking-block" key={clan}><div className="section-heading"><h2>{clan}</h2><span className="result-count">{list.length}명</span></div><div className="table-wrap"><table className="data-table"><thead><tr><th>순위</th><th>닉네임</th><th>참석</th><th>참여율</th><th>기여율</th></tr></thead><tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td>{m.count}회</td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.rate}%</td></tr>)}</tbody></table></div></div>)}{!rows.length && <div className="empty-state">클랜원이 등록되면 이곳에 순위가 표시됩니다.</div>}</section></>;
+  const searchedMember = useMemo(() => {
+    const keyword = normalize(searchName);
+    if (!keyword) return null;
+    return rows.find((m) => normalize(m.characterName).includes(keyword)) || null;
+  }, [rows, searchName]);
+
+  const savePeriodName = async () => {
+    if (member?.role !== 'ADMIN') return;
+    setPeriodMessage('');
+    try {
+      const saved = await request(`/participation-periods/${periodIndex}?adminMemberId=${member.memberId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ startDate: period.start, endDate: period.end, periodName: editingPeriodName }),
+      });
+      setPeriodNames((prev) => ({ ...prev, [saved.periodIndex]: saved.periodName }));
+      setPeriodMessage('회차 이름을 저장했습니다.');
+    } catch (err) {
+      setPeriodMessage(err.message);
+    }
+  };
+
+  return (
+    <>
+      <div className="page-title">
+        <h1>참여율·기여율 조회</h1>
+        <p>2주 회차별로 참여 횟수를 계산하고, 가장 많이 참석한 캐릭터를 100%로 잡습니다.</p>
+      </div>
+      <section className="white-card participation-period-card">
+        <div className="info-banner">
+          <b>참여율 계산 기준</b>
+          <span>선택 회차 내 참석 횟수 / 회차 1등 참석 횟수 × 100</span>
+        </div>
+        <div className="participation-controls">
+          <label>2주 회차
+            <select value={periodIndex} onChange={(e) => setPeriodIndex(Number(e.target.value))}>
+              {periodOptions.map((option) => (
+                <option key={option.index} value={option.index}>{periodNames[option.index] || defaultPeriodName(option)}</option>
+              ))}
+            </select>
+          </label>
+          <label>회차 이름
+            <input value={editingPeriodName} onChange={(e) => setEditingPeriodName(e.target.value)} placeholder="예: 7월 1차 보스 참여율" disabled={member?.role !== 'ADMIN'} />
+          </label>
+          <label>이름 검색
+            <input value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="캐릭터 이름 입력" />
+          </label>
+        </div>
+        {member?.role === 'ADMIN' && <button className="primary-button period-save-button" onClick={savePeriodName}>회차 이름 저장</button>}
+        {periodMessage && <p className="vault-message">{periodMessage}</p>}
+        <p className="subtle">현재 기간: {period.start} 00:00 이상 ~ {period.end} 00:00 미만 · 다음 회차는 {period.end}부터 시작합니다.</p>
+        {searchName && (
+          <div className="participation-search-result">
+            {searchedMember ? (
+              <>
+                <div>
+                  <b>{searchedMember.characterName}</b>
+                  <span>{searchedMember.guildName || '-'} · {searchedMember.characterClass || '-'}</span>
+                </div>
+                <div><small>참석</small><strong>{searchedMember.count}회</strong></div>
+                <div><small>참여율</small><strong>{searchedMember.rate}%</strong></div>
+                <div><small>전투력</small><strong>{formatNumber(searchedMember.combatPower)}</strong></div>
+              </>
+            ) : <p>검색한 이름의 클랜원을 찾지 못했습니다.</p>}
+          </div>
+        )}
+      </section>
+      <section className="white-card">
+        {groups.map(([clan, list]) => (
+          <div className="clan-ranking-block" key={clan}>
+            <div className="section-heading"><h2>{clan}</h2><span className="result-count">{list.length}명</span></div>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead><tr><th>순위</th><th>닉네임</th><th>참석</th><th>참여율</th><th>기여율</th></tr></thead>
+                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td>{m.count}회</td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.rate}%</td></tr>)}</tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+        {!rows.length && <div className="empty-state">클랜원이 등록되면 이곳에 순위가 표시됩니다.</div>}
+      </section>
+    </>
+  );
 }
 
 function Attendance({ member }) {
@@ -1216,6 +1345,6 @@ export default function App() {
   const logout = () => { sessionStorage.removeItem('clanMember'); setMember(null); setPage('lobby'); };
   if (!member) return <AuthScreen onLogin={login} />;
   if (member.role !== 'ADMIN' && adminOnlyPages.has(page)) return <Shell member={member} page={page} setPage={setPage} onLogout={logout}><AccessDenied /></Shell>;
-  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation /> : page === 'attendance' ? <Attendance member={member} /> : page === 'payment' ? <PaymentPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScan /> : page === 'pinball' ? <PinballPage /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : page === 'member-admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} memberOnly /> : <Lobby member={member} setPage={setPage} />;
+  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation member={member} /> : page === 'attendance' ? <Attendance member={member} /> : page === 'payment' ? <PaymentPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScan /> : page === 'pinball' ? <PinballPage /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : page === 'member-admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} memberOnly /> : <Lobby member={member} setPage={setPage} />;
   return <Shell member={member} page={page} setPage={setPage} onLogout={logout}>{view}</Shell>;
 }
