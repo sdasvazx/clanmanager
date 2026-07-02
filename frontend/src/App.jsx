@@ -50,6 +50,41 @@ const formatNumber = (value) => Number(value || 0).toLocaleString();
 const money = (value) => `${formatNumber(value)} 다이아`;
 const today = () => new Date().toISOString().slice(0, 10);
 const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+const clanOptions = ['귀신', '귀신Z', '로망', '운좋은', '게헨나', '미분류'];
+const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
+
+function extractOcrNames(text, registeredMembers = []) {
+  const memberByNormalized = new Map(registeredMembers.map((m) => [normalize(m.characterName), m.characterName]));
+  const wholeText = String(text ?? '');
+  const matched = registeredMembers
+    .filter((m) => normalize(m.characterName).length > 1 && normalize(wholeText).includes(normalize(m.characterName)))
+    .map((m) => m.characterName);
+  const guessed = wholeText
+    .split(/\r?\n/)
+    .flatMap((line) => line.split(/\s{2,}|\t|,/))
+    .map((line) => line.replace(/Lv\.?\s*\d+/gi, '').replace(/레벨\s*\d+/g, '').replace(/[|()[\]{}]/g, ' ').trim())
+    .filter((line) => /^[0-9A-Za-z가-힣_-]{2,12}$/.test(line))
+    .map((line) => memberByNormalized.get(normalize(line)) ?? line);
+  return [...new Set([...matched, ...guessed])];
+}
+
+function namesFromText(value) {
+  return [...new Set(String(value ?? '').split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean))];
+}
+
+function splitKoreanTime(value) {
+  const raw = String(value ?? '').slice(0, 5);
+  const [hourText = '0', minuteText = '00'] = raw.split(':');
+  const hour = Number(hourText);
+  const period = hour >= 12 ? '오후' : '오전';
+  const displayHour = hour % 12 || 12;
+  return { period, time: `${String(displayHour).padStart(2, '0')}:${minuteText}` };
+}
+
+function splitDateTimeKoreanTime(value) {
+  if (!value) return { period: '', time: '-' };
+  return splitKoreanTime(new Date(value).toTimeString().slice(0, 5));
+}
 
 function AuthScreen({ onLogin }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -225,6 +260,226 @@ function Participation() {
 }
 
 function Attendance({ member }) {
+  const [records, setRecords] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [selectedRecord, setSelectedRecord] = useState(null);
+  const [selectedMembers, setSelectedMembers] = useState([]);
+  const [form, setForm] = useState({ bossDate: today(), cutTime: '21:00', bossName: '21시 보스', score: 1, clanName: '로망', memo: '' });
+  const [draftByClan, setDraftByClan] = useState({});
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState('');
+  const [ocrStatus, setOcrStatus] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState('');
+
+  const currentDraftNames = draftByClan[form.clanName] ?? '';
+  const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
+  const updateCurrentDraft = (value) => setDraftByClan((prev) => ({ ...prev, [form.clanName]: value }));
+
+  const load = () => Promise.all([request('/boss-participations'), request('/members')])
+    .then(([recordRows, memberRows]) => { setRecords(recordRows); setMembers(memberRows); })
+    .catch((err) => setMessage(err.message));
+
+  useEffect(() => { load(); }, []);
+
+  const selectFile = (event) => {
+    const nextFile = event.target.files?.[0];
+    setFile(nextFile || null);
+    setPreview(nextFile ? URL.createObjectURL(nextFile) : '');
+    setOcrStatus('');
+    setProgress(0);
+  };
+
+  const scanImage = async () => {
+    if (!file) return;
+    setOcrStatus('스샷 글자를 읽는 중입니다.');
+    setProgress(0);
+    try {
+      const worker = await createWorker('kor+eng', 1, {
+        logger: (log) => {
+          if (log.status === 'recognizing text') setProgress(Math.round(log.progress * 100));
+        },
+      });
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+      const names = extractOcrNames(data.text, members);
+      const merged = [...new Set([...namesFromText(currentDraftNames), ...names])];
+      updateCurrentDraft(merged.join('\n'));
+      setOcrStatus(`${names.length}명 후보를 찾았습니다. 저장 전 명단을 확인해 주세요.`);
+    } catch (err) {
+      setOcrStatus(`OCR 처리 실패: ${err.message}`);
+    }
+  };
+
+  const saveRecord = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    const entries = Object.entries(draftByClan)
+      .flatMap(([clanName, text]) => namesFromText(text).map((characterName) => ({ characterName, clanName })));
+    if (!entries.length) {
+      setMessage('참여 명단을 먼저 입력하거나 스샷에서 인식해 주세요.');
+      return;
+    }
+    try {
+      await request('/boss-participations', {
+        method: 'POST',
+        body: JSON.stringify({
+          createdByMemberId: member.memberId,
+          bossDate: form.bossDate,
+          cutTime: form.cutTime,
+          bossName: form.bossName,
+          score: Number(form.score || 1),
+          memo: form.memo,
+          members: entries,
+        }),
+      });
+      setDraftByClan({});
+      setFile(null);
+      setPreview('');
+      setOcrStatus('');
+      await load();
+      setMessage('보스 참여내역을 저장했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const openRoster = async (record) => {
+    setSelectedRecord(record);
+    setSelectedMembers([]);
+    try {
+      setSelectedMembers(await request(`/boss-participations/${record.recordId}/members`));
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const groupedSelectedMembers = useMemo(() => selectedMembers.reduce((acc, row) => {
+    const key = row.clanName || '미분류';
+    acc[key] = [...(acc[key] || []), row];
+    return acc;
+  }, {}), [selectedMembers]);
+
+  const visibleRecords = records.slice(0, 100);
+
+  return (
+    <>
+      <div className="page-title">
+        <h1>보스 참여내역 조회</h1>
+        <p>각 클랜 스크린샷을 OCR로 읽어 보스 회차별 참석 인원과 명단을 기록합니다.</p>
+      </div>
+
+      {member.role === 'ADMIN' && (
+        <section className="white-card boss-register-card">
+          <div className="section-heading">
+            <div>
+              <h2>보스 참여내역 등록</h2>
+              <p className="subtle">클랜을 선택하고 스샷을 올리면 이름 후보가 아래 명단에 들어갑니다. 틀린 이름은 직접 수정 후 저장하세요.</p>
+            </div>
+            <span className="result-count">{totalDraftCount}명 준비됨</span>
+          </div>
+          <form className="boss-form" onSubmit={saveRecord}>
+            <label>날짜<input type="date" value={form.bossDate} onChange={(e) => setForm({ ...form, bossDate: e.target.value })} /></label>
+            <label>컷시간<input type="time" value={form.cutTime} onChange={(e) => setForm({ ...form, cutTime: e.target.value })} /></label>
+            <label>보스명<select value={form.bossName} onChange={(e) => setForm({ ...form, bossName: e.target.value })}>{bossOptions.map((boss) => <option key={boss}>{boss}</option>)}</select></label>
+            <label>클랜<select value={form.clanName} onChange={(e) => setForm({ ...form, clanName: e.target.value })}>{clanOptions.map((clan) => <option key={clan}>{clan}</option>)}</select></label>
+            <label>점수<input type="number" min="0" value={form.score} onChange={(e) => setForm({ ...form, score: e.target.value })} /></label>
+            <label className="wide">메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 2성, 정산 제외 등" /></label>
+            <label className="upload-mini">
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectFile} />
+              {preview ? <img src={preview} alt="보스 참여 스크린샷" /> : <span>스샷 선택</span>}
+            </label>
+            <button type="button" className="outline-button no-margin" disabled={!file || ocrStatus.includes('읽는 중')} onClick={scanImage}>
+              {ocrStatus.includes('읽는 중') ? `인식 중 ${progress}%` : '글자 인식'}
+            </button>
+            <label className="boss-names">현재 선택 클랜 명단<textarea value={currentDraftNames} onChange={(e) => updateCurrentDraft(e.target.value)} placeholder="한 줄에 한 명씩 입력됩니다." /></label>
+            <button className="primary-button">참여내역 저장</button>
+          </form>
+          <div className="boss-draft-summary">
+            {clanOptions.map((clan) => <span key={clan} className={namesFromText(draftByClan[clan]).length ? 'ready' : ''}>{clan} {namesFromText(draftByClan[clan]).length}명</span>)}
+          </div>
+          {ocrStatus && <div className="scan-status">{ocrStatus}</div>}
+          {message && <p className="vault-message">{message}</p>}
+        </section>
+      )}
+
+      <section className="white-card boss-history-card">
+        <div className="filters">
+          <select><option>전체 날짜</option></select>
+          <input placeholder="보스명" />
+          <button className="dark-button">조회</button>
+        </div>
+        <p className="subtle">조회 결과 {records.length}건 · 1/{Math.max(1, Math.ceil(records.length / 30))}페이지</p>
+        <div className="boss-table-scroll">
+          <table className="data-table boss-history-table">
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>컷시간</th>
+                <th>출석입력시간</th>
+                <th>보스명</th>
+                <th>출석인원</th>
+                <th>점수</th>
+                <th>참여명단</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRecords.map((record) => (
+                <tr key={record.recordId}>
+                  <td>{record.bossDate}</td>
+                  <td><TimeBadge value={record.cutTime} /></td>
+                  <td><TimeBadge value={record.submittedAt} dateTime /></td>
+                  <td>{record.bossName}</td>
+                  <td><ClanCountBadges record={record} /></td>
+                  <td><b>{record.score}</b></td>
+                  <td><button className="roster-button" onClick={() => openRoster(record)}>명단보기</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!records.length && <div className="empty-state">아직 등록된 보스 참여내역이 없습니다.</div>}
+      </section>
+
+      {selectedRecord && (
+        <section className="white-card boss-roster-card">
+          <div className="section-heading">
+            <div>
+              <h2>{selectedRecord.bossDate} · {selectedRecord.bossName} 명단</h2>
+              <p className="subtle">총 {selectedMembers.length}명 · 미등록 이름은 확인 필요로 표시됩니다.</p>
+            </div>
+            <button className="outline-button no-margin" onClick={() => setSelectedRecord(null)}>닫기</button>
+          </div>
+          <div className="boss-roster-groups">
+            {Object.entries(groupedSelectedMembers).map(([clanName, list]) => (
+              <div className="boss-roster-group" key={clanName}>
+                <h3>{clanName} <span>{list.length}명</span></h3>
+                <div>{list.map((row) => <span className={row.matched ? 'member-chip matched' : 'member-chip review'} key={row.participationMemberId}>{row.characterName}</span>)}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function ClanCountBadges({ record }) {
+  const entries = Object.entries(record.clanCounts || {});
+  return (
+    <div className="clan-counts">
+      <span className="clan-badge total">전체 {record.totalCount}명</span>
+      {entries.map(([clan, count]) => <span className={`clan-badge ${normalize(clan)}`} key={clan}>{clan} {count}명</span>)}
+    </div>
+  );
+}
+
+function TimeBadge({ value, dateTime = false }) {
+  const { period, time } = dateTime ? splitDateTimeKoreanTime(value) : splitKoreanTime(value);
+  return <>{period && <span className="time-badge">{period}</span>} {time}</>;
+}
+
+function LegacyAttendance({ member }) {
   const [rows, setRows] = useState([]);
   const [members, setMembers] = useState([]);
   const [activities, setActivities] = useState([]);

@@ -148,6 +148,247 @@
   margin: 12px 0;
 }
 
+.boss-register-card {
+  max-width: 1180px;
+  margin: 0 auto 18px;
+}
+
+.boss-form {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-top: 16px;
+}
+
+.boss-form label {
+  display: grid;
+  gap: 6px;
+  color: #41516a;
+  font-size: .86rem;
+  font-weight: 750;
+}
+
+.boss-form input,
+.boss-form select,
+.boss-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd8e8;
+  border-radius: 9px;
+  background: #fff;
+  outline: 0;
+}
+
+.boss-form .wide {
+  grid-column: span 2;
+}
+
+.boss-names {
+  grid-column: 1 / -2;
+}
+
+.boss-names textarea {
+  min-height: 130px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.boss-draft-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.boss-draft-summary span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #64748b;
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.boss-draft-summary span.ready {
+  background: #e8f8ef;
+  color: #128244;
+}
+
+.upload-mini {
+  min-height: 88px;
+}
+
+.upload-mini input {
+  display: none;
+}
+
+.upload-mini span,
+.upload-mini img {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 88px;
+  border: 1px dashed #b9c8dc;
+  border-radius: 12px;
+  background: #f8fbff;
+  color: #64748b;
+  object-fit: cover;
+}
+
+.no-margin {
+  margin-left: 0;
+}
+
+.boss-history-card {
+  max-width: 1280px;
+  margin: 0 auto 18px;
+  padding-bottom: 12px;
+}
+
+.boss-table-scroll {
+  max-height: 520px;
+  overflow: auto;
+  margin-top: 10px;
+  border-radius: 14px;
+}
+
+.boss-history-table {
+  min-width: 980px;
+}
+
+.boss-history-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fff;
+}
+
+.boss-history-table td {
+  height: 86px;
+  vertical-align: middle;
+}
+
+.time-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: #efe7ff;
+  color: #7c3aed;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.clan-counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  max-width: 260px;
+  margin: 0 auto;
+}
+
+.clan-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #64748b;
+  color: #fff;
+  font-size: .78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.clan-badge.total {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.clan-badge.귀신 {
+  background: #cc1414;
+}
+
+.clan-badge.귀신z {
+  background: #00d970;
+  color: #062b19;
+}
+
+.clan-badge.로망 {
+  background: #3477ef;
+}
+
+.clan-badge.운좋은 {
+  background: #a100d6;
+}
+
+.clan-badge.게헨나 {
+  background: #f97316;
+}
+
+.roster-button {
+  padding: 9px 15px;
+  border: 1px solid #9bd8ff;
+  border-radius: 999px;
+  background: #ecf9ff;
+  color: #0086d1;
+  font-weight: 850;
+}
+
+.boss-roster-card {
+  max-width: 1180px;
+  margin: 0 auto 18px;
+}
+
+.boss-roster-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.boss-roster-group {
+  padding: 16px;
+  border: 1px solid #dce6f1;
+  border-radius: 14px;
+  background: #f9fbfe;
+}
+
+.boss-roster-group h3 {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 1rem;
+}
+
+.boss-roster-group h3 span {
+  color: #2563eb;
+}
+
+.boss-roster-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.member-chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: .84rem;
+  font-weight: 750;
+}
+
+.member-chip.matched {
+  background: #e8f8ef;
+  color: #128244;
+}
+
+.member-chip.review {
+  background: #fff4e5;
+  color: #c05621;
+}
+
 .admin-edit-form label,
 .admin-create-form label,
 .password-form label {
@@ -180,8 +421,15 @@
   .detail-grid,
   .admin-edit-form,
   .admin-create-form,
-  .password-form {
+  .password-form,
+  .boss-form,
+  .boss-roster-groups {
     grid-template-columns: 1fr;
+  }
+
+  .boss-form .wide,
+  .boss-names {
+    grid-column: 1;
   }
 }
 
