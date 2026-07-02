@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createWorker } from 'tesseract.js';
 import './roster.css';
 import './vault.css';
@@ -1004,7 +1004,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
         <form className="admin-create-form" onSubmit={createMember}>
           <label>닉네임<input required value={createForm.characterName} onChange={(e) => setCreateForm({ ...createForm, characterName: e.target.value })} /></label>
           <label>임시 비밀번호<input required value={createForm.initialPassword} onChange={(e) => setCreateForm({ ...createForm, initialPassword: e.target.value })} /></label>
-          <label>길드<input value={createForm.guildName} onChange={(e) => setCreateForm({ ...createForm, guildName: e.target.value })} /></label>
+          <label>클랜<select value={createForm.guildName} onChange={(e) => setCreateForm({ ...createForm, guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.slice(0, 5).map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
           <label>클래스<input value={createForm.characterClass} onChange={(e) => setCreateForm({ ...createForm, characterClass: e.target.value })} /></label>
           <label>레벨<input type="number" min="0" value={createForm.level} onChange={(e) => setCreateForm({ ...createForm, level: e.target.value })} /></label>
           <label>전투력<input type="number" min="0" value={createForm.combatPower} onChange={(e) => setCreateForm({ ...createForm, combatPower: e.target.value })} /></label>
@@ -1020,20 +1020,6 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
           <span className="result-count">{members.length}명</span>
         </div>
         {message && <p className="vault-message">{message}</p>}
-        {editId && (
-          <form className="admin-edit-form" onSubmit={saveProfile}>
-            <label>닉네임<input required value={editForm.characterName} onChange={(e) => setEditForm({ ...editForm, characterName: e.target.value })} /></label>
-            <label>길드<input value={editForm.guildName} onChange={(e) => setEditForm({ ...editForm, guildName: e.target.value })} /></label>
-            <label>클래스<input value={editForm.characterClass} onChange={(e) => setEditForm({ ...editForm, characterClass: e.target.value })} /></label>
-            <label>레벨<input type="number" min="0" value={editForm.level} onChange={(e) => setEditForm({ ...editForm, level: e.target.value })} /></label>
-            <label>전투력<input required type="number" min="0" value={editForm.combatPower} onChange={(e) => setEditForm({ ...editForm, combatPower: e.target.value })} /></label>
-            <label>직급<input placeholder="예: 장로, 정예, 일반" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} /></label>
-            <label>상태<input placeholder="예: 활동중, 휴면, 탈퇴예정" value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} /></label>
-            <label>활성<select value={editForm.active ? 'true' : 'false'} onChange={(e) => setEditForm({ ...editForm, active: e.target.value === 'true' })}><option value="true">활성</option><option value="false">비활성</option></select></label>
-            <button className="primary-button" disabled={loadingId === editId}>저장</button>
-            <button type="button" className="role-button" onClick={() => setEditId(null)}>취소</button>
-          </form>
-        )}
         {resetTarget && (
           <form className="admin-reset-form" onSubmit={savePasswordReset}>
             <div>
@@ -1049,22 +1035,42 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
           <table className="data-table role-table">
             <thead><tr><th>닉네임</th><th>길드</th><th>클래스</th><th>레벨</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>비밀번호</th><th>권한변경</th><th>삭제</th></tr></thead>
             <tbody>{members.map((row) => (
-              <tr key={row.memberId}>
-                <td>{row.characterName}</td>
-                <td>{row.guildName || '-'}</td>
-                <td>{row.characterClass || '-'}</td>
-                <td>{row.level ? `Lv.${row.level}` : '-'}</td>
-                <td>{formatNumber(row.combatPower)}</td>
-                <td>{row.rank || '-'}</td>
-                <td>{row.active ? (row.status || '활성') : '비활성'}</td>
-                <td><span className={row.role === 'ADMIN' ? 'role-pill admin' : 'role-pill member'}>{row.role === 'ADMIN' ? '운영자' : '클랜원'}</span></td>
-                <td><button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>수정</button></td>
-                <td><button className="role-button key-button" title="비밀번호 초기화" disabled={loadingId === row.memberId} onClick={() => startPasswordReset(row)}>🔑</button></td>
-                <td>{row.role === 'ADMIN'
-                  ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button>
-                  : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td>
-                <td><button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => deleteMember(row)}>{row.memberId === member.memberId ? '본인 삭제 불가' : '삭제'}</button></td>
-              </tr>
+              <React.Fragment key={row.memberId}>
+                <tr>
+                  <td>{row.characterName}</td>
+                  <td>{row.guildName || '-'}</td>
+                  <td>{row.characterClass || '-'}</td>
+                  <td>{row.level ? `Lv.${row.level}` : '-'}</td>
+                  <td>{formatNumber(row.combatPower)}</td>
+                  <td>{row.rank || '-'}</td>
+                  <td>{row.active ? (row.status || '활성') : '비활성'}</td>
+                  <td><span className={row.role === 'ADMIN' ? 'role-pill admin' : 'role-pill member'}>{row.role === 'ADMIN' ? '운영자' : '클랜원'}</span></td>
+                  <td><button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>{editId === row.memberId ? '수정중' : '수정'}</button></td>
+                  <td><button className="role-button key-button" title="비밀번호 초기화" disabled={loadingId === row.memberId} onClick={() => startPasswordReset(row)}>🔑</button></td>
+                  <td>{row.role === 'ADMIN'
+                    ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button>
+                    : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td>
+                  <td><button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => deleteMember(row)}>{row.memberId === member.memberId ? '본인 삭제 불가' : '삭제'}</button></td>
+                </tr>
+                {editId === row.memberId && (
+                  <tr className="member-edit-row">
+                    <td colSpan="12">
+                      <form className="admin-edit-form inline-member-edit" onSubmit={saveProfile}>
+                        <label>닉네임<input required value={editForm.characterName} onChange={(e) => setEditForm({ ...editForm, characterName: e.target.value })} /></label>
+                        <label>클랜<select value={editForm.guildName} onChange={(e) => setEditForm({ ...editForm, guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.slice(0, 5).map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
+                        <label>클래스<input value={editForm.characterClass} onChange={(e) => setEditForm({ ...editForm, characterClass: e.target.value })} /></label>
+                        <label>레벨<input type="number" min="0" value={editForm.level} onChange={(e) => setEditForm({ ...editForm, level: e.target.value })} /></label>
+                        <label>전투력<input required type="number" min="0" value={editForm.combatPower} onChange={(e) => setEditForm({ ...editForm, combatPower: e.target.value })} /></label>
+                        <label>직급<input placeholder="예: 장로, 정예, 일반" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} /></label>
+                        <label>상태<input placeholder="예: 활동중, 휴면, 탈퇴예정" value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} /></label>
+                        <label>활성<select value={editForm.active ? 'true' : 'false'} onChange={(e) => setEditForm({ ...editForm, active: e.target.value === 'true' })}><option value="true">활성</option><option value="false">비활성</option></select></label>
+                        <button className="primary-button" disabled={loadingId === editId}>저장</button>
+                        <button type="button" className="role-button" onClick={() => setEditId(null)}>취소</button>
+                      </form>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}</tbody>
           </table>
         </div>
