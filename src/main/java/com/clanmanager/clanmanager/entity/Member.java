@@ -1,5 +1,6 @@
 package com.clanmanager.clanmanager.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,11 +22,18 @@ public class Member {
     @Column(nullable = false, unique = true, length = 50)
     private String characterName;
 
+    @JsonIgnore
     @Column(nullable = false)
     private String password;
 
     @Column(nullable = false)
     private Integer combatPower;
+
+    @Column(name = "member_rank", length = 30)
+    private String rank;
+
+    @Column(length = 30)
+    private String status;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

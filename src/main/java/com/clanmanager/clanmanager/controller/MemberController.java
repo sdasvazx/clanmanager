@@ -3,10 +3,17 @@ package com.clanmanager.clanmanager.controller;
 import com.clanmanager.clanmanager.dto.MemberInfoResponseDto;
 import com.clanmanager.clanmanager.entity.AttendanceStatus;
 import com.clanmanager.clanmanager.entity.Member;
+import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -21,23 +28,11 @@ public class MemberController {
 
     @GetMapping("/{memberId}/my-info")
     public MemberInfoResponseDto getMyInfo(@PathVariable Long memberId) {
-
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new RuntimeException("존재하지 않는 회원입니다."));
-
+        Member member = findMember(memberId);
         long myCount = attendanceRepository.countByMemberAndStatus(member, AttendanceStatus.ATTENDED);
-
-        Long topCount = attendanceRepository.findTopAttendanceCount();
-
-        if (topCount == null) {
-            topCount = 0L;
-        }
-
-        double participationRate = 0.0;
-
-        if (topCount > 0) {
-            participationRate = ((double) myCount / topCount) * 100.0;
-        }
+        long topCount = attendanceRepository.findAttendanceCountsByMember(PageRequest.of(0, 1))
+                .stream().findFirst().orElse(0L);
+        double participationRate = topCount == 0 ? 0.0 : ((double) myCount / topCount) * 100.0;
 
         return MemberInfoResponseDto.builder()
                 .memberId(member.getMemberId())
@@ -56,8 +51,7 @@ public class MemberController {
 
     @GetMapping("/{memberId}")
     public Member getMember(@PathVariable Long memberId) {
-        return memberRepository.findById(memberId)
-                .orElseThrow(() -> new RuntimeException("존재하지 않는 회원입니다."));
+        return findMember(memberId);
     }
 
     @GetMapping("/search")
@@ -66,38 +60,61 @@ public class MemberController {
     }
 
     @PatchMapping("/{memberId}/rank")
-    public Map<String, Object> updateRank(
-            @PathVariable Long memberId,
-            @RequestParam String rank
-    ) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new RuntimeException("존재하지 않는 회원입니다."));
-
+    public Map<String, Object> updateRank(@PathVariable Long memberId, @RequestParam String rank) {
+        Member member = findMember(memberId);
         member.setRank(rank);
         memberRepository.save(member);
-
-        return Map.of(
-                "message", "등급 변경 완료",
-                "memberId", member.getMemberId(),
-                "rank", member.getRank()
-        );
+        return Map.of("message", "직급 변경 완료", "memberId", member.getMemberId(), "rank", member.getRank());
     }
 
     @PatchMapping("/{memberId}/status")
-    public Map<String, Object> updateStatus(
-            @PathVariable Long memberId,
-            @RequestParam String status
-    ) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new RuntimeException("존재하지 않는 회원입니다."));
-
+    public Map<String, Object> updateStatus(@PathVariable Long memberId, @RequestParam String status) {
+        Member member = findMember(memberId);
         member.setStatus(status);
         memberRepository.save(member);
+        return Map.of("message", "상태 변경 완료", "memberId", member.getMemberId(), "status", member.getStatus());
+    }
 
+    @PatchMapping("/{memberId}/role")
+    public Map<String, Object> updateRole(
+            @PathVariable Long memberId,
+            @RequestParam String role,
+            @RequestParam Long adminMemberId
+    ) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 권한을 변경할 수 있습니다.");
+        }
+
+        Member member = findMember(memberId);
+        MemberRole nextRole;
+        try {
+            nextRole = MemberRole.valueOf(role.toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("존재하지 않는 권한입니다.");
+        }
+
+        if (member.getRole() == MemberRole.ADMIN && nextRole == MemberRole.MEMBER
+                && memberRepository.countByRole(MemberRole.ADMIN) <= 1) {
+            throw new IllegalArgumentException("마지막 운영자는 일반 클랜원으로 변경할 수 없습니다.");
+        }
+
+        if (member.getMemberId().equals(adminMemberId) && nextRole == MemberRole.MEMBER) {
+            throw new IllegalArgumentException("본인의 운영자 권한은 직접 해제할 수 없습니다.");
+        }
+
+        member.setRole(nextRole);
+        memberRepository.save(member);
         return Map.of(
-                "message", "상태 변경 완료",
+                "message", "권한 변경 완료",
                 "memberId", member.getMemberId(),
-                "status", member.getStatus()
+                "characterName", member.getCharacterName(),
+                "role", member.getRole().name()
         );
+    }
+
+    private Member findMember(Long memberId) {
+        return memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
     }
 }

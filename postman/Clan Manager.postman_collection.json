@@ -1,0 +1,55 @@
+{
+  "info": {
+    "name": "Clan Manager API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api" },
+    { "key": "memberId", "value": "1" },
+    { "key": "activityTypeId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "인증",
+      "item": [
+        {
+          "name": "회원가입",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"characterName\": \"테스트전사\",\n  \"password\": \"1234\",\n  \"combatPower\": 150000\n}" }, "url": "{{baseUrl}}/auth/register" }
+        },
+        {
+          "name": "로그인",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"characterName\": \"테스트전사\",\n  \"password\": \"1234\"\n}" }, "url": "{{baseUrl}}/auth/login" }
+        }
+      ]
+    },
+    {
+      "name": "회원",
+      "item": [
+        { "name": "회원 목록", "request": { "method": "GET", "url": "{{baseUrl}}/members" } },
+        { "name": "회원 단건", "request": { "method": "GET", "url": "{{baseUrl}}/members/{{memberId}}" } },
+        { "name": "회원 검색", "request": { "method": "GET", "url": "{{baseUrl}}/members/search?keyword=%ED%85%8C%EC%8A%A4%ED%8A%B8" } },
+        { "name": "내 정보", "request": { "method": "GET", "url": "{{baseUrl}}/members/{{memberId}}/my-info" } },
+        { "name": "직급 변경", "request": { "method": "PATCH", "url": "{{baseUrl}}/members/{{memberId}}/rank?rank=%EB%B6%80%ED%81%B4%EB%9E%9C%EC%9E%A5" } },
+        { "name": "상태 변경", "request": { "method": "PATCH", "url": "{{baseUrl}}/members/{{memberId}}/status?status=%ED%99%9C%EB%8F%99" } }
+      ]
+    },
+    {
+      "name": "공지와 활동",
+      "item": [
+        { "name": "공지 목록", "request": { "method": "GET", "url": "{{baseUrl}}/notices" } },
+        { "name": "공지 등록", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"title\": \"클랜 공지\",\n  \"content\": \"오늘 21시 보스에 참여해 주세요.\",\n  \"visible\": true\n}" }, "url": "{{baseUrl}}/notices" } },
+        { "name": "활동 종류", "request": { "method": "GET", "url": "{{baseUrl}}/activities" } },
+        { "name": "활동 일정", "request": { "method": "GET", "url": "{{baseUrl}}/activities/schedules" } }
+      ]
+    },
+    {
+      "name": "참석",
+      "item": [
+        { "name": "참석 기록", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"memberId\": {{memberId}},\n  \"activityTypeId\": {{activityTypeId}},\n  \"attendanceDate\": \"2026-06-23\",\n  \"status\": \"ATTENDED\"\n}" }, "url": "{{baseUrl}}/attendances" } },
+        { "name": "전체 참석 기록", "request": { "method": "GET", "url": "{{baseUrl}}/attendances" } },
+        { "name": "회원별 참석 기록", "request": { "method": "GET", "url": "{{baseUrl}}/attendances/member/{{memberId}}" } },
+        { "name": "날짜별 참석 기록", "request": { "method": "GET", "url": "{{baseUrl}}/attendances/date/2026-06-23" } }
+      ]
+    }
+  ]
+}
