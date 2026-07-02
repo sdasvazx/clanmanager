@@ -13,6 +13,7 @@ import lombok.Setter;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -50,18 +51,53 @@ public class AttendanceController {
     }
 
     @GetMapping
-    public List<ActivityAttendance> getAllAttendances() {
-        return attendanceRepository.findAll();
+    public List<Map<String, Object>> getAllAttendances() {
+        return attendanceRepository.findAll().stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @GetMapping("/member/{memberId}")
-    public List<ActivityAttendance> getMemberAttendances(@PathVariable Long memberId) {
-        return attendanceRepository.findByMember_MemberId(memberId);
+    public List<Map<String, Object>> getMemberAttendances(@PathVariable Long memberId) {
+        return attendanceRepository.findByMember_MemberId(memberId).stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @GetMapping("/date/{attendanceDate}")
-    public List<ActivityAttendance> getAttendancesByDate(@PathVariable LocalDate attendanceDate) {
-        return attendanceRepository.findByAttendanceDate(attendanceDate);
+    public List<Map<String, Object>> getAttendancesByDate(@PathVariable LocalDate attendanceDate) {
+        return attendanceRepository.findByAttendanceDate(attendanceDate).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    private Map<String, Object> toResponse(ActivityAttendance attendance) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("attendanceId", attendance.getAttendanceId());
+        response.put("attendanceDate", attendance.getAttendanceDate());
+        response.put("status", attendance.getStatus());
+        response.put("recordedAt", attendance.getRecordedAt());
+
+        Member member = attendance.getMember();
+        if (member != null) {
+            Map<String, Object> memberMap = new LinkedHashMap<>();
+            memberMap.put("memberId", member.getMemberId());
+            memberMap.put("characterName", member.getCharacterName());
+            memberMap.put("guildName", member.getGuildName());
+            memberMap.put("characterClass", member.getCharacterClass());
+            memberMap.put("level", member.getLevel());
+            response.put("member", memberMap);
+        }
+
+        ActivityType activityType = attendance.getActivityType();
+        if (activityType != null) {
+            Map<String, Object> activityMap = new LinkedHashMap<>();
+            activityMap.put("activityTypeId", activityType.getActivityTypeId());
+            activityMap.put("typeName", activityType.getTypeName());
+            response.put("activityType", activityMap);
+        }
+
+        return response;
     }
 
     @Getter

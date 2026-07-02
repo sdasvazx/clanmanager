@@ -49,6 +49,10 @@ async function request(path, options = {}) {
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 const money = (value) => `${formatNumber(value)} 다이아`;
 const today = () => new Date().toISOString().slice(0, 10);
+const toMemberId = (value) => {
+  const id = Number(value?.member?.memberId ?? value?.memberId ?? value);
+  return Number.isFinite(id) ? id : null;
+};
 const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망', '게헨나', '미분류'];
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
@@ -196,7 +200,7 @@ function NoticePanel({ member, notices, onReload }) {
       await request('/notices', { method: 'POST', body: JSON.stringify({ ...form, createdByMemberId: member.memberId }) });
       setForm({ title: '', content: '' });
       setOpen(false);
-      onReload();
+      await onReload();
     } catch (err) {
       setMessage(err.message);
     }
@@ -218,20 +222,42 @@ function Lobby({ member, setPage }) {
   const [notices, setNotices] = useState([]);
   const [members, setMembers] = useState([]);
   const [attendances, setAttendances] = useState([]);
-  const load = () => Promise.all([request('/notices'), request('/members'), request('/attendances')]).then(([a, b, c]) => { setNotices(a); setMembers(b); setAttendances(c); }).catch(() => {});
+  const [message, setMessage] = useState('');
+  const load = async () => {
+    const [noticeResult, memberResult, attendanceResult] = await Promise.allSettled([
+      request('/notices'),
+      request('/members'),
+      request('/attendances'),
+    ]);
+
+    if (noticeResult.status === 'fulfilled') setNotices(Array.isArray(noticeResult.value) ? noticeResult.value : []);
+    if (memberResult.status === 'fulfilled') setMembers(Array.isArray(memberResult.value) ? memberResult.value : []);
+    if (attendanceResult.status === 'fulfilled') setAttendances(Array.isArray(attendanceResult.value) ? attendanceResult.value : []);
+
+    const failed = [
+      noticeResult.status === 'rejected' ? '공지' : null,
+      memberResult.status === 'rejected' ? '클랜원' : null,
+      attendanceResult.status === 'rejected' ? '참여기록' : null,
+    ].filter(Boolean);
+    setMessage(failed.length ? `${failed.join(', ')} 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.` : '');
+  };
   useEffect(() => { load(); }, []);
   const participationRows = useMemo(() => {
     const counts = new Map();
-    attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => counts.set(row.member?.memberId, (counts.get(row.member?.memberId) || 0) + 1));
-    const top = Math.max(0, ...members.map((m) => counts.get(m.memberId) || 0));
+    attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => {
+      const memberId = toMemberId(row);
+      if (memberId !== null) counts.set(memberId, (counts.get(memberId) || 0) + 1);
+    });
+    const top = Math.max(0, ...members.map((m) => counts.get(toMemberId(m)) || 0));
     return members.map((m) => {
-      const count = counts.get(m.memberId) || 0;
+      const count = counts.get(toMemberId(m)) || 0;
       return { ...m, attendanceCount: count, participationRate: top ? Math.round((count / top) * 1000) / 10 : 0 };
     }).sort((a, b) => b.attendanceCount - a.attendanceCount || (b.combatPower || 0) - (a.combatPower || 0));
   }, [members, attendances]);
   return (
     <>
       <NoticePanel member={member} notices={notices} onReload={load} />
+      {message && <div className="info-banner warning-banner">{message}</div>}
       <div className="page-title center"><h1>클랜 종합정보</h1><p>클랜별 참여율과 참여점수를 한눈에 확인합니다.</p></div>
       <ParticipationRanking rows={participationRows} totalCount={members.length} />
       <section className="white-card quick-actions"><h2>빠른 메뉴</h2><div><button onClick={() => setPage('attendance')}>오늘의 출석 확인</button><button onClick={() => setPage('participation')}>참여율 조회</button>{member.role === 'ADMIN' && <button onClick={() => setPage('ledger')}>클랜금고 관리</button>}</div></section>
@@ -270,13 +296,21 @@ function Metric({ label, value, caption, tone }) { return <div className={`metri
 function Participation() {
   const [members, setMembers] = useState([]);
   const [attendances, setAttendances] = useState([]);
-  useEffect(() => { Promise.all([request('/members'), request('/attendances')]).then(([m, a]) => { setMembers(m); setAttendances(a); }).catch(() => {}); }, []);
+  useEffect(() => {
+    Promise.allSettled([request('/members'), request('/attendances')]).then(([memberResult, attendanceResult]) => {
+      if (memberResult.status === 'fulfilled') setMembers(Array.isArray(memberResult.value) ? memberResult.value : []);
+      if (attendanceResult.status === 'fulfilled') setAttendances(Array.isArray(attendanceResult.value) ? attendanceResult.value : []);
+    });
+  }, []);
   const rows = useMemo(() => {
     const counts = new Map();
-    attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => counts.set(row.member?.memberId, (counts.get(row.member?.memberId) || 0) + 1));
-    const top = Math.max(0, ...members.map((m) => counts.get(m.memberId) || 0));
+    attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => {
+      const memberId = toMemberId(row);
+      if (memberId !== null) counts.set(memberId, (counts.get(memberId) || 0) + 1);
+    });
+    const top = Math.max(0, ...members.map((m) => counts.get(toMemberId(m)) || 0));
     return members.map((m) => {
-      const count = counts.get(m.memberId) || 0;
+      const count = counts.get(toMemberId(m)) || 0;
       return { ...m, count, rate: top ? Math.round((count / top) * 1000) / 10 : 0 };
     }).sort((a, b) => b.count - a.count || (b.combatPower || 0) - (a.combatPower || 0));
   }, [members, attendances]);
