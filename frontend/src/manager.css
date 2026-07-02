@@ -1,0 +1,117 @@
+.inline-form,
+.record-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  margin: 14px 0 18px;
+}
+
+.inline-form {
+  grid-template-columns: 1fr;
+}
+
+.inline-form input,
+.inline-form textarea,
+.record-form input,
+.record-form select {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid #cbd8e8;
+  border-radius: 9px;
+  background: #fff;
+  outline: 0;
+}
+
+.inline-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.detail-grid div {
+  padding: 16px;
+  border: 1px solid #e1e9f3;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.detail-grid small {
+  display: block;
+  margin-bottom: 6px;
+  color: #718096;
+}
+
+.detail-grid b {
+  color: #1f2f46;
+}
+
+.result-count {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #246fe0;
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.subtle {
+  margin: 0;
+  color: #718096;
+}
+
+.data-table td .role-button {
+  white-space: nowrap;
+}
+
+.admin-edit-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto auto;
+  gap: 10px;
+  align-items: end;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid #d8e6f8;
+  border-radius: 12px;
+  background: #f6faff;
+}
+
+.admin-edit-form label {
+  display: grid;
+  gap: 6px;
+  color: #41516a;
+  font-size: .86rem;
+  font-weight: 750;
+}
+
+.admin-edit-form input,
+.admin-edit-form select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd8e8;
+  border-radius: 9px;
+  background: #fff;
+  outline: 0;
+}
+
+@media (max-width: 1000px) {
+  .record-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .inline-form,
+  .detail-grid,
+  .admin-edit-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .record-form {
+    grid-template-columns: 1fr;
+  }
+}

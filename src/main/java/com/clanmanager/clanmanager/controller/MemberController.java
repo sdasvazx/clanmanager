@@ -7,7 +7,10 @@ import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -75,6 +78,34 @@ public class MemberController {
         return Map.of("message", "상태 변경 완료", "memberId", member.getMemberId(), "status", member.getStatus());
     }
 
+    @PatchMapping("/{memberId}/profile")
+    public Member updateProfile(
+            @PathVariable Long memberId,
+            @RequestParam Long adminMemberId,
+            @RequestBody MemberProfileRequest request
+    ) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 클랜원 정보를 수정할 수 있습니다.");
+        }
+
+        Member member = findMember(memberId);
+        String characterName = request.getCharacterName() == null ? "" : request.getCharacterName().trim();
+        if (characterName.isBlank()) {
+            throw new IllegalArgumentException("캐릭터 이름은 비워둘 수 없습니다.");
+        }
+        if (memberRepository.existsByCharacterNameAndMemberIdNot(characterName, memberId)) {
+            throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
+        }
+
+        member.setCharacterName(characterName);
+        member.setCombatPower(request.getCombatPower() == null ? 0 : request.getCombatPower());
+        member.setRank(blankToNull(request.getRank()));
+        member.setStatus(blankToNull(request.getStatus()));
+        member.setActive(request.getActive() == null ? true : request.getActive());
+        return memberRepository.save(member);
+    }
+
     @PatchMapping("/{memberId}/role")
     public Map<String, Object> updateRole(
             @PathVariable Long memberId,
@@ -116,5 +147,22 @@ public class MemberController {
     private Member findMember(Long memberId) {
         return memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+    }
+
+    private String blankToNull(String value) {
+        if (value == null || value.trim().isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    @Getter
+    @Setter
+    public static class MemberProfileRequest {
+        private String characterName;
+        private Integer combatPower;
+        private String rank;
+        private String status;
+        private Boolean active;
     }
 }

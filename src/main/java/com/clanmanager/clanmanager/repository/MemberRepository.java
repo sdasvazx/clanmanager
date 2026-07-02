@@ -13,6 +13,8 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
 
     boolean existsByCharacterName(String characterName);
 
+    boolean existsByCharacterNameAndMemberIdNot(String characterName, Long memberId);
+
     boolean existsByRole(MemberRole role);
 
     long countByRole(MemberRole role);
