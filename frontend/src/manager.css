@@ -502,8 +502,82 @@
   gap: 10px;
 }
 
+.batch-photo-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.batch-photo-group {
+  border: 1px solid #dbe7f6;
+  border-radius: 18px;
+  background: #fbfdff;
+  overflow: hidden;
+}
+
+.batch-photo-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e6eef8;
+  background: #f4f8fd;
+}
+
+.batch-photo-title b {
+  color: #1d4ed8;
+  font-size: .92rem;
+}
+
+.batch-photo-title span {
+  color: #64748b;
+  font-size: .82rem;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-position-list {
+  display: grid;
+}
+
+.batch-position-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 14px;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.batch-position-row:last-child {
+  border-bottom: 0;
+}
+
+.batch-position-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border-radius: 999px;
+  background: #eaf3ff;
+  color: #1e40af;
+  font-size: .82rem;
+  font-weight: 900;
+}
+
+.position-review-list {
+  align-items: flex-start;
+}
+
 .ocr-review-item.compact {
   padding: 10px;
+}
+
+.ocr-review-item.compact.inline {
+  min-width: 260px;
+  border-color: #fed7aa;
+  background: #fff7ed;
 }
 
 .batch-message {

@@ -765,19 +765,68 @@ function Attendance({ member, setPage }) {
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
   const memberByNormalizedName = useMemo(() => new Map(members.map((candidate) => [normalize(candidate.characterName), candidate])), [members]);
-  const classifyRecognizedName = (name, positions = []) => {
+  const normalizeSources = (sources = []) => {
+    const map = new Map();
+    sources.filter(Boolean).forEach((source) => {
+      const fileIndex = Number(source.fileIndex || 1);
+      const position = Number(source.position || 0);
+      if (!position) return;
+      const fileName = source.fileName || `사진 ${fileIndex}`;
+      map.set(`${fileIndex}:${position}:${fileName}`, { fileIndex, fileName, position });
+    });
+    return [...map.values()].sort((a, b) => (a.fileIndex - b.fileIndex) || (a.position - b.position));
+  };
+  const sourcesFromPositions = (positions = [], fileIndex = 1, fileName = `사진 ${fileIndex}`) => (
+    (positions || []).map((position) => ({ fileIndex, fileName, position }))
+  );
+  const classifyRecognizedName = (name, positions = [], sources = []) => {
     const matchedMember = memberByNormalizedName.get(normalize(name));
     const clanName = matchedMember ? canonicalClanName(matchedMember.guildName || matchedMember.clanName) : '미분류';
-    return { name, matched: Boolean(matchedMember), clanName, positions };
+    return { name, matched: Boolean(matchedMember), clanName, positions, sources: normalizeSources(sources) };
   };
   const uniqueRecognizedRows = (rows) => {
     const map = new Map();
     rows.filter((row) => row.name).forEach((row) => {
       const key = normalize(row.name);
       const previous = map.get(key);
-      map.set(key, previous ? { ...previous, positions: [...new Set([...(previous.positions || []), ...(row.positions || [])])].sort((a, b) => a - b) } : row);
+      map.set(key, previous ? {
+        ...previous,
+        positions: [...new Set([...(previous.positions || []), ...(row.positions || [])])].sort((a, b) => a - b),
+        sources: normalizeSources([...(previous.sources || []), ...(row.sources || [])]),
+      } : { ...row, sources: normalizeSources(row.sources || sourcesFromPositions(row.positions)) });
     });
     return [...map.values()];
+  };
+  const groupedBatchReview = (row) => {
+    const fileMap = new Map();
+    const ensurePosition = (source) => {
+      const fileIndex = Number(source.fileIndex || 1);
+      const fileName = source.fileName || `사진 ${fileIndex}`;
+      const position = Number(source.position || 0) || 99;
+      const fileKey = `${fileIndex}:${fileName}`;
+      if (!fileMap.has(fileKey)) fileMap.set(fileKey, { fileIndex, fileName, positions: new Map() });
+      const fileGroup = fileMap.get(fileKey);
+      if (!fileGroup.positions.has(position)) fileGroup.positions.set(position, { position, names: [], ambiguous: [] });
+      return fileGroup.positions.get(position);
+    };
+    (row.names || []).forEach((item) => {
+      const sources = item.sources?.length ? item.sources : sourcesFromPositions(item.positions);
+      sources.forEach((source) => {
+        ensurePosition(source).names.push(item);
+      });
+    });
+    (row.ambiguous || []).forEach((item) => {
+      const sources = item.sources?.length ? item.sources : sourcesFromPositions(item.positions);
+      sources.forEach((source) => {
+        ensurePosition(source).ambiguous.push(item);
+      });
+    });
+    return [...fileMap.values()]
+      .sort((a, b) => a.fileIndex - b.fileIndex)
+      .map((fileGroup) => ({
+        ...fileGroup,
+        positions: [...fileGroup.positions.values()].sort((a, b) => a.position - b.position),
+      }));
   };
   const updateBatchRow = (key, updater) => setBatchRows((prev) => prev.map((row) => (
     row.key === key ? { ...row, ...(typeof updater === 'function' ? updater(row) : updater) } : row
@@ -799,14 +848,23 @@ function Attendance({ member, setPage }) {
       const foundNames = [];
       const foundAmbiguous = [];
       for (let index = 0; index < row.files.length; index += 1) {
+        const fileIndex = index + 1;
+        const fileName = row.files[index]?.name || `사진 ${fileIndex}`;
         const result = await recognizePartyPanels(row.files[index], members, (progressValue) => {
           const overall = Math.round(((index + (progressValue / 100)) / row.files.length) * 100);
           updateBatchRow(key, { progress: overall });
         });
-        foundNames.push(...result.names);
-        foundAmbiguous.push(...result.ambiguous);
+        foundNames.push(...result.names.map((item) => ({
+          ...item,
+          sources: sourcesFromPositions(item.positions, fileIndex, fileName),
+        })));
+        foundAmbiguous.push(...result.ambiguous.map((item, ambiguousIndex) => ({
+          ...item,
+          id: `${key}-${fileIndex}-${ambiguousIndex}-${item.raw}`,
+          sources: sourcesFromPositions(item.positions, fileIndex, fileName),
+        })));
       }
-      const names = uniqueRecognizedRows(foundNames.map((item) => classifyRecognizedName(item.name, item.positions)));
+      const names = uniqueRecognizedRows(foundNames.map((item) => classifyRecognizedName(item.name, item.positions, item.sources)));
       updateBatchRow(key, { names, ambiguous: foundAmbiguous, scanning: false, progress: 100, message: `${names.length}명 인식됨 · 확인필요 ${names.filter((item) => !item.matched).length + foundAmbiguous.length}개` });
     } catch (err) {
       updateBatchRow(key, { scanning: false, message: `OCR 실패: ${err.message}` });
@@ -815,16 +873,19 @@ function Attendance({ member, setPage }) {
   const updateBatchName = (key, oldName, nextName) => {
     updateBatchRow(key, (row) => {
       const old = row.names.find((item) => item.name === oldName);
-      const next = classifyRecognizedName(nextName.trim(), old?.positions || []);
+      const next = classifyRecognizedName(nextName.trim(), old?.positions || [], old?.sources || []);
       return { names: uniqueRecognizedRows(row.names.map((item) => item.name === oldName ? next : item)) };
     });
   };
   const removeBatchName = (key, targetName) => updateBatchRow(key, (row) => ({ names: row.names.filter((item) => item.name !== targetName) }));
-  const resolveBatchAmbiguous = (key, raw, name) => updateBatchRow(key, (row) => ({
-    names: uniqueRecognizedRows([...row.names, classifyRecognizedName(name, row.ambiguous.find((item) => item.raw === raw)?.positions || [])]),
-    ambiguous: row.ambiguous.filter((item) => item.raw !== raw),
-  }));
-  const ignoreBatchAmbiguous = (key, raw) => updateBatchRow(key, (row) => ({ ambiguous: row.ambiguous.filter((item) => item.raw !== raw) }));
+  const resolveBatchAmbiguous = (key, ambiguousKey, name) => updateBatchRow(key, (row) => {
+    const target = row.ambiguous.find((item) => (item.id || item.raw) === ambiguousKey);
+    return {
+      names: uniqueRecognizedRows([...row.names, classifyRecognizedName(name, target?.positions || [], target?.sources || [])]),
+      ambiguous: row.ambiguous.filter((item) => (item.id || item.raw) !== ambiguousKey),
+    };
+  });
+  const ignoreBatchAmbiguous = (key, ambiguousKey) => updateBatchRow(key, (row) => ({ ambiguous: row.ambiguous.filter((item) => (item.id || item.raw) !== ambiguousKey) }));
   const batchClanCounts = (names) => names.reduce((acc, item) => {
     acc[item.clanName] = (acc[item.clanName] || 0) + 1;
     return acc;
@@ -1097,62 +1158,75 @@ function Attendance({ member, setPage }) {
                         {clanDisplayOrder.map((clan) => counts[clan] ? <span className={`clan-badge ${normalize(clan)}`} key={clan}>{clan} {counts[clan]}명</span> : null)}
                         {!!unresolved && <span className="review-count">확인필요 {unresolved}개</span>}
                       </div>
-                      <div className="draft-review-list">
-                        {row.names.map((item) => {
-                          const editing = batchEdit?.rowKey === row.key && batchEdit?.oldName === item.name;
-                          return (
-                            <span className={item.matched ? 'draft-chip matched' : 'draft-chip review'} key={item.name}>
-                              {editing ? (
-                                <>
-                                  <input value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
-                                  <button type="button" onClick={() => { updateBatchName(row.key, item.name, batchEdit.value); setBatchEdit(null); }}>적용</button>
-                                  <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
-                                </>
-                              ) : (
-                                <>
-                                  {item.name}
-                                  {!!item.positions?.length && <small>{item.positions.join(', ')}번 자리</small>}
-                                  {!item.matched && <button type="button" onClick={() => setBatchEdit({ rowKey: row.key, oldName: item.name, value: item.name })}>수정</button>}
-                                  <button type="button" onClick={() => removeBatchName(row.key, item.name)}>삭제</button>
-                                </>
-                              )}
-                            </span>
-                          );
-                        })}
+                      <div className="batch-photo-groups">
+                        {groupedBatchReview(row).map((fileGroup) => (
+                          <div className="batch-photo-group" key={`${fileGroup.fileIndex}-${fileGroup.fileName}`}>
+                            <div className="batch-photo-title">
+                              <b>사진 {fileGroup.fileIndex}</b>
+                              <span>{fileGroup.fileName}</span>
+                            </div>
+                            <div className="batch-position-list">
+                              {fileGroup.positions.map((positionGroup) => (
+                                <div className="batch-position-row" key={`${fileGroup.fileIndex}-${positionGroup.position}`}>
+                                  <b className="batch-position-title">{positionGroup.position}번 자리</b>
+                                  <div className="draft-review-list position-review-list">
+                                    {positionGroup.names.map((item) => {
+                                      const editing = batchEdit?.rowKey === row.key && batchEdit?.oldName === item.name;
+                                      return (
+                                        <span className={item.matched ? 'draft-chip matched' : 'draft-chip review'} key={`${fileGroup.fileIndex}-${positionGroup.position}-${item.name}`}>
+                                          {editing ? (
+                                            <>
+                                              <input value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
+                                              <button type="button" onClick={() => { updateBatchName(row.key, item.name, batchEdit.value); setBatchEdit(null); }}>적용</button>
+                                              <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              {item.name}
+                                              {!item.matched && <button type="button" onClick={() => setBatchEdit({ rowKey: row.key, oldName: item.name, value: item.name })}>수정</button>}
+                                              <button type="button" onClick={() => removeBatchName(row.key, item.name)}>삭제</button>
+                                            </>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                    {positionGroup.ambiguous.map((item) => {
+                                      const ambiguousKey = item.id || item.raw;
+                                      const editing = batchEdit?.rowKey === row.key && batchEdit?.raw === ambiguousKey;
+                                      return (
+                                        <div className="ocr-review-item compact inline" key={`${fileGroup.fileIndex}-${positionGroup.position}-${item.raw}`}>
+                                          <b>인식값: {item.raw}</b>
+                                          <div className="ocr-suggestion-buttons">
+                                            {item.suggestions.map(({ member: suggestion, score }) => (
+                                              <button type="button" key={suggestion.memberId} onClick={() => resolveBatchAmbiguous(row.key, ambiguousKey, suggestion.characterName)}>
+                                                {suggestion.characterName}<small>{Math.round(score * 100)}%</small>
+                                              </button>
+                                            ))}
+                                          </div>
+                                          <div className="ocr-manual-row">
+                                            {editing ? (
+                                              <>
+                                                <input value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
+                                                <button type="button" onClick={() => { resolveBatchAmbiguous(row.key, ambiguousKey, batchEdit.value); setBatchEdit(null); }}>수정해서 추가</button>
+                                                <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <button type="button" onClick={() => setBatchEdit({ rowKey: row.key, raw: ambiguousKey, value: item.raw })}>직접수정</button>
+                                                <button type="button" onClick={() => ignoreBatchAmbiguous(row.key, ambiguousKey)}>무시</button>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      {!!row.ambiguous.length && (
-                        <div className="batch-ambiguous-list">
-                          {row.ambiguous.map((item) => {
-                            const editing = batchEdit?.rowKey === row.key && batchEdit?.raw === item.raw;
-                            return (
-                              <div className="ocr-review-item compact" key={item.raw}>
-                                <b>{item.positions?.join(', ') || '?'}번 자리 인식값: {item.raw}</b>
-                                <div className="ocr-suggestion-buttons">
-                                  {item.suggestions.map(({ member: suggestion, score }) => (
-                                    <button type="button" key={suggestion.memberId} onClick={() => resolveBatchAmbiguous(row.key, item.raw, suggestion.characterName)}>
-                                      {suggestion.characterName}<small>{Math.round(score * 100)}%</small>
-                                    </button>
-                                  ))}
-                                </div>
-                                <div className="ocr-manual-row">
-                                  {editing ? (
-                                    <>
-                                      <input value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
-                                      <button type="button" onClick={() => { resolveBatchAmbiguous(row.key, item.raw, batchEdit.value); setBatchEdit(null); }}>수정해서 추가</button>
-                                      <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <button type="button" onClick={() => setBatchEdit({ rowKey: row.key, raw: item.raw, value: item.raw })}>직접수정</button>
-                                      <button type="button" onClick={() => ignoreBatchAmbiguous(row.key, item.raw)}>무시</button>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
                       {row.message && <p className="batch-message">{row.message}</p>}
                     </div>
                   )}
