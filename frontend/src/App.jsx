@@ -256,25 +256,75 @@ async function createOcrVariants(file) {
   ].filter(Boolean);
 }
 
-async function recognizeImageTextMultiple(file, onProgress) {
+async function recognizeOcrVariantsWithWorker(file, worker, onProgress) {
   const variants = await createOcrVariants(file);
+  const texts = [];
+  for (let index = 0; index < variants.length; index += 1) {
+    onProgress?.(Math.round((index / variants.length) * 100));
+    const { data } = await worker.recognize(variants[index]);
+    texts.push(data.text);
+  }
+  onProgress?.(100);
+  return texts.join('\n');
+}
+
+async function recognizeImageTextMultiple(file, onProgress) {
   const worker = await createWorker('kor+eng', 1, {
     logger: (log) => {
       if (log.status === 'recognizing text') onProgress?.(Math.round(log.progress * 100));
     },
   });
-  const texts = [];
   try {
-    for (let index = 0; index < variants.length; index += 1) {
-      onProgress?.(Math.round((index / variants.length) * 100));
-      const { data } = await worker.recognize(variants[index]);
-      texts.push(data.text);
+    return await recognizeOcrVariantsWithWorker(file, worker, onProgress);
+  } finally {
+    await worker.terminate();
+  }
+}
+
+async function createPartyPanelFiles(file) {
+  const image = await loadImageElement(file);
+  const columns = 2;
+  const panelWidth = Math.floor(image.naturalWidth / columns);
+  const estimatedPanelHeight = Math.max(120, Math.round(panelWidth * 0.23));
+  const rows = Math.max(1, Math.min(5, Math.round(image.naturalHeight / estimatedPanelHeight)));
+  const panelHeight = Math.floor(image.naturalHeight / rows);
+  const panels = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const canvas = document.createElement('canvas');
+      canvas.width = panelWidth;
+      canvas.height = row === rows - 1 ? image.naturalHeight - (row * panelHeight) : panelHeight;
+      const context = canvas.getContext('2d');
+      context.imageSmoothingEnabled = false;
+      context.drawImage(image, column * panelWidth, row * panelHeight, panelWidth, canvas.height, 0, 0, panelWidth, canvas.height);
+      const blob = await canvasToBlob(canvas);
+      if (blob) panels.push({ partyNumber: (row * columns) + column + 1, file: blob });
+    }
+  }
+  return panels.slice(0, 10);
+}
+
+async function recognizePartyPanels(file, members, onProgress) {
+  const panels = await createPartyPanelFiles(file);
+  const worker = await createWorker('kor+eng', 1);
+  const names = [];
+  const ambiguous = [];
+  try {
+    for (let index = 0; index < panels.length; index += 1) {
+      const panel = panels[index];
+      const text = await recognizeOcrVariantsWithWorker(panel.file, worker, (progressValue) => {
+        const overall = Math.round(((index + (progressValue / 100)) / Math.max(1, panels.length)) * 100);
+        onProgress?.(overall);
+      });
+      const review = buildOcrReview(text, members, '');
+      names.push(...review.exactNames.map((name) => ({ name, positions: [panel.partyNumber] })));
+      ambiguous.push(...review.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
     }
   } finally {
     await worker.terminate();
   }
   onProgress?.(100);
-  return texts.join('\n');
+  return { names, ambiguous };
 }
 
 function splitKoreanTime(value) {
@@ -715,14 +765,18 @@ function Attendance({ member, setPage }) {
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
   const memberByNormalizedName = useMemo(() => new Map(members.map((candidate) => [normalize(candidate.characterName), candidate])), [members]);
-  const classifyRecognizedName = (name) => {
+  const classifyRecognizedName = (name, positions = []) => {
     const matchedMember = memberByNormalizedName.get(normalize(name));
     const clanName = matchedMember ? canonicalClanName(matchedMember.guildName || matchedMember.clanName) : '미분류';
-    return { name, matched: Boolean(matchedMember), clanName };
+    return { name, matched: Boolean(matchedMember), clanName, positions };
   };
   const uniqueRecognizedRows = (rows) => {
     const map = new Map();
-    rows.filter((row) => row.name).forEach((row) => map.set(normalize(row.name), row));
+    rows.filter((row) => row.name).forEach((row) => {
+      const key = normalize(row.name);
+      const previous = map.get(key);
+      map.set(key, previous ? { ...previous, positions: [...new Set([...(previous.positions || []), ...(row.positions || [])])].sort((a, b) => a - b) } : row);
+    });
     return [...map.values()];
   };
   const updateBatchRow = (key, updater) => setBatchRows((prev) => prev.map((row) => (
@@ -742,29 +796,32 @@ function Attendance({ member, setPage }) {
     if (!row?.files?.length) return;
     updateBatchRow(key, { scanning: true, progress: 0, message: '사진 글자를 읽는 중입니다.', ambiguous: [] });
     try {
-      const texts = [];
+      const foundNames = [];
+      const foundAmbiguous = [];
       for (let index = 0; index < row.files.length; index += 1) {
-        const text = await recognizeImageTextMultiple(row.files[index], (progressValue) => {
+        const result = await recognizePartyPanels(row.files[index], members, (progressValue) => {
           const overall = Math.round(((index + (progressValue / 100)) / row.files.length) * 100);
           updateBatchRow(key, { progress: overall });
         });
-        texts.push(text);
+        foundNames.push(...result.names);
+        foundAmbiguous.push(...result.ambiguous);
       }
-      const combined = texts.join('\n');
-      const { exactNames, ambiguous } = buildOcrReview(combined, members, '');
-      const names = uniqueRecognizedRows(exactNames.map(classifyRecognizedName));
-      updateBatchRow(key, { names, ambiguous, scanning: false, progress: 100, message: `${names.length}명 인식됨 · 확인필요 ${names.filter((item) => !item.matched).length + ambiguous.length}개` });
+      const names = uniqueRecognizedRows(foundNames.map((item) => classifyRecognizedName(item.name, item.positions)));
+      updateBatchRow(key, { names, ambiguous: foundAmbiguous, scanning: false, progress: 100, message: `${names.length}명 인식됨 · 확인필요 ${names.filter((item) => !item.matched).length + foundAmbiguous.length}개` });
     } catch (err) {
       updateBatchRow(key, { scanning: false, message: `OCR 실패: ${err.message}` });
     }
   };
   const updateBatchName = (key, oldName, nextName) => {
-    const next = classifyRecognizedName(nextName.trim());
-    updateBatchRow(key, (row) => ({ names: uniqueRecognizedRows(row.names.map((item) => item.name === oldName ? next : item)) }));
+    updateBatchRow(key, (row) => {
+      const old = row.names.find((item) => item.name === oldName);
+      const next = classifyRecognizedName(nextName.trim(), old?.positions || []);
+      return { names: uniqueRecognizedRows(row.names.map((item) => item.name === oldName ? next : item)) };
+    });
   };
   const removeBatchName = (key, targetName) => updateBatchRow(key, (row) => ({ names: row.names.filter((item) => item.name !== targetName) }));
   const resolveBatchAmbiguous = (key, raw, name) => updateBatchRow(key, (row) => ({
-    names: uniqueRecognizedRows([...row.names, classifyRecognizedName(name)]),
+    names: uniqueRecognizedRows([...row.names, classifyRecognizedName(name, row.ambiguous.find((item) => item.raw === raw)?.positions || [])]),
     ambiguous: row.ambiguous.filter((item) => item.raw !== raw),
   }));
   const ignoreBatchAmbiguous = (key, raw) => updateBatchRow(key, (row) => ({ ambiguous: row.ambiguous.filter((item) => item.raw !== raw) }));
@@ -1052,6 +1109,7 @@ function Attendance({ member, setPage }) {
                               ) : (
                                 <>
                                   {item.name}
+                                  {!!item.positions?.length && <small>{item.positions.join(', ')}번 자리</small>}
                                   {!item.matched && <button type="button" onClick={() => setBatchEdit({ rowKey: row.key, oldName: item.name, value: item.name })}>수정</button>}
                                   <button type="button" onClick={() => removeBatchName(row.key, item.name)}>삭제</button>
                                 </>
@@ -1066,7 +1124,7 @@ function Attendance({ member, setPage }) {
                             const editing = batchEdit?.rowKey === row.key && batchEdit?.raw === item.raw;
                             return (
                               <div className="ocr-review-item compact" key={item.raw}>
-                                <b>인식값: {item.raw}</b>
+                                <b>{item.positions?.join(', ') || '?'}번 자리 인식값: {item.raw}</b>
                                 <div className="ocr-suggestion-buttons">
                                   {item.suggestions.map(({ member: suggestion, score }) => (
                                     <button type="button" key={suggestion.memberId} onClick={() => resolveBatchAmbiguous(row.key, item.raw, suggestion.characterName)}>
@@ -1103,7 +1161,7 @@ function Attendance({ member, setPage }) {
         </section>
       )}
 
-      {member.role === 'ADMIN' && (
+      {false && member.role === 'ADMIN' && (
         <section className="white-card boss-register-card">
           <div className="section-heading">
             <div>

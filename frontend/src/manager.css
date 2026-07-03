@@ -925,6 +925,14 @@
   font-weight: 850;
 }
 
+.draft-chip small {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .65);
+  font-size: .7rem;
+  font-weight: 900;
+}
+
 .draft-chip.matched {
   border: 1px solid #bbf7d0;
   background: #dcfce7;
