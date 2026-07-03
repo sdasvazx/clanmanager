@@ -28,10 +28,8 @@ const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pi
 
 const adminCards = [
   ['✓', '출석체크/보스설정', 'mint', 'attendance'],
-  ['♙', '클랜원 정보수정', 'blue', 'member-admin'],
-  ['◴', '출석기록 관리', 'purple', 'attendance'],
+  ['♙', '클랜원/전투력 관리', 'blue', 'member-admin'],
   ['⚙', '가중치 설정', 'orange', 'participation'],
-  ['ϟ', '전투력 관리', 'gold', 'member-admin'],
   ['✿', '기타 설정', 'indigo', 'admin'],
   ['▣', '스펙/장비 수정기록', 'amber', 'collection'],
   ['▥', '참여율 선택조회', 'cyan', 'participation'],
@@ -1524,7 +1522,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
         <div className="admin-grid">
           {adminCards.map(([icon, title, color, target]) => (
             <button className={`admin-card ${color}`} key={title} onClick={() => setPage(target)}>
-              <span>{icon}</span><b>{title}</b><small>{title === '출석체크' ? '사진 인식으로 출석 확인' : title === '클랜원 정보수정' || title === '전투력 관리' ? '클랜원 관리 화면' : '바로 이동'}</small>
+              <span>{icon}</span><b>{title}</b><small>{target === 'attendance' ? '출석 인식·보스 기록 관리' : target === 'member-admin' ? '클랜원 정보·전투력 관리' : '바로 이동'}</small>
             </button>
           ))}
         </div>
@@ -1534,7 +1532,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
 
   return (
     <>
-      <div className="page-title"><h1>클랜원 정보수정</h1><p>클랜원 정보, 비밀번호, 권한, 삭제 여부를 관리합니다.</p></div>
+      <div className="page-title"><h1>클랜원/전투력 관리</h1><p>클랜원 정보, 전투력, 비밀번호, 권한, 삭제 여부를 관리합니다.</p></div>
       <button className="outline-button no-margin" onClick={() => setPage('admin')}>← 관리자 설정으로</button>
 
       <section className="white-card role-card">
