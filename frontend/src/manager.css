@@ -526,15 +526,24 @@
 .batch-photo-title {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid #e6eef8;
   background: #f4f8fd;
 }
 
+.batch-photo-title > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .batch-photo-title b {
   color: #1d4ed8;
   font-size: .92rem;
+  white-space: nowrap;
 }
 
 .batch-photo-title span {
@@ -544,6 +553,26 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.batch-photo-title em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #eef2ff;
+  color: #5b21b6;
+  font-size: .78rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.batch-photo-preview {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  background: #0f172a;
+  border-bottom: 1px solid #e6eef8;
 }
 
 .batch-position-list {

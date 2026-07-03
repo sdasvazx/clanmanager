@@ -204,6 +204,25 @@ function findSimilarMembers(rawName, members, clanName, limit = 3) {
     .slice(0, limit);
 }
 
+function inferDominantClanFromNames(names, members) {
+  const memberByName = new Map(members.map((member) => [normalize(member.characterName), member]));
+  const counts = new Map();
+  names.forEach((name) => {
+    const matched = memberByName.get(normalize(name));
+    if (!matched) return;
+    const clan = canonicalClanName(matched.guildName || matched.clanName);
+    if (!clan || clan === '미분류') return;
+    counts.set(clan, (counts.get(clan) || 0) + 1);
+  });
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) return '';
+  const [clan, count] = ranked[0];
+  const total = [...counts.values()].reduce((sum, value) => sum + value, 0);
+  const second = ranked[1]?.[1] || 0;
+  const threshold = Math.max(4, Math.ceil(total * 0.55));
+  return count >= threshold && count >= second + 2 ? clan : '';
+}
+
 function candidateNamesFromOcrText(text, precise = false) {
   const cleaned = String(text ?? '')
     .replace(/Lv\.?\s*\d+/gi, '\n')
@@ -362,6 +381,8 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
   const worker = await createWorker('kor+eng', 1);
   const names = [];
   const ambiguous = [];
+  const panelTexts = [];
+  let dominantClan = '';
   try {
     for (let index = 0; index < panels.length; index += 1) {
       const panel = panels[index];
@@ -369,15 +390,22 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
         const overall = Math.round(((index + (progressValue / 100)) / Math.max(1, panels.length)) * 100);
         onProgress?.(overall);
       });
-      const review = buildOcrReview(text, members, '', options);
+      panelTexts.push({ panel, text });
+    }
+    const firstPassReviews = panelTexts.map(({ text }) => buildOcrReview(text, members, '', options));
+    dominantClan = inferDominantClanFromNames(firstPassReviews.flatMap((review) => review.exactNames), members);
+    panelTexts.forEach(({ panel, text }, index) => {
+      const review = dominantClan
+        ? buildOcrReview(text, members, dominantClan, options)
+        : firstPassReviews[index];
       names.push(...review.exactNames.map((name) => ({ name, positions: [panel.partyNumber] })));
       ambiguous.push(...review.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
-    }
+    });
   } finally {
     await worker.terminate();
   }
   onProgress?.(100);
-  return { names, ambiguous };
+  return { names, ambiguous, dominantClan };
 }
 
 function splitKoreanTime(value) {
@@ -789,6 +817,7 @@ function Attendance({ member, setPage }) {
   const [batchRows, setBatchRows] = useState(() => bossCheckSlots.map((slot) => ({
     ...slot,
     files: [],
+    fileReviews: [],
     names: [],
     ambiguous: [],
     cutInput: slot.cutTime,
@@ -859,10 +888,21 @@ function Attendance({ member, setPage }) {
   };
   const groupedBatchReview = (row) => {
     const fileMap = new Map();
-    (row.files || []).forEach((fileItem, index) => {
+    const reviewFiles = row.fileReviews?.length ? row.fileReviews : (row.files || []).map((fileItem, index) => ({
+      fileIndex: index + 1,
+      fileName: fileItem?.name || `사진 ${index + 1}`,
+    }));
+    reviewFiles.forEach((fileItem, index) => {
       const fileIndex = index + 1;
-      const fileName = fileItem?.name || `사진 ${fileIndex}`;
-      fileMap.set(`${fileIndex}:${fileName}`, { fileIndex, fileName, positions: new Map() });
+      const reviewFileIndex = fileItem.fileIndex || fileIndex;
+      const fileName = fileItem.fileName || `사진 ${reviewFileIndex}`;
+      fileMap.set(`${reviewFileIndex}:${fileName}`, {
+        fileIndex: reviewFileIndex,
+        fileName,
+        previewUrl: fileItem.previewUrl || '',
+        dominantClan: fileItem.dominantClan || '',
+        positions: new Map(),
+      });
     });
     const ensurePosition = (source) => {
       const fileIndex = Number(source.fileIndex || 1);
@@ -898,7 +938,13 @@ function Attendance({ member, setPage }) {
   )));
   const setBatchFiles = (key, fileList) => {
     const files = [...(fileList || [])].filter((fileItem) => fileItem.type?.startsWith('image/'));
-    updateBatchRow(key, { files, names: [], ambiguous: [], savedRecord: null, message: files.length ? `${files.length}장 선택됨` : '' });
+    const fileReviews = files.map((fileItem, index) => ({
+      fileIndex: index + 1,
+      fileName: fileItem.name || `사진 ${index + 1}`,
+      previewUrl: URL.createObjectURL(fileItem),
+      dominantClan: '',
+    }));
+    updateBatchRow(key, { files, fileReviews, names: [], ambiguous: [], savedRecord: null, message: files.length ? `${files.length}장 선택됨` : '' });
   };
   const selectBatchFiles = (key, event) => setBatchFiles(key, event.target.files);
   const dropBatchFiles = (key, event) => {
@@ -912,6 +958,11 @@ function Attendance({ member, setPage }) {
     try {
       const foundNames = [];
       const foundAmbiguous = [];
+      const fileReviews = row.files.map((fileItem, index) => ({
+        ...(row.fileReviews?.[index] || {}),
+        fileIndex: index + 1,
+        fileName: fileItem?.name || `사진 ${index + 1}`,
+      }));
       for (let index = 0; index < row.files.length; index += 1) {
         const fileIndex = index + 1;
         const fileName = row.files[index]?.name || `사진 ${fileIndex}`;
@@ -919,6 +970,12 @@ function Attendance({ member, setPage }) {
           const overall = Math.round(((index + (progressValue / 100)) / row.files.length) * 100);
           updateBatchRow(key, { progress: overall });
         }, { precise: row.precise });
+        fileReviews[index] = {
+          ...fileReviews[index],
+          dominantClan: result.dominantClan || '',
+          recognizedCount: result.names.length,
+          reviewCount: result.ambiguous.length,
+        };
         foundNames.push(...result.names.map((item) => ({
           ...item,
           fileIndex,
@@ -934,7 +991,7 @@ function Attendance({ member, setPage }) {
         })));
       }
       const names = uniqueRecognizedRows(foundNames.map((item) => classifyRecognizedName(item.name, item.positions, item.sources)));
-      updateBatchRow(key, { names, ambiguous: foundAmbiguous, scanning: false, progress: 100, message: `${names.length}명 인식됨 · 확인필요 ${names.filter((item) => !item.matched).length + foundAmbiguous.length}개` });
+      updateBatchRow(key, { names, ambiguous: foundAmbiguous, fileReviews, scanning: false, progress: 100, message: `${names.length}명 인식됨 · 확인필요 ${names.filter((item) => !item.matched).length + foundAmbiguous.length}개` });
     } catch (err) {
       updateBatchRow(key, { scanning: false, message: `OCR 실패: ${err.message}` });
     }
@@ -1232,9 +1289,13 @@ function Attendance({ member, setPage }) {
                         {groupedBatchReview(row).map((fileGroup) => (
                           <div className="batch-photo-group" key={`${fileGroup.fileIndex}-${fileGroup.fileName}`}>
                             <div className="batch-photo-title">
-                              <b>사진 {fileGroup.fileIndex}</b>
-                              <span>{fileGroup.fileName}</span>
+                              <div>
+                                <b>사진 {fileGroup.fileIndex}</b>
+                                <span>{fileGroup.fileName}</span>
+                              </div>
+                              {fileGroup.dominantClan && <em>{fileGroup.dominantClan} 기준 후보</em>}
                             </div>
+                            {fileGroup.previewUrl && <img className="batch-photo-preview" src={fileGroup.previewUrl} alt={`사진 ${fileGroup.fileIndex} 미리보기`} />}
                             <div className="batch-position-list">
                               {fileGroup.positions.length ? fileGroup.positions.map((positionGroup) => (
                                 <div className="batch-position-row" key={`${fileGroup.fileIndex}-${positionGroup.position}`}>
