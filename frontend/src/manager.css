@@ -554,6 +554,13 @@
   border-bottom: 0;
 }
 
+.batch-empty-photo {
+  padding: 14px;
+  color: #64748b;
+  font-size: .88rem;
+  font-weight: 800;
+}
+
 .batch-position-title {
   display: inline-flex;
   align-items: center;

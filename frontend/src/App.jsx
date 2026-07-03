@@ -584,9 +584,10 @@ function MyInfo({ member }) {
 }
 
 function ProfileCard({ member, info }) {
+  const canSeeCombatPower = member?.role === 'ADMIN';
   return (
     <section className="white-card profile-overview">
-      <div className="profile-name"><span className="avatar">{info.characterName.slice(0, 1)}</span><div><h2>{info.characterName}</h2><div className="pills"><span>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</span><span>전투력 {formatNumber(info.combatPower)}</span></div></div></div>
+      <div className="profile-name"><span className="avatar">{info.characterName.slice(0, 1)}</span><div><h2>{info.characterName}</h2><div className="pills"><span>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</span>{canSeeCombatPower && <span>전투력 {formatNumber(info.combatPower)}</span>}</div></div></div>
       <div className="metric-grid"><Metric label="현재 참여율" value={`${info.participationRate}%`} caption={`참여 ${info.myAttendanceCount}회 / 1등 ${info.topAttendanceCount}회`} tone="blue" /><Metric label="기여율" value={`${info.participationRate}%`} caption="최고 참여 횟수를 100%로 계산" tone="green" /><Metric label="참석 횟수" value={`${info.myAttendanceCount}회`} caption="전체 활동 기준" tone="purple" /></div>
       <div className="formula-row"><div><b>참여율 계산 기준</b><p>내 참석 횟수 / 가장 많이 참석한 캐릭터의 참석 횟수 × 100</p></div><div><b>현재 100% 기준</b><p>{info.topAttendanceCount}회</p></div></div>
     </section>
@@ -648,6 +649,7 @@ function Participation({ member, setPage }) {
     if (!keyword) return null;
     return rows.find((m) => normalize(m.characterName).includes(keyword)) || null;
   }, [rows, searchName]);
+  const canSeeCombatPower = member?.role === 'ADMIN';
 
   const savePeriodName = async () => {
     if (member?.role !== 'ADMIN') return;
@@ -704,7 +706,7 @@ function Participation({ member, setPage }) {
                 </div>
                 <div><small>참석</small><strong>{searchedMember.count}회</strong></div>
                 <div><small>참여율</small><strong>{searchedMember.rate}%</strong></div>
-                <div><small>전투력</small><strong>{formatNumber(searchedMember.combatPower)}</strong></div>
+                {canSeeCombatPower && <div><small>전투력</small><strong>{formatNumber(searchedMember.combatPower)}</strong></div>}
               </>
             ) : <p>검색한 이름의 클랜원을 찾지 못했습니다.</p>}
           </div>
@@ -779,6 +781,10 @@ function Attendance({ member, setPage }) {
   const sourcesFromPositions = (positions = [], fileIndex = 1, fileName = `사진 ${fileIndex}`) => (
     (positions || []).map((position) => ({ fileIndex, fileName, position }))
   );
+  const fallbackSources = (item, fallbackFileIndex = 1, fallbackFileName = `사진 ${fallbackFileIndex}`) => {
+    const positions = item.positions?.length ? item.positions : [99];
+    return sourcesFromPositions(positions, item.fileIndex || fallbackFileIndex, item.fileName || fallbackFileName);
+  };
   const classifyRecognizedName = (name, positions = [], sources = []) => {
     const matchedMember = memberByNormalizedName.get(normalize(name));
     const clanName = matchedMember ? canonicalClanName(matchedMember.guildName || matchedMember.clanName) : '미분류';
@@ -799,6 +805,11 @@ function Attendance({ member, setPage }) {
   };
   const groupedBatchReview = (row) => {
     const fileMap = new Map();
+    (row.files || []).forEach((fileItem, index) => {
+      const fileIndex = index + 1;
+      const fileName = fileItem?.name || `사진 ${fileIndex}`;
+      fileMap.set(`${fileIndex}:${fileName}`, { fileIndex, fileName, positions: new Map() });
+    });
     const ensurePosition = (source) => {
       const fileIndex = Number(source.fileIndex || 1);
       const fileName = source.fileName || `사진 ${fileIndex}`;
@@ -810,13 +821,13 @@ function Attendance({ member, setPage }) {
       return fileGroup.positions.get(position);
     };
     (row.names || []).forEach((item) => {
-      const sources = item.sources?.length ? item.sources : sourcesFromPositions(item.positions);
+      const sources = item.sources?.length ? item.sources : fallbackSources(item);
       sources.forEach((source) => {
         ensurePosition(source).names.push(item);
       });
     });
     (row.ambiguous || []).forEach((item) => {
-      const sources = item.sources?.length ? item.sources : sourcesFromPositions(item.positions);
+      const sources = item.sources?.length ? item.sources : fallbackSources(item);
       sources.forEach((source) => {
         ensurePosition(source).ambiguous.push(item);
       });
@@ -856,11 +867,15 @@ function Attendance({ member, setPage }) {
         });
         foundNames.push(...result.names.map((item) => ({
           ...item,
+          fileIndex,
+          fileName,
           sources: sourcesFromPositions(item.positions, fileIndex, fileName),
         })));
         foundAmbiguous.push(...result.ambiguous.map((item, ambiguousIndex) => ({
           ...item,
           id: `${key}-${fileIndex}-${ambiguousIndex}-${item.raw}`,
+          fileIndex,
+          fileName,
           sources: sourcesFromPositions(item.positions, fileIndex, fileName),
         })));
       }
@@ -1166,7 +1181,7 @@ function Attendance({ member, setPage }) {
                               <span>{fileGroup.fileName}</span>
                             </div>
                             <div className="batch-position-list">
-                              {fileGroup.positions.map((positionGroup) => (
+                              {fileGroup.positions.length ? fileGroup.positions.map((positionGroup) => (
                                 <div className="batch-position-row" key={`${fileGroup.fileIndex}-${positionGroup.position}`}>
                                   <b className="batch-position-title">{positionGroup.position}번 자리</b>
                                   <div className="draft-review-list position-review-list">
@@ -1222,7 +1237,7 @@ function Attendance({ member, setPage }) {
                                     })}
                                   </div>
                                 </div>
-                              ))}
+                              )) : <div className="batch-empty-photo">이 사진에서는 인식된 인원이 없습니다. 사진이 흐리면 다시 올려주세요.</div>}
                             </div>
                           </div>
                         ))}
