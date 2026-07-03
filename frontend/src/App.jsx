@@ -94,6 +94,17 @@ const copyToClipboard = async (text) => {
 const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
+const bossCheckSlots = [
+  { key: '01', title: '01시 (1성)', cutTime: '01:00', bossName: '01시 보스', score: 1 },
+  { key: '05', title: '05시 (1성)', cutTime: '05:00', bossName: '05시 보스', score: 1 },
+  { key: '09', title: '09시 (1성)', cutTime: '09:00', bossName: '09시 보스', score: 1 },
+  { key: '13', title: '13시 (2성)', cutTime: '13:00', bossName: '13시 보스', score: 1 },
+  { key: '17', title: '17시 (1성)', cutTime: '17:00', bossName: '17시 보스', score: 1 },
+  { key: '21', title: '21시 (2성)', cutTime: '21:00', bossName: '21시 보스', score: 1 },
+  { key: 'final', title: '결승전', cutTime: '22:00', bossName: '결승전', score: 1 },
+  { key: 'mashumid', title: '마슈미드', cutTime: '22:00', bossName: '마슈미드', score: 1 },
+  { key: 'enoch', title: '에노크', cutTime: '22:00', bossName: '에노크', score: 1 },
+];
 const clanDisplayOrder = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 
 function canonicalClanName(value) {
@@ -670,6 +681,19 @@ function Participation({ member, setPage }) {
 function Attendance({ member, setPage }) {
   const [records, setRecords] = useState([]);
   const [members, setMembers] = useState([]);
+  const [batchRows, setBatchRows] = useState(() => bossCheckSlots.map((slot) => ({
+    ...slot,
+    files: [],
+    names: [],
+    ambiguous: [],
+    cutInput: slot.cutTime,
+    longTerm: false,
+    doubleScore: false,
+    scanning: false,
+    progress: 0,
+    savedRecord: null,
+    message: '',
+  })));
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedClan, setSelectedClan] = useState('');
   const [selectedMembers, setSelectedMembers] = useState([]);
@@ -684,11 +708,101 @@ function Attendance({ member, setPage }) {
   const [ocrAmbiguous, setOcrAmbiguous] = useState([]);
   const [draftEdit, setDraftEdit] = useState(null);
   const [ocrEdit, setOcrEdit] = useState(null);
+  const [batchEdit, setBatchEdit] = useState(null);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('');
 
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
+  const memberByNormalizedName = useMemo(() => new Map(members.map((candidate) => [normalize(candidate.characterName), candidate])), [members]);
+  const classifyRecognizedName = (name) => {
+    const matchedMember = memberByNormalizedName.get(normalize(name));
+    const clanName = matchedMember ? canonicalClanName(matchedMember.guildName || matchedMember.clanName) : '미분류';
+    return { name, matched: Boolean(matchedMember), clanName };
+  };
+  const uniqueRecognizedRows = (rows) => {
+    const map = new Map();
+    rows.filter((row) => row.name).forEach((row) => map.set(normalize(row.name), row));
+    return [...map.values()];
+  };
+  const updateBatchRow = (key, updater) => setBatchRows((prev) => prev.map((row) => (
+    row.key === key ? { ...row, ...(typeof updater === 'function' ? updater(row) : updater) } : row
+  )));
+  const setBatchFiles = (key, fileList) => {
+    const files = [...(fileList || [])].filter((fileItem) => fileItem.type?.startsWith('image/'));
+    updateBatchRow(key, { files, names: [], ambiguous: [], savedRecord: null, message: files.length ? `${files.length}장 선택됨` : '' });
+  };
+  const selectBatchFiles = (key, event) => setBatchFiles(key, event.target.files);
+  const dropBatchFiles = (key, event) => {
+    event.preventDefault();
+    setBatchFiles(key, event.dataTransfer.files);
+  };
+  const scanBatchRow = async (key) => {
+    const row = batchRows.find((item) => item.key === key);
+    if (!row?.files?.length) return;
+    updateBatchRow(key, { scanning: true, progress: 0, message: '사진 글자를 읽는 중입니다.', ambiguous: [] });
+    try {
+      const texts = [];
+      for (let index = 0; index < row.files.length; index += 1) {
+        const text = await recognizeImageTextMultiple(row.files[index], (progressValue) => {
+          const overall = Math.round(((index + (progressValue / 100)) / row.files.length) * 100);
+          updateBatchRow(key, { progress: overall });
+        });
+        texts.push(text);
+      }
+      const combined = texts.join('\n');
+      const { exactNames, ambiguous } = buildOcrReview(combined, members, '');
+      const names = uniqueRecognizedRows(exactNames.map(classifyRecognizedName));
+      updateBatchRow(key, { names, ambiguous, scanning: false, progress: 100, message: `${names.length}명 인식됨 · 확인필요 ${names.filter((item) => !item.matched).length + ambiguous.length}개` });
+    } catch (err) {
+      updateBatchRow(key, { scanning: false, message: `OCR 실패: ${err.message}` });
+    }
+  };
+  const updateBatchName = (key, oldName, nextName) => {
+    const next = classifyRecognizedName(nextName.trim());
+    updateBatchRow(key, (row) => ({ names: uniqueRecognizedRows(row.names.map((item) => item.name === oldName ? next : item)) }));
+  };
+  const removeBatchName = (key, targetName) => updateBatchRow(key, (row) => ({ names: row.names.filter((item) => item.name !== targetName) }));
+  const resolveBatchAmbiguous = (key, raw, name) => updateBatchRow(key, (row) => ({
+    names: uniqueRecognizedRows([...row.names, classifyRecognizedName(name)]),
+    ambiguous: row.ambiguous.filter((item) => item.raw !== raw),
+  }));
+  const ignoreBatchAmbiguous = (key, raw) => updateBatchRow(key, (row) => ({ ambiguous: row.ambiguous.filter((item) => item.raw !== raw) }));
+  const batchClanCounts = (names) => names.reduce((acc, item) => {
+    acc[item.clanName] = (acc[item.clanName] || 0) + 1;
+    return acc;
+  }, {});
+  const saveBatchRow = async (key) => {
+    const row = batchRows.find((item) => item.key === key);
+    if (!row) return;
+    const unresolved = row.names.filter((item) => !item.matched).length + row.ambiguous.length;
+    if (!row.names.length) {
+      updateBatchRow(key, { message: '먼저 사진을 넣고 인식해 주세요.' });
+      return;
+    }
+    if (unresolved) {
+      updateBatchRow(key, { message: `확인필요 ${unresolved}개를 수정/삭제/무시한 뒤 저장해 주세요.` });
+      return;
+    }
+    try {
+      const saved = await request('/boss-participations', {
+        method: 'POST',
+        body: JSON.stringify({
+          createdByMemberId: member.memberId,
+          bossDate: form.bossDate,
+          cutTime: row.cutInput || row.cutTime,
+          bossName: row.bossName,
+          score: Number(row.score || 1) * (row.doubleScore ? 2 : 1),
+          memo: [row.longTerm ? '장기전' : '', row.doubleScore ? '새벽/쟁 일정 2배' : ''].filter(Boolean).join(', '),
+          members: row.names.map((item) => ({ characterName: item.name, clanName: item.clanName })),
+        }),
+      });
+      updateBatchRow(key, { savedRecord: saved, message: `${saved.bossName} ${saved.totalCount}명 저장 완료` });
+      await load();
+    } catch (err) {
+      updateBatchRow(key, { message: err.message });
+    }
+  };
   const updateCurrentDraft = (value) => setDraftByClan((prev) => ({ ...prev, [form.clanName]: value }));
   const isRegisteredDraftName = (name, clanName = form.clanName) => members.some((candidate) => (
     normalize(candidate.characterName) === normalize(name)
@@ -885,6 +999,109 @@ function Attendance({ member, setPage }) {
         <h1>보스 참여내역 조회</h1>
         <p>각 클랜 스크린샷을 OCR로 읽어 보스 회차별 참석 인원과 명단을 기록합니다.</p>
       </div>
+
+      {member.role === 'ADMIN' && (
+        <section className="white-card boss-batch-card">
+          <div className="section-heading">
+            <div>
+              <h2>시간별 출석체크</h2>
+              <p className="subtle">보스 시간별로 사진을 여러 장 넣으면 전체 인원을 합산해 보여줍니다. 초록색은 등록 클랜원, 주황색은 확인 필요입니다.</p>
+            </div>
+            <span className="result-count">{form.bossDate}</span>
+          </div>
+          <div className="boss-batch-list">
+            {batchRows.map((row) => {
+              const counts = batchClanCounts(row.names);
+              const unresolved = row.names.filter((item) => !item.matched).length + row.ambiguous.length;
+              return (
+                <div className="boss-batch-row" key={row.key}>
+                  <div className="boss-batch-title">
+                    <b>{row.title}</b>
+                    {row.savedRecord && <span className="saved-pill">저장완료</span>}
+                  </div>
+                  <label className="batch-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropBatchFiles(row.key, event)}>
+                    <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => selectBatchFiles(row.key, event)} />
+                    <span>{row.files.length ? `${row.files.length}장 선택됨` : '사진 드래그/선택'}</span>
+                  </label>
+                  <input className="batch-time-input" value={row.cutInput} maxLength="5" onChange={(event) => updateBatchRow(row.key, { cutInput: event.target.value })} placeholder="컷 시간" />
+                  <label className="batch-check"><input type="checkbox" checked={row.doubleScore} onChange={(event) => updateBatchRow(row.key, { doubleScore: event.target.checked })} /> 새벽/쟁 일정(2배)</label>
+                  <label className="batch-check"><input type="checkbox" checked={row.longTerm} onChange={(event) => updateBatchRow(row.key, { longTerm: event.target.checked })} /> 장기전</label>
+                  <div className="batch-actions">
+                    <button type="button" className="outline-button no-margin" disabled={!row.files.length || row.scanning} onClick={() => scanBatchRow(row.key)}>{row.scanning ? `인식 ${row.progress}%` : '글자인식'}</button>
+                    <button type="button" className="primary-button no-margin" disabled={row.scanning} onClick={() => saveBatchRow(row.key)}>인원체크 완료</button>
+                    {row.savedRecord && <button type="button" className="roster-button roulette-button" onClick={() => copyRouletteNames(row.savedRecord)}>핀볼복사</button>}
+                  </div>
+                  {(row.names.length > 0 || row.ambiguous.length > 0 || row.message) && (
+                    <div className="batch-result">
+                      <div className="batch-counts">
+                        <span className="clan-badge total">전체 {row.names.length}명</span>
+                        {clanDisplayOrder.map((clan) => counts[clan] ? <span className={`clan-badge ${normalize(clan)}`} key={clan}>{clan} {counts[clan]}명</span> : null)}
+                        {!!unresolved && <span className="review-count">확인필요 {unresolved}개</span>}
+                      </div>
+                      <div className="draft-review-list">
+                        {row.names.map((item) => {
+                          const editing = batchEdit?.rowKey === row.key && batchEdit?.oldName === item.name;
+                          return (
+                            <span className={item.matched ? 'draft-chip matched' : 'draft-chip review'} key={item.name}>
+                              {editing ? (
+                                <>
+                                  <input value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
+                                  <button type="button" onClick={() => { updateBatchName(row.key, item.name, batchEdit.value); setBatchEdit(null); }}>적용</button>
+                                  <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
+                                </>
+                              ) : (
+                                <>
+                                  {item.name}
+                                  {!item.matched && <button type="button" onClick={() => setBatchEdit({ rowKey: row.key, oldName: item.name, value: item.name })}>수정</button>}
+                                  <button type="button" onClick={() => removeBatchName(row.key, item.name)}>삭제</button>
+                                </>
+                              )}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {!!row.ambiguous.length && (
+                        <div className="batch-ambiguous-list">
+                          {row.ambiguous.map((item) => {
+                            const editing = batchEdit?.rowKey === row.key && batchEdit?.raw === item.raw;
+                            return (
+                              <div className="ocr-review-item compact" key={item.raw}>
+                                <b>인식값: {item.raw}</b>
+                                <div className="ocr-suggestion-buttons">
+                                  {item.suggestions.map(({ member: suggestion, score }) => (
+                                    <button type="button" key={suggestion.memberId} onClick={() => resolveBatchAmbiguous(row.key, item.raw, suggestion.characterName)}>
+                                      {suggestion.characterName}<small>{Math.round(score * 100)}%</small>
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="ocr-manual-row">
+                                  {editing ? (
+                                    <>
+                                      <input value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
+                                      <button type="button" onClick={() => { resolveBatchAmbiguous(row.key, item.raw, batchEdit.value); setBatchEdit(null); }}>수정해서 추가</button>
+                                      <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button type="button" onClick={() => setBatchEdit({ rowKey: row.key, raw: item.raw, value: item.raw })}>직접수정</button>
+                                      <button type="button" onClick={() => ignoreBatchAmbiguous(row.key, item.raw)}>무시</button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {row.message && <p className="batch-message">{row.message}</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {member.role === 'ADMIN' && (
         <section className="white-card boss-register-card">

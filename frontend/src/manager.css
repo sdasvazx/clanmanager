@@ -311,6 +311,132 @@
   margin: 0 auto 18px;
 }
 
+.boss-batch-card {
+  max-width: 1400px;
+  margin: 0 auto 18px;
+}
+
+.boss-batch-list {
+  display: grid;
+  gap: 14px;
+}
+
+.boss-batch-row {
+  display: grid;
+  grid-template-columns: 180px 220px 150px 180px 110px minmax(260px, auto);
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid #e6edf6;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.boss-batch-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1e293b;
+  font-size: 1.05rem;
+}
+
+.saved-pill {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.batch-drop-zone {
+  display: grid;
+  place-items: center;
+  min-height: 86px;
+  padding: 12px;
+  border: 2px dashed #d7dee9;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #718096;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: center;
+}
+
+.batch-drop-zone input {
+  display: none;
+}
+
+.batch-time-input {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid #cbd7e7;
+  border-radius: 12px;
+  color: #1f2a44;
+  font-weight: 800;
+}
+
+.batch-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #42526b;
+  font-weight: 750;
+}
+
+.batch-check input {
+  width: 16px;
+  height: 16px;
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.batch-result {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #d9e3f0;
+}
+
+.batch-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: .82rem;
+  font-weight: 850;
+}
+
+.batch-ambiguous-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ocr-review-item.compact {
+  padding: 10px;
+}
+
+.batch-message {
+  margin: 0;
+  color: #475569;
+  font-weight: 800;
+}
+
 .boss-form {
   display: grid;
   grid-template-columns: repeat(6, minmax(120px, 1fr));
@@ -828,13 +954,17 @@
   .admin-reset-form,
   .password-form,
   .boss-form,
+  .boss-batch-row,
   .boss-roster-groups {
     grid-template-columns: 1fr;
   }
 
   .boss-form .wide,
-  .boss-names {
+  .boss-names,
+  .batch-result,
+  .batch-ambiguous-list {
     grid-column: 1;
+    grid-template-columns: 1fr;
   }
 }
 
