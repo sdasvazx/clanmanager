@@ -64,6 +64,16 @@
   color: #718096;
 }
 
+.admin-back-button {
+  margin: 0 0 14px;
+  padding: 9px 13px;
+  border: 1px solid #bdd7ff;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #1d66d5;
+  font-weight: 850;
+}
+
 .data-table td .role-button {
   white-space: nowrap;
 }

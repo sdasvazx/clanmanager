@@ -125,11 +125,13 @@ function groupByClan(rows) {
 }
 
 function extractOcrNames(text, registeredMembers = []) {
-  const memberByNormalized = new Map(registeredMembers.map((m) => [normalize(m.characterName), m.characterName]));
+  const ocrKey = (value) => normalize(value).replace(/2/g, 'z');
+  const memberByNormalized = new Map(registeredMembers.flatMap((m) => [...new Set([normalize(m.characterName), ocrKey(m.characterName)])].map((key) => [key, m.characterName])));
   const wholeText = String(text ?? '');
   const normalizedText = normalize(wholeText);
+  const zFixedText = normalizedText.replace(/2/g, 'z');
   const matched = registeredMembers
-    .filter((m) => normalize(m.characterName).length > 1 && normalizedText.includes(normalize(m.characterName)))
+    .filter((m) => normalize(m.characterName).length > 1 && (normalizedText.includes(normalize(m.characterName)) || zFixedText.includes(ocrKey(m.characterName))))
     .map((m) => m.characterName);
   const matchedKeys = new Set(matched.map(normalize));
   const blockedWords = new Set(['귀신', '귀신z', '로망', '운좋은', '운좋은사람들', '게헨나', '미분류', 'lv', 'level']);
@@ -147,12 +149,68 @@ function extractOcrNames(text, registeredMembers = []) {
     .filter((name) => /^[0-9A-Za-z가-힣]{2,10}$/.test(name))
     .filter((name) => !/^[A-Za-z0-9]+$/.test(name))
     .filter((name) => !blockedWords.has(normalize(name)))
-    .map((name) => memberByNormalized.get(normalize(name)) ?? name)
-    .filter((name) => !matchedKeys.has(normalize(name)) || memberByNormalized.has(normalize(name)));
+    .map((name) => memberByNormalized.get(normalize(name)) ?? memberByNormalized.get(ocrKey(name)) ?? name)
+    .filter((name) => !matchedKeys.has(normalize(name)) || memberByNormalized.has(normalize(name)) || memberByNormalized.has(ocrKey(name)));
   return [...new Set([...matched, ...guessed])];
 }
 function namesFromText(value) {
   return [...new Set(String(value ?? '').split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean))];
+}
+
+const canvasToBlob = (canvas) => new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+
+const loadImageElement = (file) => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => resolve(image);
+  image.onerror = reject;
+  image.src = URL.createObjectURL(file);
+});
+
+async function createOcrVariants(file) {
+  const image = await loadImageElement(file);
+  const makeCanvas = (scale, mode) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = false;
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    if (mode) {
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const { data } = imageData;
+      for (let index = 0; index < data.length; index += 4) {
+        const gray = (data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114);
+        const value = mode === 'threshold' ? (gray > 120 ? 255 : 0) : Math.max(0, Math.min(255, (gray - 120) * 1.65 + 140));
+        data[index] = value;
+        data[index + 1] = value;
+        data[index + 2] = value;
+      }
+      context.putImageData(imageData, 0, 0);
+    }
+    return canvas;
+  };
+  return [file, await canvasToBlob(makeCanvas(2, 'contrast')), await canvasToBlob(makeCanvas(2.8, 'threshold'))].filter(Boolean);
+}
+
+async function recognizeImageTextMultiple(file, onProgress) {
+  const variants = await createOcrVariants(file);
+  const worker = await createWorker('kor+eng', 1, {
+    logger: (log) => {
+      if (log.status === 'recognizing text') onProgress?.(Math.round(log.progress * 100));
+    },
+  });
+  const texts = [];
+  try {
+    for (let index = 0; index < variants.length; index += 1) {
+      onProgress?.(Math.round((index / variants.length) * 100));
+      const { data } = await worker.recognize(variants[index]);
+      texts.push(data.text);
+    }
+  } finally {
+    await worker.terminate();
+  }
+  onProgress?.(100);
+  return texts.join('\n');
 }
 
 function splitKoreanTime(value) {
@@ -396,6 +454,10 @@ function Ranking({ title, rows, field, power, participation }) {
   return <section className="white-card ranking"><h2>{title}</h2><table><thead><tr><th>순위</th><th>닉네임</th>{participation ? <><th>참여횟수</th><th>참여율</th></> : <th>{field}</th>}</tr></thead><tbody>{rows.slice(0, 10).map((m, i) => <tr key={m.memberId}><td>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td><td>{m.characterName}</td>{participation ? <><td>{m.attendanceCount}회</td><td className="blue-text">{m.participationRate}%</td></> : <td>{power ? formatNumber(m.combatPower) : '-'}</td>}</tr>)}</tbody></table>{!rows.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}</section>;
 }
 
+function AdminBackButton({ setPage }) {
+  return setPage ? <button className="admin-back-button" onClick={() => setPage('admin')}>← 관리자설정으로</button> : null;
+}
+
 function MyInfo({ member }) {
   const [info, setInfo] = useState(null);
   useEffect(() => { request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {}); }, [member.memberId]);
@@ -415,7 +477,7 @@ function ProfileCard({ member, info }) {
 
 function Metric({ label, value, caption, tone }) { return <div className={`metric ${tone}`}><p>{label}</p><strong>{value}</strong><small>{caption}</small></div>; }
 
-function Participation({ member }) {
+function Participation({ member, setPage }) {
   const [members, setMembers] = useState([]);
   const [attendances, setAttendances] = useState([]);
   const [periodIndex, setPeriodIndex] = useState(getCurrentParticipationPeriodIndex());
@@ -486,6 +548,7 @@ function Participation({ member }) {
 
   return (
     <>
+      <AdminBackButton setPage={setPage} />
       <div className="page-title">
         <h1>참여율·기여율 조회</h1>
         <p>2주 회차별로 참여 횟수를 계산하고, 가장 많이 참석한 캐릭터를 100%로 잡습니다.</p>
@@ -547,7 +610,7 @@ function Participation({ member }) {
   );
 }
 
-function Attendance({ member }) {
+function Attendance({ member, setPage }) {
   const [records, setRecords] = useState([]);
   const [members, setMembers] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -590,17 +653,11 @@ function Attendance({ member }) {
     setOcrStatus('스샷 글자를 읽는 중입니다.');
     setProgress(0);
     try {
-      const worker = await createWorker('kor+eng', 1, {
-        logger: (log) => {
-          if (log.status === 'recognizing text') setProgress(Math.round(log.progress * 100));
-        },
-      });
-      const { data } = await worker.recognize(file);
-      await worker.terminate();
-      const names = extractOcrNames(data.text, members);
+      const text = await recognizeImageTextMultiple(file, setProgress);
+      const names = extractOcrNames(text, members);
       const merged = [...new Set([...namesFromText(currentDraftNames), ...names])];
       updateCurrentDraft(merged.join('\n'));
-      setOcrStatus(`${names.length}명 후보를 찾았습니다. 저장 전 명단을 확인해 주세요.`);
+      setOcrStatus(`${names.length}명 후보를 찾았습니다. 3회 보정 인식 결과를 합쳤습니다. 저장 전 명단을 확인해 주세요.`);
     } catch (err) {
       setOcrStatus(`OCR 처리 실패: ${err.message}`);
     }
@@ -835,7 +892,7 @@ function TimeBadge({ value, dateTime = false }) {
   return <>{period && <span className="time-badge">{period}</span>} {time}</>;
 }
 
-function PinballPage() {
+function PinballPage({ setPage }) {
   const [records, setRecords] = useState([]);
   const [message, setMessage] = useState('');
   const [loadingId, setLoadingId] = useState(null);
@@ -897,6 +954,7 @@ function PinballPage() {
 
   return (
     <>
+      <AdminBackButton setPage={setPage} />
       <div className="page-title">
         <h1>핀볼</h1>
         <p>보스별 참여자 명단을 핀볼 룰렛에 바로 넣을 수 있게 복사합니다.</p>
@@ -1028,6 +1086,38 @@ function PaymentPage({ member }) {
   const rows = (summary?.recentTransactions ?? []).filter((row) => row.type === 'DISTRIBUTION' && row.targetMemberId === member.memberId);
   const total = rows.reduce((sum, row) => sum + Number(row.amountDiamonds || 0), 0);
   return <><div className="page-title"><h1>분배금 조회</h1><p>내 캐릭터에게 지급된 클랜금고 분배 기록입니다.</p></div><div className="metric-grid"><Metric label="내 누적 분배" value={money(total)} caption={`${rows.length}건 지급`} tone="green" /><Metric label="클랜금고 잔액" value={money(summary?.balanceDiamonds)} caption="현재 남은 다이아" tone="blue" /><Metric label="최근 기록" value={`${rows.length}건`} caption="최근 거래 기준" tone="purple" /></div><section className="white-card"><div className="table-wrap"><table className="data-table"><thead><tr><th>일시</th><th>수량</th><th>메모</th><th>기록자</th></tr></thead><tbody>{rows.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td className="green-text">{money(row.amountDiamonds)}</td><td>{row.memo || '-'}</td><td>{row.createdByMemberName || '-'}</td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">아직 내게 지급된 분배금 기록이 없습니다.</div>}</section></>;
+}
+
+function PaymentClaimPage({ member }) {
+  const [summary, setSummary] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [message, setMessage] = useState('');
+  const [claimingId, setClaimingId] = useState(null);
+  const load = async () => {
+    const [vault, distributions] = await Promise.all([
+      request('/vault'),
+      request(`/vault/distributions/member/${member.memberId}`),
+    ]);
+    setSummary(vault);
+    setRows(distributions);
+  };
+  useEffect(() => { load().catch((err) => setMessage(err.message)); }, [member.memberId]);
+  const pendingTotal = rows.filter((row) => !row.claimed).reduce((sum, row) => sum + Number(row.amountDiamonds || 0), 0);
+  const claimedTotal = rows.filter((row) => row.claimed).reduce((sum, row) => sum + Number(row.amountDiamonds || 0), 0);
+  const claim = async (row) => {
+    setClaimingId(row.transactionId);
+    setMessage('');
+    try {
+      await request(`/vault/distributions/${row.transactionId}/claim?memberId=${member.memberId}`, { method: 'POST' });
+      await load();
+      setMessage('분배금 수령완료로 처리했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setClaimingId(null);
+    }
+  };
+  return <><div className="page-title"><h1>분배금 조회</h1><p>클랜금고에서 내 캐릭터에게 배정된 분배금과 수령 여부를 확인합니다.</p></div><div className="metric-grid"><Metric label="받을금액" value={money(pendingTotal)} caption="아직 수령 처리하지 않은 금액" tone="green" /><Metric label="받은금액" value={money(claimedTotal)} caption="수령완료 처리된 금액" tone="blue" /><Metric label="클랜금고 잔액" value={money(summary?.balanceDiamonds)} caption="현재 남아있는 다이아" tone="purple" /></div><section className="white-card"><div className="section-heading"><h2>내 분배금 내역</h2><span className="result-count">{rows.length}건</span></div>{message && <p className="vault-message">{message}</p>}<div className="table-wrap"><table className="data-table"><thead><tr><th>일시</th><th>수량</th><th>상태</th><th>수령일</th><th>메모</th><th>기록자</th><th>처리</th></tr></thead><tbody>{rows.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td className="green-text">{money(row.amountDiamonds)}</td><td><span className={`claim-pill ${row.claimed ? 'done' : 'pending'}`}>{row.claimed ? '수령완료' : '수령대기'}</span></td><td>{row.claimedAt ? new Date(row.claimedAt).toLocaleString('ko-KR') : '-'}</td><td>{row.memo || '-'}</td><td>{row.createdByMemberName || '-'}</td><td>{row.claimed ? '-' : <button className="mini-button" disabled={claimingId === row.transactionId} onClick={() => claim(row)}>{claimingId === row.transactionId ? '처리중' : '수령완료 처리'}</button>}</td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">아직 내게 배정된 분배금 기록이 없습니다.</div>}</section></>;
 }
 
 function InventoryPage({ member }) {
@@ -1317,12 +1407,10 @@ function RosterScan() {
     setStatus('이미지에서 이름을 읽는 중입니다...');
     setProgress(0);
     try {
-      const worker = await createWorker('kor+eng', 1, { logger: (message) => { if (message.status === 'recognizing text') setProgress(Math.round(message.progress * 100)); } });
-      const { data } = await worker.recognize(file);
-      await worker.terminate();
-      setText(data.text);
+      const ocrText = await recognizeImageTextMultiple(file, setProgress);
+      setText(ocrText);
       const memberByNormalized = new Map(members.map((m) => [normalize(m.characterName), m.characterName]));
-      const names = extractOcrNames(data.text, members).slice(0, 40);
+      const names = extractOcrNames(ocrText, members).slice(0, 40);
       const registeredCount = names.filter((name) => memberByNormalized.has(normalize(name))).length;
       setResult(names.map((name) => {
         const registeredName = memberByNormalized.get(normalize(name));
@@ -1330,7 +1418,7 @@ function RosterScan() {
           ? { name: registeredName, state: 'registered', detail: '등록된 클랜원과 일치' }
           : { name, state: 'review', detail: 'OCR 인식 결과 · 확인 필요' };
       }));
-      setStatus(registeredCount ? `${registeredCount}명의 등록 클랜원을 찾았습니다.` : '자동 일치된 클랜원이 없습니다. 인식 결과를 확인해 주세요.');
+      setStatus(registeredCount ? `${registeredCount}명의 등록 클랜원을 찾았습니다. 3회 보정 인식 결과를 합쳤습니다.` : '자동 일치된 클랜원이 없습니다. 인식 결과를 확인해 주세요.');
     } catch {
       setStatus('이미지를 읽지 못했습니다. 이름 부분이 선명하게 보이는 사진으로 다시 시도해 주세요.');
     } finally {
@@ -1343,6 +1431,12 @@ function RosterScan() {
 function AccessDenied() { return <section className="placeholder-page"><div className="white-card"><span>🔒</span><h1>운영자 전용 화면</h1><p>이 메뉴는 운영자만 사용할 수 있습니다.<br />일반 클랜원은 조회 메뉴를 이용할 수 있습니다.</p></div></section>; }
 function LoadingCard() { return <section className="white-card loading-card">정보를 불러오는 중입니다...</section>; }
 
+function RosterScanAdmin({ setPage }) { return <><AdminBackButton setPage={setPage} /><RosterScan /></>; }
+
+function MemberAdminPage({ member, setPage, onMemberUpdate }) {
+  return <><AdminBackButton setPage={setPage} /><Admin member={member} setPage={setPage} onMemberUpdate={onMemberUpdate} memberOnly /></>;
+}
+
 export default function App() {
   const [member, setMember] = useState(() => JSON.parse(sessionStorage.getItem('clanMember') || 'null'));
   const [page, setPage] = useState('lobby');
@@ -1351,6 +1445,6 @@ export default function App() {
   const logout = () => { sessionStorage.removeItem('clanMember'); setMember(null); setPage('lobby'); };
   if (!member) return <AuthScreen onLogin={login} />;
   if (member.role !== 'ADMIN' && adminOnlyPages.has(page)) return <Shell member={member} page={page} setPage={setPage} onLogout={logout}><AccessDenied /></Shell>;
-  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation member={member} /> : page === 'attendance' ? <Attendance member={member} /> : page === 'payment' ? <PaymentPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScan /> : page === 'pinball' ? <PinballPage /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : page === 'member-admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} memberOnly /> : <Lobby member={member} setPage={setPage} />;
+  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation member={member} setPage={setPage} /> : page === 'attendance' ? <Attendance member={member} setPage={setPage} /> : page === 'payment' ? <PaymentClaimPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScanAdmin setPage={setPage} /> : page === 'pinball' ? <PinballPage setPage={setPage} /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : page === 'member-admin' ? <MemberAdminPage member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : <Lobby member={member} setPage={setPage} />;
   return <Shell member={member} page={page} setPage={setPage} onLogout={logout}>{view}</Shell>;
 }

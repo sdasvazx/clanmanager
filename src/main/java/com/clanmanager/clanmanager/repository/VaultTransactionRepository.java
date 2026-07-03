@@ -10,5 +10,7 @@ public interface VaultTransactionRepository extends JpaRepository<VaultTransacti
 
     List<VaultTransaction> findTop50ByOrderByCreatedAtDesc();
 
+    List<VaultTransaction> findByTypeAndTargetMember_MemberIdOrderByCreatedAtDesc(VaultTransactionType type, Long memberId);
+
     long countByType(VaultTransactionType type);
 }

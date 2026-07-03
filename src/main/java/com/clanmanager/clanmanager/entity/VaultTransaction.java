@@ -54,6 +54,10 @@ public class VaultTransaction {
     @Column(length = 200)
     private String memo;
 
+    private Boolean claimed;
+
+    private LocalDateTime claimedAt;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 

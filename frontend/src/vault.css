@@ -118,6 +118,41 @@
   background: #7c3aed;
 }
 
+.claim-pill {
+  display: inline-flex;
+  min-width: 74px;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 900;
+}
+
+.claim-pill.pending {
+  background: #fff4d9;
+  color: #b77900;
+}
+
+.claim-pill.done {
+  background: #e9fbea;
+  color: #14934a;
+}
+
+.mini-button {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #eaf3ff;
+  color: #1d66d5;
+  font-size: .84rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.mini-button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
 .role-card {
   margin-top: 20px;
 }

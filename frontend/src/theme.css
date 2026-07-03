@@ -150,3 +150,20 @@
 [data-theme="dark"] .logout-icon {
   color: #d6e0ed;
 }
+
+[data-theme="dark"] .admin-back-button,
+[data-theme="dark"] .mini-button {
+  background: #20385b;
+  border-color: #31527f;
+  color: #bcd7ff;
+}
+
+[data-theme="dark"] .claim-pill.pending {
+  background: #3a2a10;
+  color: #ffd58a;
+}
+
+[data-theme="dark"] .claim-pill.done {
+  background: #12351f;
+  color: #95f0b4;
+}

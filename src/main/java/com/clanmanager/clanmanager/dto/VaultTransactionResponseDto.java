@@ -21,6 +21,8 @@ public class VaultTransactionResponseDto {
     private Long createdByMemberId;
     private String createdByMemberName;
     private String memo;
+    private Boolean claimed;
+    private LocalDateTime claimedAt;
     private LocalDateTime createdAt;
 
     public static VaultTransactionResponseDto from(VaultTransaction transaction) {
@@ -37,6 +39,8 @@ public class VaultTransactionResponseDto {
                 .createdByMemberId(createdBy == null ? null : createdBy.getMemberId())
                 .createdByMemberName(createdBy == null ? null : createdBy.getCharacterName())
                 .memo(transaction.getMemo())
+                .claimed(transaction.getClaimed() == null || transaction.getClaimed())
+                .claimedAt(transaction.getClaimedAt())
                 .createdAt(transaction.getCreatedAt())
                 .build();
     }

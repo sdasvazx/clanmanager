@@ -15,11 +15,14 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -50,6 +53,13 @@ public class ClanVaultController {
         return findRecentTransactions();
     }
 
+    @GetMapping("/distributions/member/{memberId}")
+    public List<VaultTransactionResponseDto> getMemberDistributions(@PathVariable Long memberId) {
+        return transactionRepository.findByTypeAndTargetMember_MemberIdOrderByCreatedAtDesc(VaultTransactionType.DISTRIBUTION, memberId).stream()
+                .map(VaultTransactionResponseDto::from)
+                .toList();
+    }
+
     @PostMapping("/deposit")
     @Transactional
     public VaultTransactionResponseDto deposit(@RequestBody VaultTransactionRequestDto request) {
@@ -71,9 +81,39 @@ public class ClanVaultController {
         if (vault.getBalanceDiamonds() < amount) {
             throw new IllegalArgumentException("클랜 금고 잔액이 부족합니다.");
         }
+        return saveTransaction(VaultTransactionType.DISTRIBUTION, amount, vault, targetMember, request);
+    }
+
+    @PostMapping("/distributions/{transactionId}/claim")
+    @Transactional
+    public VaultTransactionResponseDto claimDistribution(@PathVariable Long transactionId, @RequestParam Long memberId) {
+        Member requester = findRequiredMember(memberId, "수령 확인 회원 정보가 필요합니다.");
+        VaultTransaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 분배 기록입니다."));
+
+        if (transaction.getType() != VaultTransactionType.DISTRIBUTION || transaction.getTargetMember() == null) {
+            throw new IllegalArgumentException("분배 기록만 수령 처리할 수 있습니다.");
+        }
+        boolean owner = transaction.getTargetMember().getMemberId().equals(requester.getMemberId());
+        if (!owner && requester.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("본인 분배금만 수령 처리할 수 있습니다.");
+        }
+        if (transaction.getClaimed() != null && transaction.getClaimed()) {
+            throw new IllegalArgumentException("이미 수령 완료된 분배금입니다.");
+        }
+
+        ClanVault vault = getOrCreateVault();
+        long amount = requirePositiveAmount(transaction.getAmountDiamonds());
+        if (vault.getBalanceDiamonds() < amount) {
+            throw new IllegalArgumentException("클랜 금고 잔액이 부족합니다.");
+        }
         vault.setBalanceDiamonds(vault.getBalanceDiamonds() - amount);
         vaultRepository.save(vault);
-        return saveTransaction(VaultTransactionType.DISTRIBUTION, amount, vault, targetMember, request);
+
+        transaction.setClaimed(true);
+        transaction.setClaimedAt(LocalDateTime.now());
+        transaction.setBalanceAfter(vault.getBalanceDiamonds());
+        return VaultTransactionResponseDto.from(transactionRepository.save(transaction));
     }
 
     @PostMapping("/withdraw")
@@ -132,6 +172,8 @@ public class ClanVaultController {
                 .targetMember(targetMember)
                 .createdBy(findOptionalMember(request.getCreatedByMemberId()))
                 .memo(request.getMemo())
+                .claimed(type != VaultTransactionType.DISTRIBUTION)
+                .claimedAt(type == VaultTransactionType.DISTRIBUTION ? null : LocalDateTime.now())
                 .build());
         return VaultTransactionResponseDto.from(transaction);
     }
