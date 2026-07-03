@@ -2145,13 +2145,187 @@ function BiddingPage({ member }) {
 }
 
 function CollectionPage({ member }) {
-  const [rows, setRows] = useState([]);
-  const [form, setForm] = useState({ characterName: '', itemName: '', state: '완료', memo: '' });
-  const canManage = member.role === 'ADMIN';
-  const load = () => request('/management/collections').then(setRows).catch(() => {});
+  const [data, setData] = useState({ items: [], members: [], statuses: [], histories: [] });
+  const [message, setMessage] = useState('');
+  const [itemName, setItemName] = useState('');
+  const [editingItem, setEditingItem] = useState(null);
+  const [memoByCell, setMemoByCell] = useState({});
+  const [savingCell, setSavingCell] = useState('');
+  const load = () => request('/management/collection-dashboard').then(setData).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
-  const add = async (event) => { event.preventDefault(); await request('/management/collections', { method: 'POST', body: JSON.stringify({ ...form, adminMemberId: member.memberId }) }); setForm({ characterName: '', itemName: '', state: '완료', memo: '' }); await load(); };
-  return <CrudPage title="컬렉템 지급현황" description="컬렉션/장비 지급과 수정 기록을 조회합니다." canManage={canManage} form={<form className="record-form" onSubmit={add}><input required placeholder="닉네임" value={form.characterName} onChange={(e) => setForm({ ...form, characterName: e.target.value })} /><input required placeholder="아이템/장비명" value={form.itemName} onChange={(e) => setForm({ ...form, itemName: e.target.value })} /><select value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })}><option>완료</option><option>미완료</option><option>회수</option></select><input placeholder="메모" value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} /><button className="primary-button">기록 추가</button></form>} rows={rows} getId={(row) => row.collectionRecordId} columns={['닉네임', '아이템/장비', '상태', '메모', '등록일']} render={(row) => [row.characterName, row.itemName, row.state, row.memo || '-', new Date(row.createdAt).toLocaleDateString('ko-KR')]} onDelete={async (id) => { await request(`/management/collections/${id}?adminMemberId=${member.memberId}`, { method: 'DELETE' }); await load(); }} />;
+  const statusMap = useMemo(() => {
+    const map = new Map();
+    data.statuses.forEach((row) => map.set(`${row.memberId}:${row.itemId}`, row));
+    return map;
+  }, [data.statuses]);
+  const addItem = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    try {
+      await request('/management/collection-items', {
+        method: 'POST',
+        body: JSON.stringify({ itemName, actorMemberId: member.memberId }),
+      });
+      setItemName('');
+      await load();
+      setMessage('컬렉템 항목을 추가했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+  const renameItem = async () => {
+    if (!editingItem?.itemName?.trim()) return;
+    setMessage('');
+    try {
+      await request(`/management/collection-items/${editingItem.itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ itemName: editingItem.itemName, actorMemberId: member.memberId }),
+      });
+      setEditingItem(null);
+      await load();
+      setMessage('컬렉템 항목명을 수정했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+  const deleteItem = async (item) => {
+    if (!window.confirm(`${item.itemName} 항목을 숨길까요? 기존 로그는 유지됩니다.`)) return;
+    setMessage('');
+    try {
+      await request(`/management/collection-items/${item.itemId}?actorMemberId=${member.memberId}`, { method: 'DELETE' });
+      await load();
+      setMessage('컬렉템 항목을 숨겼습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+  const updateStatus = async (targetMember, item, state) => {
+    const key = `${targetMember.memberId}:${item.itemId}`;
+    setSavingCell(key);
+    setMessage('');
+    try {
+      await request('/management/collection-statuses', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          memberId: targetMember.memberId,
+          itemId: item.itemId,
+          state,
+          memo: memoByCell[key] || '',
+          actorMemberId: member.memberId,
+        }),
+      });
+      setMemoByCell((prev) => ({ ...prev, [key]: '' }));
+      await load();
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSavingCell('');
+    }
+  };
+  const completedCount = data.statuses.filter((row) => row.state === '완료').length;
+  const totalCount = data.members.length * data.items.length;
+  return (
+    <>
+      <div className="page-title">
+        <h1>컬렉템 지급현황</h1>
+        <p>컬렉션/스킬 지급 여부를 체크하고, 누가 언제 수정했는지 로그로 남깁니다.</p>
+      </div>
+      <section className="white-card collection-toolbar">
+        <div>
+          <h2>스킬현황 아이템 관리</h2>
+          <p className="subtle">모든 클랜원이 수정할 수 있으며, 변경 내역은 오른쪽 로그에 기록됩니다.</p>
+        </div>
+        <form className="collection-add-form" onSubmit={addItem}>
+          <input value={itemName} onChange={(event) => setItemName(event.target.value)} placeholder="새 컬렉템/스킬명" />
+          <button className="primary-button">항목 추가</button>
+        </form>
+      </section>
+      {message && <p className="vault-message">{message}</p>}
+      <div className="collection-layout">
+        <section className="white-card collection-main-card">
+          <div className="section-heading">
+            <div>
+              <h2>지급현황</h2>
+              <p className="subtle">완료/미완료/회수 상태를 바로 변경할 수 있습니다.</p>
+            </div>
+            <span className="result-count">완료 {completedCount} / {totalCount}</span>
+          </div>
+          <div className="table-wrap collection-table-wrap">
+            <table className="data-table collection-table">
+              <thead>
+                <tr>
+                  <th className="sticky-col">닉네임</th>
+                  <th>클랜</th>
+                  {data.items.map((item) => (
+                    <th key={item.itemId}>
+                      {editingItem?.itemId === item.itemId ? (
+                        <span className="collection-item-edit">
+                          <input value={editingItem.itemName} onChange={(event) => setEditingItem({ ...editingItem, itemName: event.target.value })} />
+                          <button type="button" onClick={renameItem}>저장</button>
+                          <button type="button" onClick={() => setEditingItem(null)}>취소</button>
+                        </span>
+                      ) : (
+                        <span className="collection-item-head">
+                          {item.itemName}
+                          <button type="button" title="항목명 수정" onClick={() => setEditingItem(item)}>✎</button>
+                          <button type="button" title="항목 숨김" onClick={() => deleteItem(item)}>×</button>
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.members.map((targetMember) => (
+                  <tr key={targetMember.memberId}>
+                    <td className="sticky-col"><b>{targetMember.characterName}</b></td>
+                    <td>{targetMember.guildName || '-'}</td>
+                    {data.items.map((item) => {
+                      const key = `${targetMember.memberId}:${item.itemId}`;
+                      const status = statusMap.get(key);
+                      const state = status?.state || '미완료';
+                      return (
+                        <td key={key}>
+                          <div className="collection-cell">
+                            <select className={`collection-state ${state}`} value={state} disabled={savingCell === key} onChange={(event) => updateStatus(targetMember, item, event.target.value)}>
+                              <option>미완료</option>
+                              <option>완료</option>
+                              <option>회수</option>
+                            </select>
+                            <input value={memoByCell[key] ?? ''} onChange={(event) => setMemoByCell({ ...memoByCell, [key]: event.target.value })} placeholder={status?.memo || '메모'} />
+                            {status?.updatedByName && <small>{status.updatedByName} · {new Date(status.updatedAt).toLocaleDateString('ko-KR')}</small>}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!data.members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
+        </section>
+        <aside className="white-card collection-log-card">
+          <div className="section-heading">
+            <h2>변경/지급 로그</h2>
+            <span className="result-count">{data.histories.length}건</span>
+          </div>
+          <div className="collection-log-list">
+            {data.histories.map((log) => (
+              <div className="collection-log-row" key={log.historyId}>
+                <b>{log.action}</b>
+                <span>{log.characterName} · {log.itemName}</span>
+                <small>{log.previousState || '-'} → {log.nextState || '-'} / {log.editedByName || '-'}</small>
+                {log.memo && <em>{log.memo}</em>}
+                <time>{new Date(log.createdAt).toLocaleString('ko-KR')}</time>
+              </div>
+            ))}
+            {!data.histories.length && <div className="empty-state">아직 변경 로그가 없습니다.</div>}
+          </div>
+        </aside>
+      </div>
+    </>
+  );
 }
 
 function CrudPage({ title, description, canManage, form, rows, getId, columns, render, onDelete }) {
