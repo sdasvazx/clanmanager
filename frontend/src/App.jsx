@@ -239,7 +239,13 @@ async function createOcrVariants(file) {
     }
     return canvas;
   };
-  return [file, await canvasToBlob(makeCanvas(2, 'contrast')), await canvasToBlob(makeCanvas(2.8, 'threshold'))].filter(Boolean);
+  return [
+    file,
+    await canvasToBlob(makeCanvas(2, 'contrast')),
+    await canvasToBlob(makeCanvas(2.4, 'threshold')),
+    await canvasToBlob(makeCanvas(2.8, 'contrast')),
+    await canvasToBlob(makeCanvas(3.2, 'threshold')),
+  ].filter(Boolean);
 }
 
 async function recognizeImageTextMultiple(file, onProgress) {
@@ -733,7 +739,7 @@ function Attendance({ member, setPage }) {
       const merged = [...new Set([...namesFromText(currentDraftNames), ...names])];
       updateCurrentDraft(merged.join('\n'));
       setOcrAmbiguous(ambiguous);
-      setOcrStatus(`${names.length}명 후보를 찾았습니다. 3회 보정 인식 결과를 합쳤습니다. 저장 전 명단을 확인해 주세요.`);
+      setOcrStatus(`${names.length}명 후보를 찾았습니다. 5회 보정 인식 결과를 합쳤습니다. 저장 전 명단을 확인해 주세요.`);
     } catch (err) {
       setOcrStatus(`OCR 처리 실패: ${err.message}`);
     }
@@ -1556,7 +1562,7 @@ function RosterScan() {
           ? { name: registeredName, state: 'registered', detail: '등록된 클랜원과 일치' }
           : { name, state: 'review', detail: 'OCR 인식 결과 · 확인 필요' };
       }));
-      setStatus(registeredCount ? `${registeredCount}명의 등록 클랜원을 찾았습니다. 3회 보정 인식 결과를 합쳤습니다.` : '자동 일치된 클랜원이 없습니다. 인식 결과를 확인해 주세요.');
+      setStatus(registeredCount ? `${registeredCount}명의 등록 클랜원을 찾았습니다. 5회 보정 인식 결과를 합쳤습니다.` : '자동 일치된 클랜원이 없습니다. 인식 결과를 확인해 주세요.');
     } catch {
       setStatus('이미지를 읽지 못했습니다. 이름 부분이 선명하게 보이는 사진으로 다시 시도해 주세요.');
     } finally {
