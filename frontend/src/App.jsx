@@ -289,6 +289,7 @@ function buildOcrReview(text, members, clanName, options = {}) {
     return true;
   };
   const confident = [];
+  const appliedCorrections = [];
   const ambiguous = rawCandidates
     .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
     .filter((raw) => /[가-힣]/.test(raw) || normalize(raw).length >= 4)
@@ -298,6 +299,7 @@ function buildOcrReview(text, members, clanName, options = {}) {
       if (corrected && !exactKeys.has(normalize(corrected))) {
         confident.push(corrected);
         exactKeys.add(normalize(corrected));
+        appliedCorrections.push({ wrong: raw, right: corrected });
         return null;
       }
       return raw;
@@ -319,7 +321,7 @@ function buildOcrReview(text, members, clanName, options = {}) {
       return true;
     })
     .slice(0, 12);
-  return { exactNames: [...new Set([...exactNames, ...confident])], ambiguous };
+  return { exactNames: [...new Set([...exactNames, ...confident])], ambiguous, appliedCorrections };
 }
 function namesFromText(value) {
   return [...new Set(String(value ?? '').split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean))];
@@ -419,6 +421,7 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
   const worker = await createWorker('kor+eng', 1);
   const names = [];
   const ambiguous = [];
+  const appliedCorrections = [];
   const panelTexts = [];
   let dominantClan = '';
   try {
@@ -438,12 +441,13 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
         : firstPassReviews[index];
       names.push(...review.exactNames.map((name) => ({ name, positions: [panel.partyNumber] })));
       ambiguous.push(...review.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
+      appliedCorrections.push(...(review.appliedCorrections || []).map((item) => ({ ...item, positions: [panel.partyNumber] })));
     });
   } finally {
     await worker.terminate();
   }
   onProgress?.(100);
-  return { names, ambiguous, dominantClan };
+  return { names, ambiguous, dominantClan, appliedCorrections };
 }
 
 function splitKoreanTime(value) {
@@ -858,6 +862,7 @@ function Attendance({ member, setPage }) {
     fileReviews: [],
     names: [],
     ambiguous: [],
+    appliedCorrections: [],
     cutInput: slot.cutTime,
     longTerm: false,
     doubleScore: false,
@@ -1001,7 +1006,7 @@ function Attendance({ member, setPage }) {
       previewUrl: URL.createObjectURL(fileItem),
       dominantClan: '',
     }));
-    updateBatchRow(key, { files, fileReviews, names: [], ambiguous: [], savedRecord: null, message: files.length ? `${files.length}장 선택됨` : '' });
+    updateBatchRow(key, { files, fileReviews, names: [], ambiguous: [], appliedCorrections: [], savedRecord: null, message: files.length ? `${files.length}장 선택됨` : '' });
   };
   const selectBatchFiles = (key, event) => setBatchFiles(key, event.target.files);
   const dropBatchFiles = (key, event) => {
@@ -1011,10 +1016,11 @@ function Attendance({ member, setPage }) {
   const scanBatchRow = async (key) => {
     const row = batchRows.find((item) => item.key === key);
     if (!row?.files?.length) return;
-    updateBatchRow(key, { scanning: true, progress: 0, message: '사진 글자를 읽는 중입니다.', ambiguous: [] });
+    updateBatchRow(key, { scanning: true, progress: 0, message: '사진 글자를 읽는 중입니다.', ambiguous: [], appliedCorrections: [] });
     try {
       const foundNames = [];
       const foundAmbiguous = [];
+      const appliedCorrections = [];
       const fileReviews = row.files.map((fileItem, index) => ({
         ...(row.fileReviews?.[index] || {}),
         fileIndex: index + 1,
@@ -1046,9 +1052,16 @@ function Attendance({ member, setPage }) {
           fileName,
           sources: sourcesFromPositions(item.positions, fileIndex, fileName),
         })));
+        appliedCorrections.push(...(result.appliedCorrections || []).map((item, correctionIndex) => ({
+          ...item,
+          id: `${key}-${fileIndex}-${correctionIndex}-${item.wrong}-${item.right}`,
+          fileIndex,
+          fileName,
+          sources: sourcesFromPositions(item.positions, fileIndex, fileName),
+        })));
       }
       const names = uniqueRecognizedRows(foundNames.map((item) => classifyRecognizedName(item.name, item.positions, item.sources)));
-      updateBatchRow(key, { names, ambiguous: foundAmbiguous, fileReviews, scanning: false, progress: 100, message: `${names.length}명 인식됨 · 확인필요 ${names.filter((item) => !item.matched).length + foundAmbiguous.length}개` });
+      updateBatchRow(key, { names, ambiguous: foundAmbiguous, appliedCorrections, fileReviews, scanning: false, progress: 100, message: `${names.length}명 인식됨 · 확인필요 ${names.filter((item) => !item.matched).length + foundAmbiguous.length}개` });
     } catch (err) {
       updateBatchRow(key, { scanning: false, message: `OCR 실패: ${err.message}` });
     }
@@ -1441,6 +1454,21 @@ function Attendance({ member, setPage }) {
                           </div>
                         ))}
                       </div>
+                      {!!row.appliedCorrections?.length && (
+                        <div className="applied-correction-list">
+                          <b>자동치환 적용</b>
+                          <div>
+                            {row.appliedCorrections.map((item) => (
+                              <span className="applied-correction-chip" key={item.id || `${item.wrong}-${item.right}`}>
+                                {item.fileIndex && <small>사진 {item.fileIndex}</small>}
+                                <em>{item.wrong}</em>
+                                <strong>→ {item.right}</strong>
+                                {!!item.positions?.length && <small>{item.positions.join(', ')}번 자리</small>}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {row.message && <p className="batch-message">{row.message}</p>}
                     </div>
                   )}

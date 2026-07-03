@@ -697,6 +697,48 @@
   background: #fff7ed;
 }
 
+.applied-correction-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  background: #f0fdf4;
+}
+
+.applied-correction-list > b {
+  color: #166534;
+  font-size: .86rem;
+}
+
+.applied-correction-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.applied-correction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #14532d;
+  font-size: .82rem;
+  font-weight: 850;
+}
+
+.applied-correction-chip em {
+  color: #15803d;
+  font-style: normal;
+}
+
+.applied-correction-chip small {
+  color: #64748b;
+  font-size: .72rem;
+}
+
 .batch-message {
   margin: 0;
   color: #475569;
