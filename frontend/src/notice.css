@@ -5,6 +5,16 @@
   gap: 12px;
 }
 
+.notice-row p {
+  white-space: pre-line;
+  line-height: 1.75;
+  color: #334155;
+}
+
+.notice-row b {
+  font-size: 1.05rem;
+}
+
 .notice-delete-button {
   flex: none;
   padding: 5px 9px;
