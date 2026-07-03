@@ -976,6 +976,19 @@ function Attendance({ member, setPage }) {
     saveStoredOcrFilters(next);
   };
   const memberByNormalizedName = useMemo(() => new Map(members.map((candidate) => [normalize(candidate.characterName), candidate])), [members]);
+  const memberNameSuggestions = (value, limit = 6) => {
+    const query = normalize(value);
+    if (!query) return members.slice(0, limit);
+    return members
+      .map((candidate) => ({
+        member: candidate,
+        score: normalize(candidate.characterName).includes(query) ? 1 : similarityScore(value, candidate.characterName),
+      }))
+      .filter(({ score }) => score >= 0.35)
+      .sort((a, b) => b.score - a.score || a.member.characterName.localeCompare(b.member.characterName, 'ko-KR'))
+      .slice(0, limit)
+      .map(({ member: candidate }) => candidate);
+  };
   const normalizeSources = (sources = []) => {
     const map = new Map();
     sources.filter(Boolean).forEach((source) => {
@@ -1062,20 +1075,68 @@ function Attendance({ member, setPage }) {
   const updateBatchRow = (key, updater) => setBatchRows((prev) => prev.map((row) => (
     row.key === key ? { ...row, ...(typeof updater === 'function' ? updater(row) : updater) } : row
   )));
-  const setBatchFiles = (key, fileList) => {
-    const files = [...(fileList || [])].filter((fileItem) => fileItem.type?.startsWith('image/'));
-    const fileReviews = files.map((fileItem, index) => ({
-      fileIndex: index + 1,
-      fileName: fileItem.name || `사진 ${index + 1}`,
-      previewUrl: URL.createObjectURL(fileItem),
-      dominantClan: '',
-    }));
-    updateBatchRow(key, { files, fileReviews, names: [], ambiguous: [], appliedCorrections: [], savedRecord: null, message: files.length ? `${files.length}장 선택됨` : '' });
+  const addBatchFiles = (key, fileList) => {
+    const nextFiles = [...(fileList || [])].filter((fileItem) => fileItem.type?.startsWith('image/'));
+    if (!nextFiles.length) return;
+    updateBatchRow(key, (row) => {
+      const existingFiles = row.files || [];
+      const existingReviews = row.fileReviews || [];
+      const seen = new Set(existingFiles.map((fileItem) => `${fileItem.name}:${fileItem.size}:${fileItem.lastModified}`));
+      const uniqueNextFiles = nextFiles.filter((fileItem) => {
+        const fileKey = `${fileItem.name}:${fileItem.size}:${fileItem.lastModified}`;
+        if (seen.has(fileKey)) return false;
+        seen.add(fileKey);
+        return true;
+      });
+      if (!uniqueNextFiles.length) return { message: `${existingFiles.length}장 선택됨 · 이미 추가된 사진은 제외` };
+      const files = [...existingFiles, ...uniqueNextFiles];
+      const newReviews = uniqueNextFiles.map((fileItem, index) => ({
+        fileIndex: existingFiles.length + index + 1,
+        fileName: fileItem.name || `사진 ${existingFiles.length + index + 1}`,
+        previewUrl: URL.createObjectURL(fileItem),
+        dominantClan: '',
+      }));
+      const fileReviews = [...existingReviews, ...newReviews].map((review, index) => ({
+        ...review,
+        fileIndex: index + 1,
+        fileName: review.fileName || `사진 ${index + 1}`,
+      }));
+      return {
+        files,
+        fileReviews,
+        names: [],
+        ambiguous: [],
+        appliedCorrections: [],
+        savedRecord: null,
+        message: `${files.length}장 선택됨 · 인식하려면 다시 글자인식을 눌러주세요`,
+      };
+    });
   };
-  const selectBatchFiles = (key, event) => setBatchFiles(key, event.target.files);
+  const removeBatchFile = (key, fileIndex) => {
+    updateBatchRow(key, (row) => {
+      const removeIndex = Number(fileIndex) - 1;
+      const files = (row.files || []).filter((_, index) => index !== removeIndex);
+      const fileReviews = (row.fileReviews || [])
+        .filter((_, index) => index !== removeIndex)
+        .map((review, index) => ({ ...review, fileIndex: index + 1 }));
+      return {
+        files,
+        fileReviews,
+        names: [],
+        ambiguous: [],
+        appliedCorrections: [],
+        savedRecord: null,
+        message: files.length ? `${files.length}장 선택됨 · 인식하려면 다시 글자인식을 눌러주세요` : '',
+      };
+    });
+  };
+  const selectBatchFiles = (key, event) => {
+    addBatchFiles(key, event.target.files);
+    event.target.value = '';
+  };
   const dropBatchFiles = (key, event) => {
     event.preventDefault();
-    setBatchFiles(key, event.dataTransfer.files);
+    addBatchFiles(key, event.dataTransfer.files);
   };
   const scanBatchRow = async (key) => {
     const row = batchRows.find((item) => item.key === key);
@@ -1131,17 +1192,21 @@ function Attendance({ member, setPage }) {
     }
   };
   const updateBatchName = (key, oldName, nextName) => {
+    const trimmed = nextName.trim();
+    if (!trimmed) return;
     updateBatchRow(key, (row) => {
       const old = row.names.find((item) => item.name === oldName);
-      const next = classifyRecognizedName(nextName.trim(), old?.positions || [], old?.sources || []);
+      const next = classifyRecognizedName(trimmed, old?.positions || [], old?.sources || []);
       return { names: uniqueRecognizedRows(row.names.map((item) => item.name === oldName ? next : item)) };
     });
   };
   const removeBatchName = (key, targetName) => updateBatchRow(key, (row) => ({ names: row.names.filter((item) => item.name !== targetName) }));
   const resolveBatchAmbiguous = (key, ambiguousKey, name) => updateBatchRow(key, (row) => {
+    const trimmed = name.trim();
+    if (!trimmed) return {};
     const target = row.ambiguous.find((item) => (item.id || item.raw) === ambiguousKey);
     return {
-      names: uniqueRecognizedRows([...row.names, classifyRecognizedName(name, target?.positions || [], target?.sources || [])]),
+      names: uniqueRecognizedRows([...row.names, classifyRecognizedName(trimmed, target?.positions || [], target?.sources || [])]),
       ambiguous: row.ambiguous.filter((item) => (item.id || item.raw) !== ambiguousKey),
     };
   });
@@ -1370,6 +1435,9 @@ function Attendance({ member, setPage }) {
 
   return (
     <>
+      <datalist id="member-name-suggestions">
+        {members.map((candidate) => <option key={candidate.memberId} value={candidate.characterName} />)}
+      </datalist>
       <div className="page-title">
         <h1>보스 참여내역 조회</h1>
         <p>각 클랜 스크린샷을 OCR로 읽어 보스 회차별 참석 인원과 명단을 기록합니다.</p>
@@ -1454,10 +1522,24 @@ function Attendance({ member, setPage }) {
                     <b>{row.title}</b>
                     {row.savedRecord && <span className="saved-pill">저장완료</span>}
                   </div>
-                  <label className="batch-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropBatchFiles(row.key, event)}>
-                    <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => selectBatchFiles(row.key, event)} />
-                    <span>{row.files.length ? `${row.files.length}장 선택됨` : '사진 드래그/선택'}</span>
-                  </label>
+                  <div className="batch-file-picker">
+                    <label className="batch-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropBatchFiles(row.key, event)}>
+                      <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => selectBatchFiles(row.key, event)} />
+                      <span>{row.files.length ? '사진 더 추가' : '사진 드래그/선택'}</span>
+                      {!!row.files.length && <small>{row.files.length}장 선택됨</small>}
+                    </label>
+                    {!!row.files.length && (
+                      <div className="batch-file-list">
+                        {row.fileReviews.map((fileItem) => (
+                          <span className="batch-file-chip" key={`${row.key}-${fileItem.fileIndex}-${fileItem.fileName}`}>
+                            <b>{fileItem.fileIndex}</b>
+                            <em>{fileItem.fileName}</em>
+                            <button type="button" disabled={row.scanning} onClick={() => removeBatchFile(row.key, fileItem.fileIndex)} aria-label={`${fileItem.fileName} 삭제`}>×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <input className="batch-time-input" value={row.cutInput} maxLength="5" onChange={(event) => updateBatchRow(row.key, { cutInput: event.target.value })} placeholder="컷 시간" />
                   <label className="batch-check"><input type="checkbox" checked={row.doubleScore} onChange={(event) => updateBatchRow(row.key, { doubleScore: event.target.checked })} /> 새벽/쟁 일정(2배)</label>
                   <label className="batch-check"><input type="checkbox" checked={row.longTerm} onChange={(event) => updateBatchRow(row.key, { longTerm: event.target.checked })} /> 장기전</label>
@@ -1496,7 +1578,12 @@ function Attendance({ member, setPage }) {
                                         <span className={item.matched ? 'draft-chip matched' : 'draft-chip review'} key={`${fileGroup.fileIndex}-${positionGroup.position}-${item.name}`}>
                                           {editing ? (
                                             <>
-                                              <input value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
+                                              <input list="member-name-suggestions" value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
+                                              <div className="name-suggestion-list">
+                                                {memberNameSuggestions(batchEdit.value).map((candidate) => (
+                                                  <button type="button" key={candidate.memberId} onClick={() => setBatchEdit({ ...batchEdit, value: candidate.characterName })}>{candidate.characterName}</button>
+                                                ))}
+                                              </div>
                                               <button type="button" onClick={() => { updateBatchName(row.key, item.name, batchEdit.value); setBatchEdit(null); }}>적용</button>
                                               <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
                                             </>
@@ -1526,7 +1613,12 @@ function Attendance({ member, setPage }) {
                                           <div className="ocr-manual-row">
                                             {editing ? (
                                               <>
-                                                <input value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
+                                                <input list="member-name-suggestions" value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
+                                                <div className="name-suggestion-list">
+                                                  {memberNameSuggestions(batchEdit.value).map((candidate) => (
+                                                    <button type="button" key={candidate.memberId} onClick={() => setBatchEdit({ ...batchEdit, value: candidate.characterName })}>{candidate.characterName}</button>
+                                                  ))}
+                                                </div>
                                                 <button type="button" onClick={() => { resolveBatchAmbiguous(row.key, ambiguousKey, batchEdit.value); setBatchEdit(null); }}>수정해서 추가</button>
                                                 <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
                                               </>

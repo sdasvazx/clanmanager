@@ -544,6 +544,69 @@
   text-align: center;
 }
 
+.batch-file-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.batch-drop-zone small {
+  color: #2563eb;
+  font-size: .76rem;
+  font-weight: 900;
+}
+
+.batch-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.batch-file-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.batch-file-chip b {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: .68rem;
+}
+
+.batch-file-chip em {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+}
+
+.batch-file-chip button {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-weight: 900;
+}
+
 .batch-drop-zone input {
   display: none;
 }
@@ -1243,6 +1306,18 @@
   outline: 0;
 }
 
+.name-suggestion-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 360px;
+}
+
+.draft-chip .name-suggestion-list {
+  width: 100%;
+  margin-top: 2px;
+}
+
 .draft-chip button,
 .ocr-manual-row button {
   padding: 4px 8px;
@@ -1256,6 +1331,13 @@
 .draft-chip.review button,
 .ocr-manual-row button:first-of-type {
   background: #f97316;
+}
+
+.draft-chip .name-suggestion-list button,
+.ocr-manual-row .name-suggestion-list button {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .ocr-manual-row {
