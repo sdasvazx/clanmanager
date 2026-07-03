@@ -98,11 +98,7 @@ const normalizeForOcrMatch = (value) => normalize(value)
   .replace(/[1il]/g, 'l')
   .replace(/vv/g, 'w')
   .replace(/rn/g, 'm');
-const nicknameAutoCorrections = {
-  가오가이가: '가오가이거',
-  레드바론: '레드바룬',
-  짱가: '짱개',
-};
+const OCR_CORRECTION_STORAGE_KEY = 'clanmanagerOcrCorrections';
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
 const bossCheckSlots = [
@@ -209,9 +205,22 @@ function findSimilarMembers(rawName, members, clanName, limit = 3) {
     .slice(0, limit);
 }
 
-function findAutoCorrectedMember(rawName, members, clanName = '') {
+function readStoredOcrCorrections() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(OCR_CORRECTION_STORAGE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredOcrCorrections(corrections) {
+  localStorage.setItem(OCR_CORRECTION_STORAGE_KEY, JSON.stringify(corrections));
+}
+
+function findAutoCorrectedMember(rawName, members, clanName = '', corrections = {}) {
   const rawKey = normalize(rawName);
-  const correctedName = nicknameAutoCorrections[rawKey];
+  const correctedName = corrections[rawKey];
   const scopedMembers = members.filter((member) => (
     !clanName || canonicalClanName(member.guildName || member.clanName) === canonicalClanName(clanName)
   ));
@@ -266,6 +275,7 @@ function candidateNamesFromOcrText(text, precise = false) {
 
 function buildOcrReview(text, members, clanName, options = {}) {
   const precise = Boolean(options.precise);
+  const corrections = options.corrections || {};
   const exactNames = extractOcrNames(text, members);
   const exactKeys = new Set(exactNames.map(normalize));
   const rawCandidates = candidateNamesFromOcrText(text, precise);
@@ -281,9 +291,10 @@ function buildOcrReview(text, members, clanName, options = {}) {
   const confident = [];
   const ambiguous = rawCandidates
     .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
+    .filter((raw) => /[가-힣]/.test(raw) || normalize(raw).length >= 4)
     .filter((raw) => !blockedWords.has(normalize(raw)))
     .map((raw) => {
-      const corrected = findAutoCorrectedMember(raw, members, clanName);
+      const corrected = findAutoCorrectedMember(raw, members, clanName, corrections);
       if (corrected && !exactKeys.has(normalize(corrected))) {
         confident.push(corrected);
         exactKeys.add(normalize(corrected));
@@ -873,9 +884,28 @@ function Attendance({ member, setPage }) {
   const [batchEdit, setBatchEdit] = useState(null);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('');
+  const [showCorrectionPanel, setShowCorrectionPanel] = useState(false);
+  const [ocrCorrections, setOcrCorrections] = useState(() => readStoredOcrCorrections());
+  const [correctionDraft, setCorrectionDraft] = useState({ wrong: '', right: '' });
 
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
+  const correctionEntries = useMemo(() => Object.entries(ocrCorrections).sort(([a], [b]) => a.localeCompare(b, 'ko-KR')), [ocrCorrections]);
+  const saveOcrCorrection = () => {
+    const wrong = normalize(correctionDraft.wrong);
+    const right = correctionDraft.right.trim();
+    if (!wrong || !right) return;
+    const next = { ...ocrCorrections, [wrong]: right };
+    setOcrCorrections(next);
+    saveStoredOcrCorrections(next);
+    setCorrectionDraft({ wrong: '', right: '' });
+  };
+  const removeOcrCorrection = (wrongKey) => {
+    const next = { ...ocrCorrections };
+    delete next[wrongKey];
+    setOcrCorrections(next);
+    saveStoredOcrCorrections(next);
+  };
   const memberByNormalizedName = useMemo(() => new Map(members.map((candidate) => [normalize(candidate.characterName), candidate])), [members]);
   const normalizeSources = (sources = []) => {
     const map = new Map();
@@ -996,7 +1026,7 @@ function Attendance({ member, setPage }) {
         const result = await recognizePartyPanels(row.files[index], members, (progressValue) => {
           const overall = Math.round(((index + (progressValue / 100)) / row.files.length) * 100);
           updateBatchRow(key, { progress: overall });
-        }, { precise: row.precise });
+        }, { precise: row.precise, corrections: ocrCorrections });
         fileReviews[index] = {
           ...fileReviews[index],
           dominantClan: result.dominantClan || '',
@@ -1148,7 +1178,7 @@ function Attendance({ member, setPage }) {
     setProgress(0);
     try {
       const text = await recognizeImageTextMultiple(file, setProgress);
-      const { exactNames: names, ambiguous } = buildOcrReview(text, members, form.clanName);
+      const { exactNames: names, ambiguous } = buildOcrReview(text, members, form.clanName, { corrections: ocrCorrections });
       const merged = [...new Set([...namesFromText(currentDraftNames), ...names])];
       updateCurrentDraft(merged.join('\n'));
       setOcrAmbiguous(ambiguous);
@@ -1275,10 +1305,39 @@ function Attendance({ member, setPage }) {
               <h2>시간별 출석체크</h2>
               <p className="subtle">보스 시간별로 사진을 여러 장 넣으면 전체 인원을 합산해 보여줍니다. 초록색만 저장되고, 주황색 확인 필요 항목은 저장에서 제외됩니다.</p>
             </div>
-            <label className="batch-date-control">출석 날짜
-              <input type="date" value={form.bossDate} onChange={(event) => setForm({ ...form, bossDate: event.target.value })} />
-            </label>
+            <div className="batch-heading-actions">
+              <button type="button" className="outline-button no-margin" onClick={() => setShowCorrectionPanel(true)}>자동치환 관리</button>
+              <label className="batch-date-control">출석 날짜
+                <input type="date" value={form.bossDate} onChange={(event) => setForm({ ...form, bossDate: event.target.value })} />
+              </label>
+            </div>
           </div>
+          {showCorrectionPanel && (
+            <div className="correction-panel">
+              <div className="section-heading compact">
+                <div>
+                  <h3>닉네임 자동치환</h3>
+                  <p className="subtle">OCR이 잘못 읽는 이름을 직접 등록하세요. 예: 가오가이가 → 가오가이거</p>
+                </div>
+                <button type="button" className="mini-button" onClick={() => setShowCorrectionPanel(false)}>닫기</button>
+              </div>
+              <div className="correction-form">
+                <input value={correctionDraft.wrong} onChange={(event) => setCorrectionDraft({ ...correctionDraft, wrong: event.target.value })} placeholder="오인식 닉네임" />
+                <span>→</span>
+                <input value={correctionDraft.right} onChange={(event) => setCorrectionDraft({ ...correctionDraft, right: event.target.value })} placeholder="올바른 닉네임" />
+                <button type="button" className="primary-button no-margin" onClick={saveOcrCorrection}>추가</button>
+              </div>
+              <div className="correction-list">
+                {correctionEntries.map(([wrong, right]) => (
+                  <span className="correction-chip" key={wrong}>
+                    <b>{wrong}</b><em>→</em><strong>{right}</strong>
+                    <button type="button" onClick={() => removeOcrCorrection(wrong)}>삭제</button>
+                  </span>
+                ))}
+                {!correctionEntries.length && <p className="subtle">아직 등록된 자동치환이 없습니다.</p>}
+              </div>
+            </div>
+          )}
           <div className="boss-batch-list">
             {batchRows.map((row) => {
               const counts = batchClanCounts(row.names);

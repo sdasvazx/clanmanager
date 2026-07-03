@@ -396,6 +396,78 @@
   outline: 0;
 }
 
+.batch-heading-actions {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.correction-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.correction-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(160px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.correction-form input {
+  width: 100%;
+  border: 1px solid #c9d7e8;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
+.correction-form span {
+  color: #64748b;
+  font-weight: 900;
+}
+
+.correction-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.correction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: .84rem;
+  font-weight: 850;
+}
+
+.correction-chip em {
+  color: #64748b;
+  font-style: normal;
+}
+
+.correction-chip button {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: #2563eb;
+  color: white;
+  font-size: .75rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .boss-batch-row {
   display: grid;
   grid-template-columns: 180px 220px 150px 180px 110px minmax(260px, auto);
