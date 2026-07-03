@@ -153,6 +153,56 @@ function extractOcrNames(text, registeredMembers = []) {
     .filter((name) => !matchedKeys.has(normalize(name)) || memberByNormalized.has(normalize(name)) || memberByNormalized.has(ocrKey(name)));
   return [...new Set([...matched, ...guessed])];
 }
+
+function editDistance(a, b) {
+  const left = normalize(a).replace(/2/g, 'z');
+  const right = normalize(b).replace(/2/g, 'z');
+  const matrix = Array.from({ length: left.length + 1 }, (_, row) => [row]);
+  for (let column = 1; column <= right.length; column += 1) matrix[0][column] = column;
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      matrix[row][column] = left[row - 1] === right[column - 1]
+        ? matrix[row - 1][column - 1]
+        : Math.min(matrix[row - 1][column - 1], matrix[row][column - 1], matrix[row - 1][column]) + 1;
+    }
+  }
+  return matrix[left.length][right.length];
+}
+
+function similarityScore(a, b) {
+  const left = normalize(a).replace(/2/g, 'z');
+  const right = normalize(b).replace(/2/g, 'z');
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  if (left.includes(right) || right.includes(left)) return 0.92;
+  return 1 - (editDistance(left, right) / Math.max(left.length, right.length));
+}
+
+function findSimilarMembers(rawName, members, clanName, limit = 3) {
+  const targetClan = canonicalClanName(clanName);
+  return members
+    .filter((member) => !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan)
+    .map((member) => ({ member, score: similarityScore(rawName, member.characterName) }))
+    .filter(({ score }) => score >= 0.42)
+    .sort((a, b) => b.score - a.score || a.member.characterName.localeCompare(b.member.characterName, 'ko-KR'))
+    .slice(0, limit);
+}
+
+function buildOcrReview(text, members, clanName) {
+  const exactNames = extractOcrNames(text, members);
+  const exactKeys = new Set(exactNames.map(normalize));
+  const rawCandidates = namesFromText(String(text ?? '')
+    .replace(/Lv\.?\s*\d+/gi, '\n')
+    .replace(/Level\s*\d+/gi, '\n')
+    .replace(/[|()[\]{}"'\`~!@#$%^&*_+=:;<>?/\\]/g, '\n')
+    .replace(/\s+/g, '\n'));
+  const ambiguous = rawCandidates
+    .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
+    .map((raw) => ({ raw, suggestions: findSimilarMembers(raw, members, clanName) }))
+    .filter((item) => item.suggestions.length)
+    .slice(0, 12);
+  return { exactNames, ambiguous };
+}
 function namesFromText(value) {
   return [...new Set(String(value ?? '').split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean))];
 }
@@ -305,6 +355,7 @@ function Shell({ member, page, setPage, onLogout, children }) {
 
 function NoticePanel({ member, notices, onReload }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [form, setForm] = useState({ title: '', content: '' });
   const [message, setMessage] = useState('');
   const canManage = member.role === 'ADMIN';
@@ -337,10 +388,13 @@ function NoticePanel({ member, notices, onReload }) {
     <section className="white-card notices">
       <div className="section-heading">
         <h2>공지</h2>
-        {canManage && <button className="small-primary" onClick={() => setOpen(!open)}>+ 추가</button>}
+        <div className="notice-actions">
+          <button className="outline-button no-margin" onClick={() => setExpanded(!expanded)}>{expanded ? '공지 접기' : '공지 펼치기'}</button>
+          {canManage && <button className="small-primary" onClick={() => setOpen(!open)}>+ 추가</button>}
+        </div>
       </div>
       {open && <form className="inline-form" onSubmit={save}><input required placeholder="공지 제목" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /><textarea required placeholder="공지 내용" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /><button className="primary-button">공지 등록</button>{message && <p className="form-error">{message}</p>}</form>}
-      {notices.length ? notices.map((n) => <article key={n.noticeId} className="notice-row"><div className="notice-row-head"><b>{n.title}</b>{canManage && <button className="notice-delete-button" onClick={() => remove(n)}>삭제</button>}</div><p>{n.content}</p><small>{new Date(n.createdAt).toLocaleString('ko-KR')}</small></article>) : <div className="empty-state">아직 등록된 공지사항이 없습니다.</div>}
+      {expanded && (notices.length ? notices.map((n) => <article key={n.noticeId} className="notice-row"><div className="notice-row-head"><b>{n.title}</b>{canManage && <button className="notice-delete-button" onClick={() => remove(n)}>삭제</button>}</div><p>{n.content}</p><small>{new Date(n.createdAt).toLocaleString('ko-KR')}</small></article>) : <div className="empty-state">아직 등록된 공지사항이 없습니다.</div>)}
     </section>
   );
 }
@@ -614,25 +668,44 @@ function Attendance({ member, setPage }) {
   const [records, setRecords] = useState([]);
   const [members, setMembers] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [selectedClan, setSelectedClan] = useState('');
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [selectedDraftByClan, setSelectedDraftByClan] = useState({});
   const [savingRoster, setSavingRoster] = useState(false);
+  const [reviewEdit, setReviewEdit] = useState(null);
   const [form, setForm] = useState({ bossDate: today(), cutTime: '21:00', bossName: '21시 보스', score: 1, clanName: '로망', memo: '' });
   const [draftByClan, setDraftByClan] = useState({});
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState('');
   const [ocrStatus, setOcrStatus] = useState('');
+  const [ocrAmbiguous, setOcrAmbiguous] = useState([]);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('');
 
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
   const updateCurrentDraft = (value) => setDraftByClan((prev) => ({ ...prev, [form.clanName]: value }));
+  const addDraftName = (name) => {
+    const merged = [...new Set([...namesFromText(currentDraftNames), name])];
+    updateCurrentDraft(merged.join('\n'));
+  };
   const rowsToDraftByClan = (rows) => rows.reduce((acc, row) => {
     const clanName = clanOptions.includes(row.clanName) ? row.clanName : clanOptions[0];
     acc[clanName] = [...namesFromText(acc[clanName] || ''), row.characterName].filter(Boolean).join('\n');
     return acc;
   }, {});
+  const replaceSelectedDraftName = (clanName, oldName, nextName) => {
+    setSelectedDraftByClan((prev) => {
+      const list = namesFromText(prev[clanName] || '');
+      return { ...prev, [clanName]: list.map((name) => name === oldName ? nextName : name).filter(Boolean).join('\n') };
+    });
+  };
+  const removeSelectedDraftName = (clanName, targetName) => {
+    setSelectedDraftByClan((prev) => {
+      const list = namesFromText(prev[clanName] || '').filter((name) => name !== targetName);
+      return { ...prev, [clanName]: list.join('\n') };
+    });
+  };
 
   const load = () => Promise.all([request('/boss-participations'), request('/members')])
     .then(([recordRows, memberRows]) => { setRecords(recordRows); setMembers(memberRows); })
@@ -645,18 +718,21 @@ function Attendance({ member, setPage }) {
     setFile(nextFile || null);
     setPreview(nextFile ? URL.createObjectURL(nextFile) : '');
     setOcrStatus('');
+    setOcrAmbiguous([]);
     setProgress(0);
   };
 
   const scanImage = async () => {
     if (!file) return;
+    setOcrAmbiguous([]);
     setOcrStatus('스샷 글자를 읽는 중입니다.');
     setProgress(0);
     try {
       const text = await recognizeImageTextMultiple(file, setProgress);
-      const names = extractOcrNames(text, members);
+      const { exactNames: names, ambiguous } = buildOcrReview(text, members, form.clanName);
       const merged = [...new Set([...namesFromText(currentDraftNames), ...names])];
       updateCurrentDraft(merged.join('\n'));
+      setOcrAmbiguous(ambiguous);
       setOcrStatus(`${names.length}명 후보를 찾았습니다. 3회 보정 인식 결과를 합쳤습니다. 저장 전 명단을 확인해 주세요.`);
     } catch (err) {
       setOcrStatus(`OCR 처리 실패: ${err.message}`);
@@ -696,10 +772,12 @@ function Attendance({ member, setPage }) {
     }
   };
 
-  const openRoster = async (record) => {
+  const openRoster = async (record, clanName = '') => {
     setSelectedRecord(record);
+    setSelectedClan(clanName);
     setSelectedMembers([]);
     setSelectedDraftByClan({});
+    setReviewEdit(null);
     try {
       const rows = await request(`/boss-participations/${record.recordId}/members`);
       setSelectedMembers(rows);
@@ -726,6 +804,7 @@ function Attendance({ member, setPage }) {
       });
       setSelectedMembers(rows);
       setSelectedDraftByClan(rowsToDraftByClan(rows));
+      setReviewEdit(null);
       await load();
       setMessage(`${selectedRecord.bossName} 참여명단을 수정했습니다.`);
     } catch (err) {
@@ -754,6 +833,8 @@ function Attendance({ member, setPage }) {
     acc[key] = [...(acc[key] || []), row];
     return acc;
   }, {}), [selectedMembers]);
+  const selectedRosterGroups = useMemo(() => Object.entries(groupedSelectedMembers)
+    .filter(([clanName]) => !selectedClan || clanName === selectedClan), [groupedSelectedMembers, selectedClan]);
 
   const visibleRecords = records.slice(0, 100);
 
@@ -794,6 +875,32 @@ function Attendance({ member, setPage }) {
             {clanOptions.map((clan) => <span key={clan} className={namesFromText(draftByClan[clan]).length ? 'ready' : ''}>{clan} {namesFromText(draftByClan[clan]).length}명</span>)}
           </div>
           {ocrStatus && <div className="scan-status">{ocrStatus}</div>}
+          {!!ocrAmbiguous.length && (
+            <div className="ocr-review-panel">
+              <div className="section-heading">
+                <div>
+                  <h3>애매한 이름 확인</h3>
+                  <p className="subtle">OCR이 헷갈린 이름입니다. 맞는 클랜원을 누르면 현재 선택한 클랜 명단에 추가됩니다.</p>
+                </div>
+                <span className="result-count">{ocrAmbiguous.length}개</span>
+              </div>
+              <div className="ocr-review-list">
+                {ocrAmbiguous.map((item) => (
+                  <div className="ocr-review-item" key={item.raw}>
+                    <b>인식값: {item.raw}</b>
+                    <div className="ocr-suggestion-buttons">
+                      {item.suggestions.map(({ member: suggestion, score }) => (
+                        <button type="button" key={suggestion.memberId} onClick={() => addDraftName(suggestion.characterName)}>
+                          {suggestion.characterName}
+                          <small>{Math.round(score * 100)}%</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {message && <p className="vault-message">{message}</p>}
         </section>
       )}
@@ -825,7 +932,7 @@ function Attendance({ member, setPage }) {
                   <td><TimeBadge value={record.cutTime} /></td>
                   <td><TimeBadge value={record.submittedAt} dateTime /></td>
                   <td>{record.bossName}</td>
-                  <td><ClanCountBadges record={record} /></td>
+                  <td><ClanCountBadges record={record} onSelectClan={(clan) => openRoster(record, clan)} /></td>
                   <td><b>{record.score}</b></td>
                   <td><div className="boss-action-buttons"><button className="roster-button" onClick={() => openRoster(record)}>명단보기</button><button className="roster-button roulette-button" onClick={() => copyRouletteNames(record)}>핀볼복사</button></div></td>
                 </tr>
@@ -840,7 +947,7 @@ function Attendance({ member, setPage }) {
         <section className="white-card boss-roster-card">
           <div className="section-heading">
             <div>
-              <h2>{selectedRecord.bossDate} · {selectedRecord.bossName} 명단</h2>
+              <h2>{selectedRecord.bossDate} · {selectedRecord.bossName} 명단{selectedClan ? ` · ${selectedClan}` : ''}</h2>
               <p className="subtle">총 {selectedMembers.length}명 · 미등록 이름은 확인 필요로 표시됩니다.</p>
             </div>
             <button className="outline-button no-margin" onClick={() => setSelectedRecord(null)}>닫기</button>
@@ -864,10 +971,29 @@ function Attendance({ member, setPage }) {
             </div>
           )}
           <div className="boss-roster-groups">
-            {Object.entries(groupedSelectedMembers).map(([clanName, list]) => (
+            {selectedRosterGroups.map(([clanName, list]) => (
               <div className="boss-roster-group" key={clanName}>
                 <h3>{clanName} <span>{list.length}명</span></h3>
-                <div>{list.map((row) => <span className={row.matched ? 'member-chip matched' : 'member-chip review'} key={row.participationMemberId}>{row.characterName}</span>)}</div>
+                <div>{list.map((row) => {
+                  const editing = reviewEdit?.clanName === clanName && reviewEdit?.oldName === row.characterName;
+                  return <span className={row.matched ? 'member-chip matched' : 'member-chip review editable'} key={row.participationMemberId}>
+                    {editing ? (
+                      <>
+                        <input value={reviewEdit.value} onChange={(e) => setReviewEdit({ ...reviewEdit, value: e.target.value })} />
+                        <button type="button" onClick={() => { replaceSelectedDraftName(clanName, row.characterName, reviewEdit.value); setReviewEdit(null); }}>적용</button>
+                        <button type="button" onClick={() => setReviewEdit(null)}>취소</button>
+                      </>
+                    ) : (
+                      <>
+                        {row.characterName}
+                        {member.role === 'ADMIN' && !row.matched && <>
+                          <button type="button" onClick={() => setReviewEdit({ clanName, oldName: row.characterName, value: row.characterName })}>수정</button>
+                          <button type="button" onClick={() => removeSelectedDraftName(clanName, row.characterName)}>삭제</button>
+                        </>}
+                      </>
+                    )}
+                  </span>;
+                })}</div>
               </div>
             ))}
           </div>
@@ -877,12 +1003,24 @@ function Attendance({ member, setPage }) {
   );
 }
 
-function ClanCountBadges({ record }) {
+function ClanCountBadges({ record, onSelectClan }) {
   const entries = Object.entries(record.clanCounts || {});
   return (
     <div className="clan-counts">
       <span className="clan-badge total">전체 {record.totalCount}명</span>
-      {entries.map(([clan, count]) => <span className={`clan-badge ${normalize(clan)}`} key={clan}>{clan} {count}명</span>)}
+      {entries.map(([clan, count]) => {
+        const label = `${clan} ${count}명`;
+        const className = `clan-badge ${normalize(clan)}${onSelectClan ? ' clickable' : ''}`;
+        return onSelectClan ? (
+          <button type="button" className={className} key={clan} onClick={() => onSelectClan(clan)}>
+            {label}
+          </button>
+        ) : (
+          <span className={className} key={clan}>
+            {label}
+          </span>
+        );
+      })}
     </div>
   );
 }

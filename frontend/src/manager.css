@@ -451,6 +451,7 @@
 .clan-badge {
   display: inline-flex;
   align-items: center;
+  border: 0;
   padding: 6px 10px;
   border-radius: 999px;
   background: #64748b;
@@ -458,6 +459,16 @@
   font-size: .78rem;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.clan-badge.clickable {
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, .08);
+}
+
+.clan-badge.clickable:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
 }
 
 .clan-badge.total {
@@ -658,6 +669,9 @@
 }
 
 .member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
   font-size: .84rem;
@@ -672,6 +686,33 @@
 .member-chip.review {
   background: #fff4e5;
   color: #c05621;
+}
+
+.member-chip.editable {
+  border: 1px solid #fed7aa;
+}
+
+.member-chip.editable input {
+  width: 120px;
+  padding: 4px 7px;
+  border: 1px solid #fdba74;
+  border-radius: 999px;
+  background: #fff;
+  color: #7c2d12;
+  outline: 0;
+}
+
+.member-chip.editable button {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fb923c;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.member-chip.editable button:last-child {
+  background: #f97316;
 }
 
 .admin-edit-form label,
