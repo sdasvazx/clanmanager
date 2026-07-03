@@ -4,6 +4,7 @@ import './roster.css';
 import './vault.css';
 import './manager.css';
 import './notice.css';
+import './theme.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api';
 const ROULETTE_URL = 'https://lazygyu.github.io/roulette/';
@@ -219,15 +220,20 @@ function AuthScreen({ onLogin }) {
 
 function Shell({ member, page, setPage, onLogout, children }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('clanTheme') || 'light');
   const visibleMenu = menu.filter(([id]) => member.role === 'ADMIN' || !adminOnlyPages.has(id));
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('clanTheme', theme);
+  }, [theme]);
   return (
     <div className={`shell ${collapsed ? 'collapsed' : ''}`}>
       <header className="topbar">
         <button className="hamburger" onClick={() => setCollapsed(!collapsed)}>☰</button>
         <div className="brand-mark">C</div>
         <div className="topbar-spacer" />
-        <button className="circle-button">☾</button>
-        <button className="profile-menu"><b>{member.characterName.slice(0, 1)}</b><span>{member.characterName}</span><small>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</small><i>⌄</i></button>
+        <button className="circle-button" title={theme === 'dark' ? '화이트 모드' : '다크 모드'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀' : '☾'}</button>
+        <button className="profile-menu name-only"><span>{member.characterName}</span></button>
         <button className="logout-icon" title="로그아웃" onClick={onLogout}>⇥</button>
       </header>
       <aside className="sidebar">

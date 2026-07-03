@@ -1,0 +1,152 @@
+[data-theme="dark"] {
+  color: #e5edf7;
+  background: #101722;
+  color-scheme: dark;
+}
+
+[data-theme="dark"] body,
+[data-theme="dark"] .shell,
+[data-theme="dark"] .content {
+  background: #101722;
+  color: #e5edf7;
+}
+
+[data-theme="dark"] .topbar,
+[data-theme="dark"] .sidebar,
+[data-theme="dark"] .white-card,
+[data-theme="dark"] .auth-card,
+[data-theme="dark"] .admin-card,
+[data-theme="dark"] .notice-row,
+[data-theme="dark"] .clan-ranking-block,
+[data-theme="dark"] .boss-roster-group,
+[data-theme="dark"] .boss-roster-editor,
+[data-theme="dark"] .pinball-draft,
+[data-theme="dark"] .inline-pinball,
+[data-theme="dark"] .participation-search-result,
+[data-theme="dark"] .participation-search-result > div,
+[data-theme="dark"] .metric,
+[data-theme="dark"] .formula-row div,
+[data-theme="dark"] .admin-edit-form,
+[data-theme="dark"] .admin-create-form,
+[data-theme="dark"] .admin-reset-form,
+[data-theme="dark"] .password-form,
+[data-theme="dark"] .vault-form-card,
+[data-theme="dark"] .vault-balance {
+  background: #172131;
+  border-color: #2b3b52;
+  color: #e5edf7;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .topbar,
+[data-theme="dark"] .sidebar {
+  border-color: #2b3b52;
+}
+
+[data-theme="dark"] .page-title p,
+[data-theme="dark"] .subtle,
+[data-theme="dark"] .notice-row p,
+[data-theme="dark"] .notice-row small,
+[data-theme="dark"] .empty-state,
+[data-theme="dark"] .side-note small,
+[data-theme="dark"] .metric small,
+[data-theme="dark"] .participation-search-result span,
+[data-theme="dark"] .participation-search-result small {
+  color: #9fb0c6;
+}
+
+[data-theme="dark"] .circle-button,
+[data-theme="dark"] .profile-menu,
+[data-theme="dark"] .outline-button,
+[data-theme="dark"] .hamburger {
+  background: #121b29;
+  border-color: #34465f;
+  color: #e5edf7;
+}
+
+.profile-menu.name-only {
+  padding: 8px 14px;
+}
+
+.profile-menu.name-only span {
+  display: inline;
+  font-weight: 800;
+}
+
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea,
+[data-theme="dark"] .auth-card input,
+[data-theme="dark"] .filters input,
+[data-theme="dark"] .filters select {
+  background: #0f1724;
+  border-color: #34465f;
+  color: #e5edf7;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #74849b;
+}
+
+[data-theme="dark"] .menu-item {
+  background: #172131;
+  border-color: #26364d;
+  color: #d6e0ed;
+}
+
+[data-theme="dark"] .menu-item:hover,
+[data-theme="dark"] .menu-item.active {
+  background: #223149;
+  color: #fff;
+}
+
+[data-theme="dark"] .menu-icon {
+  background: #26364d;
+  color: #d6e0ed;
+}
+
+[data-theme="dark"] .side-note {
+  background: #251724;
+  border-color: #5b2a43;
+  color: #ffb9c9;
+}
+
+[data-theme="dark"] .info-banner,
+[data-theme="dark"] .scan-status {
+  background: #112846;
+  border-color: #2c5f9f;
+  color: #b9d8ff;
+}
+
+[data-theme="dark"] .ranking th,
+[data-theme="dark"] .ranking td,
+[data-theme="dark"] .data-table th,
+[data-theme="dark"] .data-table td {
+  border-color: #293a51;
+}
+
+[data-theme="dark"] .ranking th,
+[data-theme="dark"] .data-table th {
+  color: #9fb0c6;
+}
+
+[data-theme="dark"] .ranking tbody tr:nth-child(even),
+[data-theme="dark"] .data-table tbody tr:hover {
+  background: #1d2a3e;
+}
+
+[data-theme="dark"] .quick-actions button {
+  background: #20385b;
+  color: #bcd7ff;
+}
+
+[data-theme="dark"] .pills span,
+[data-theme="dark"] .status-pill {
+  background: #26364d;
+  color: #d6e0ed;
+}
+
+[data-theme="dark"] .logout-icon {
+  color: #d6e0ed;
+}
