@@ -306,6 +306,61 @@
   color: #718096;
 }
 
+.bulk-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.result-count.changed {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.bulk-table-input {
+  width: 100%;
+  min-width: 92px;
+  padding: 8px 9px;
+  border: 1px solid #cbd8e8;
+  border-radius: 9px;
+  background: #fff;
+  color: #1e293b;
+  font-weight: 750;
+  outline: 0;
+}
+
+.bulk-table-input.name {
+  min-width: 130px;
+}
+
+.bulk-table-input.small {
+  min-width: 70px;
+}
+
+.bulk-table-input.power {
+  min-width: 110px;
+}
+
+.bulk-table-input.mini {
+  margin-top: 5px;
+  min-width: 78px;
+}
+
+.bulk-editing-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: .78rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
 .boss-register-card {
   max-width: 1180px;
   margin: 0 auto 18px;

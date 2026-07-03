@@ -1633,6 +1633,8 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
   const [resetPassword, setResetPassword] = useState('112200');
   const [editForm, setEditForm] = useState(emptyEditForm);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
+  const [bulkEditing, setBulkEditing] = useState(false);
+  const [bulkEdits, setBulkEdits] = useState({});
   const load = () => request('/members').then(setMembers).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
 
@@ -1641,6 +1643,17 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
     combatPower: Number(form.combatPower || 0),
     level: Number(form.level || 0),
   });
+  const formFromMember = (targetMember) => ({
+    characterName: targetMember.characterName ?? '',
+    guildName: targetMember.guildName ?? '',
+    characterClass: targetMember.characterClass ?? '',
+    level: targetMember.level ?? 0,
+    combatPower: targetMember.combatPower ?? 0,
+    rank: targetMember.rank ?? '',
+    status: targetMember.status ?? '',
+    active: targetMember.active ?? true,
+  });
+  const isSameProfile = (left, right) => JSON.stringify(memberPayload(left)) === JSON.stringify(memberPayload(right));
 
   const createMember = async (event) => {
     event.preventDefault();
@@ -1659,17 +1672,31 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
   const startEdit = (targetMember) => {
     setEditId(targetMember.memberId);
     setMessage('');
-    setEditForm({
-      characterName: targetMember.characterName ?? '',
-      guildName: targetMember.guildName ?? '',
-      characterClass: targetMember.characterClass ?? '',
-      level: targetMember.level ?? 0,
-      combatPower: targetMember.combatPower ?? 0,
-      rank: targetMember.rank ?? '',
-      status: targetMember.status ?? '',
-      active: targetMember.active ?? true,
-    });
+    setEditForm(formFromMember(targetMember));
   };
+
+  const startBulkEdit = () => {
+    setBulkEditing(true);
+    setEditId(null);
+    setResetTarget(null);
+    setMessage('');
+    setBulkEdits(Object.fromEntries(members.map((row) => [row.memberId, formFromMember(row)])));
+  };
+
+  const cancelBulkEdit = () => {
+    setBulkEditing(false);
+    setBulkEdits({});
+    setMessage('');
+  };
+
+  const updateBulkEdit = (memberId, patch) => {
+    setBulkEdits((prev) => ({ ...prev, [memberId]: { ...(prev[memberId] || emptyEditForm), ...patch } }));
+  };
+
+  const bulkChangedRows = () => members.filter((row) => {
+    const edited = bulkEdits[row.memberId];
+    return edited && !isSameProfile(formFromMember(row), edited);
+  });
 
   const saveProfile = async (event) => {
     event.preventDefault();
@@ -1687,6 +1714,38 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
         onMemberUpdate({ ...member, characterName: saved.characterName });
       }
     } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
+  };
+
+  const saveBulkProfiles = async () => {
+    const changedRows = bulkChangedRows();
+    if (!changedRows.length) {
+      setMessage('변경된 클랜원이 없습니다.');
+      return;
+    }
+    setLoadingId('bulk');
+    setMessage('');
+    try {
+      const savedRows = [];
+      for (const row of changedRows) {
+        const saved = await request(`/members/${row.memberId}/profile?adminMemberId=${member.memberId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(memberPayload(bulkEdits[row.memberId])),
+        });
+        savedRows.push(saved);
+      }
+      await load();
+      const current = savedRows.find((row) => row.memberId === member.memberId);
+      if (current) {
+        onMemberUpdate({ ...member, characterName: current.characterName });
+      }
+      setBulkEditing(false);
+      setBulkEdits({});
+      setMessage(`${changedRows.length}명의 정보를 한 번에 저장했습니다.`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoadingId(null);
+    }
   };
 
   const changeRole = async (targetMember, role) => {
@@ -1772,7 +1831,18 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
       <section className="white-card role-card">
         <div className="section-heading">
           <div><h2>클랜원 관리</h2><p className="subtle">닉네임, 길드, 클래스, 레벨, 전투력, 상태, 권한을 관리합니다.</p></div>
-          <span className="result-count">{members.length}명</span>
+          <div className="bulk-edit-actions">
+            <span className="result-count">{members.length}명</span>
+            {bulkEditing ? (
+              <>
+                <span className="result-count changed">{bulkChangedRows().length}명 변경</span>
+                <button className="primary-button no-margin" disabled={loadingId === 'bulk'} onClick={saveBulkProfiles}>{loadingId === 'bulk' ? '저장중...' : '전체 저장'}</button>
+                <button className="outline-button no-margin" disabled={loadingId === 'bulk'} onClick={cancelBulkEdit}>취소</button>
+              </>
+            ) : (
+              <button className="outline-button no-margin" onClick={startBulkEdit}>전체수정</button>
+            )}
+          </div>
         </div>
         {message && <p className="vault-message">{message}</p>}
         {resetTarget && (
@@ -1789,25 +1859,27 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
         <div className="table-wrap">
           <table className="data-table role-table">
             <thead><tr><th>닉네임</th><th>길드</th><th>클래스</th><th>레벨</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>비밀번호</th><th>권한변경</th><th>삭제</th></tr></thead>
-            <tbody>{members.map((row) => (
+            <tbody>{members.map((row) => {
+              const bulkForm = bulkEdits[row.memberId] || formFromMember(row);
+              return (
               <React.Fragment key={row.memberId}>
                 <tr>
-                  <td>{row.characterName}</td>
-                  <td>{row.guildName || '-'}</td>
-                  <td>{row.characterClass || '-'}</td>
-                  <td>{row.level ? `Lv.${row.level}` : '-'}</td>
-                  <td>{formatNumber(row.combatPower)}</td>
-                  <td>{row.rank || '-'}</td>
-                  <td>{row.active ? (row.status || '활성') : '비활성'}</td>
+                  <td>{bulkEditing ? <input className="bulk-table-input name" required value={bulkForm.characterName} onChange={(e) => updateBulkEdit(row.memberId, { characterName: e.target.value })} /> : row.characterName}</td>
+                  <td>{bulkEditing ? <select className="bulk-table-input" value={bulkForm.guildName} onChange={(e) => updateBulkEdit(row.memberId, { guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select> : (row.guildName || '-')}</td>
+                  <td>{bulkEditing ? <input className="bulk-table-input" value={bulkForm.characterClass} onChange={(e) => updateBulkEdit(row.memberId, { characterClass: e.target.value })} /> : (row.characterClass || '-')}</td>
+                  <td>{bulkEditing ? <input className="bulk-table-input small" type="number" min="0" value={bulkForm.level} onChange={(e) => updateBulkEdit(row.memberId, { level: e.target.value })} /> : (row.level ? `Lv.${row.level}` : '-')}</td>
+                  <td>{bulkEditing ? <input className="bulk-table-input power" required type="number" min="0" value={bulkForm.combatPower} onChange={(e) => updateBulkEdit(row.memberId, { combatPower: e.target.value })} /> : formatNumber(row.combatPower)}</td>
+                  <td>{bulkEditing ? <input className="bulk-table-input" value={bulkForm.rank} onChange={(e) => updateBulkEdit(row.memberId, { rank: e.target.value })} /> : (row.rank || '-')}</td>
+                  <td>{bulkEditing ? <><input className="bulk-table-input" value={bulkForm.status} onChange={(e) => updateBulkEdit(row.memberId, { status: e.target.value })} /><select className="bulk-table-input mini" value={bulkForm.active ? 'true' : 'false'} onChange={(e) => updateBulkEdit(row.memberId, { active: e.target.value === 'true' })}><option value="true">활성</option><option value="false">비활성</option></select></> : (row.active ? (row.status || '활성') : '비활성')}</td>
                   <td><span className={row.role === 'ADMIN' ? 'role-pill admin' : 'role-pill member'}>{row.role === 'ADMIN' ? '운영자' : '클랜원'}</span></td>
-                  <td><button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>{editId === row.memberId ? '수정중' : '수정'}</button></td>
-                  <td><button className="role-button key-button" title="비밀번호 초기화" disabled={loadingId === row.memberId} onClick={() => startPasswordReset(row)}>🔑</button></td>
+                  <td>{bulkEditing ? <span className="bulk-editing-label">전체수정중</span> : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => startEdit(row)}>{editId === row.memberId ? '수정중' : '수정'}</button>}</td>
+                  <td><button className="role-button key-button" title="비밀번호 초기화" disabled={bulkEditing || loadingId === row.memberId} onClick={() => startPasswordReset(row)}>🔑</button></td>
                   <td>{row.role === 'ADMIN'
-                    ? <button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button>
-                    : <button className="role-button" disabled={loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td>
-                  <td><button className="role-button danger" disabled={loadingId === row.memberId || row.memberId === member.memberId} onClick={() => deleteMember(row)}>{row.memberId === member.memberId ? '본인 삭제 불가' : '삭제'}</button></td>
+                    ? <button className="role-button danger" disabled={bulkEditing || loadingId === row.memberId || row.memberId === member.memberId} onClick={() => changeRole(row, 'MEMBER')}>{row.memberId === member.memberId ? '본인 해제 불가' : '클랜원으로 변경'}</button>
+                    : <button className="role-button" disabled={bulkEditing || loadingId === row.memberId} onClick={() => changeRole(row, 'ADMIN')}>운영자로 지정</button>}</td>
+                  <td><button className="role-button danger" disabled={bulkEditing || loadingId === row.memberId || row.memberId === member.memberId} onClick={() => deleteMember(row)}>{row.memberId === member.memberId ? '본인 삭제 불가' : '삭제'}</button></td>
                 </tr>
-                {editId === row.memberId && (
+                {!bulkEditing && editId === row.memberId && (
                   <tr className="member-edit-row">
                     <td colSpan="12">
                       <form className="admin-edit-form inline-member-edit" onSubmit={saveProfile}>
@@ -1826,7 +1898,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
                   </tr>
                 )}
               </React.Fragment>
-            ))}</tbody>
+            );})}</tbody>
           </table>
         </div>
         {!members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
