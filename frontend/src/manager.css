@@ -219,6 +219,40 @@
   color: #2563eb;
 }
 
+.participation-history-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid #d8e6f8;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbfdff, #f6faff);
+}
+
+.participation-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.participation-history-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #e1e9f4;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.participation-history-item b {
+  color: #17233a;
+}
+
+.participation-history-item span,
+.participation-history-item small {
+  color: #64748b;
+}
+
 .ranking-footnote {
   margin: 13px 0 0;
   color: #64748b;
@@ -1605,5 +1639,195 @@
 @media (max-width: 640px) {
   .record-form {
     grid-template-columns: 1fr;
+  }
+}
+
+.item-request-shortcut {
+  position: relative;
+  display: block;
+  width: calc(100% - 24px);
+  text-align: left;
+}
+
+.item-request-shortcut span {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #7b8aa0;
+  font-weight: 900;
+}
+
+.item-request-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 24px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #1e2c43, #30435e);
+  color: #fff;
+  box-shadow: 0 12px 28px #14213a20;
+}
+
+.item-request-hero h1 {
+  margin-bottom: 7px;
+  font-size: 1.35rem;
+}
+
+.item-request-hero p {
+  margin: 0;
+  color: #dbe7f7;
+}
+
+.item-request-form {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.4fr) auto;
+  gap: 10px;
+}
+
+.item-request-form input,
+.item-request-actions input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid #cbd8e8;
+  border-radius: 10px;
+  background: #fff;
+  outline: 0;
+}
+
+.item-request-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 6px;
+  border-radius: 16px;
+  background: #eef3f9;
+}
+
+.item-request-tabs button {
+  padding: 12px;
+  border-radius: 12px;
+  background: transparent;
+  color: #66758d;
+  font-weight: 850;
+}
+
+.item-request-tabs button.active {
+  background: #fff;
+  color: #17233a;
+  box-shadow: 0 2px 8px #1e3a5f18;
+}
+
+.item-request-list {
+  display: grid;
+  gap: 12px;
+}
+
+.item-request-card {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #d8e6f8;
+  border-radius: 14px;
+  background: #fbfdff;
+}
+
+.item-request-card.paid {
+  border-color: #b8f2d0;
+  background: #f4fff8;
+}
+
+.item-request-card div:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.item-request-card small {
+  color: #64748b;
+}
+
+.item-request-card b,
+.item-request-card span {
+  color: #17233a;
+}
+
+.item-request-card em {
+  color: #50617a;
+  font-style: normal;
+}
+
+.item-request-state,
+.item-request-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.item-request-actions {
+  grid-column: 1 / -1;
+}
+
+.item-request-actions input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.spec-history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.spec-history-row {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #e1e9f4;
+  border-radius: 14px;
+  background: #fbfdff;
+}
+
+.spec-history-row > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.spec-history-row small {
+  color: #64748b;
+}
+
+.spec-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.spec-history-grid span {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  border-radius: 11px;
+  background: #fff;
+  color: #17233a;
+  font-weight: 750;
+}
+
+@media (max-width: 800px) {
+  .item-request-form,
+  .item-request-card {
+    grid-template-columns: 1fr;
+  }
+
+  .item-request-state,
+  .item-request-actions {
+    justify-content: flex-start;
   }
 }

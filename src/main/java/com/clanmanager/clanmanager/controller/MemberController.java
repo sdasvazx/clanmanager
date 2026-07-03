@@ -4,8 +4,10 @@ import com.clanmanager.clanmanager.dto.MemberInfoResponseDto;
 import com.clanmanager.clanmanager.entity.AttendanceStatus;
 import com.clanmanager.clanmanager.entity.Member;
 import com.clanmanager.clanmanager.entity.MemberRole;
+import com.clanmanager.clanmanager.entity.MemberSpecHistory;
 import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
+import com.clanmanager.clanmanager.repository.MemberSpecHistoryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/members")
@@ -30,6 +33,7 @@ public class MemberController {
 
     private final MemberRepository memberRepository;
     private final ActivityAttendanceRepository attendanceRepository;
+    private final MemberSpecHistoryRepository memberSpecHistoryRepository;
 
     @GetMapping("/{memberId}/my-info")
     public MemberInfoResponseDto getMyInfo(@PathVariable Long memberId) {
@@ -55,6 +59,23 @@ public class MemberController {
     @GetMapping
     public List<Member> getAllMembers() {
         return memberRepository.findByActiveTrueOrderByMemberIdAsc();
+    }
+
+    @GetMapping("/spec-histories")
+    public List<MemberSpecHistoryDto> getSpecHistories() {
+        return memberSpecHistoryRepository.findTop100ByOrderByCreatedAtDesc()
+                .stream()
+                .map(MemberSpecHistoryDto::from)
+                .toList();
+    }
+
+    @GetMapping("/{memberId}/spec-histories")
+    public List<MemberSpecHistoryDto> getMemberSpecHistories(@PathVariable Long memberId) {
+        findMember(memberId);
+        return memberSpecHistoryRepository.findTop5ByMemberIdOrderByCreatedAtDesc(memberId)
+                .stream()
+                .map(MemberSpecHistoryDto::from)
+                .toList();
     }
 
     @GetMapping("/{memberId}")
@@ -139,6 +160,14 @@ public class MemberController {
             throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
         }
 
+        String previousName = member.getCharacterName();
+        Integer previousCombatPower = member.getCombatPower();
+        Integer previousLevel = member.getLevel();
+        String previousGuildName = member.getGuildName();
+        String previousCharacterClass = member.getCharacterClass();
+        String previousRank = member.getRank();
+        String previousStatus = member.getStatus();
+
         member.setCharacterName(characterName);
         member.setCombatPower(request.getCombatPower() == null ? 0 : request.getCombatPower());
         member.setGuildName(blankToNull(request.getGuildName()));
@@ -147,7 +176,19 @@ public class MemberController {
         member.setRank(blankToNull(request.getRank()));
         member.setStatus(blankToNull(request.getStatus()));
         member.setActive(request.getActive() == null ? true : request.getActive());
-        return memberRepository.save(member);
+        Member saved = memberRepository.save(member);
+        saveSpecHistoryIfChanged(
+                saved,
+                admin,
+                previousName,
+                previousCombatPower,
+                previousLevel,
+                previousGuildName,
+                previousCharacterClass,
+                previousRank,
+                previousStatus
+        );
+        return saved;
     }
 
     @PostMapping("/bulk-import")
@@ -334,6 +375,48 @@ public class MemberController {
         return value.trim();
     }
 
+    private void saveSpecHistoryIfChanged(
+            Member saved,
+            Member admin,
+            String previousName,
+            Integer previousCombatPower,
+            Integer previousLevel,
+            String previousGuildName,
+            String previousCharacterClass,
+            String previousRank,
+            String previousStatus
+    ) {
+        boolean changed = !Objects.equals(previousName, saved.getCharacterName())
+                || !Objects.equals(previousCombatPower, saved.getCombatPower())
+                || !Objects.equals(previousLevel, saved.getLevel())
+                || !Objects.equals(previousGuildName, saved.getGuildName())
+                || !Objects.equals(previousCharacterClass, saved.getCharacterClass())
+                || !Objects.equals(previousRank, saved.getRank())
+                || !Objects.equals(previousStatus, saved.getStatus());
+        if (!changed) {
+            return;
+        }
+
+        memberSpecHistoryRepository.save(MemberSpecHistory.builder()
+                .memberId(saved.getMemberId())
+                .characterName(saved.getCharacterName())
+                .previousCombatPower(previousCombatPower)
+                .nextCombatPower(saved.getCombatPower())
+                .previousLevel(previousLevel)
+                .nextLevel(saved.getLevel())
+                .previousGuildName(previousGuildName)
+                .nextGuildName(saved.getGuildName())
+                .previousCharacterClass(previousCharacterClass)
+                .nextCharacterClass(saved.getCharacterClass())
+                .previousRank(previousRank)
+                .nextRank(saved.getRank())
+                .previousStatus(previousStatus)
+                .nextStatus(saved.getStatus())
+                .editedByMemberId(admin.getMemberId())
+                .editedByName(admin.getCharacterName())
+                .build());
+    }
+
     @Getter
     @Setter
     public static class MemberProfileRequest {
@@ -394,5 +477,49 @@ public class MemberController {
     @Setter
     public static class PasswordResetRequest {
         private String newPassword;
+    }
+
+    public record MemberSpecHistoryDto(
+            Long historyId,
+            Long memberId,
+            String characterName,
+            Integer previousCombatPower,
+            Integer nextCombatPower,
+            Integer previousLevel,
+            Integer nextLevel,
+            String previousGuildName,
+            String nextGuildName,
+            String previousCharacterClass,
+            String nextCharacterClass,
+            String previousRank,
+            String nextRank,
+            String previousStatus,
+            String nextStatus,
+            Long editedByMemberId,
+            String editedByName,
+            java.time.LocalDateTime createdAt
+    ) {
+        public static MemberSpecHistoryDto from(MemberSpecHistory history) {
+            return new MemberSpecHistoryDto(
+                    history.getMemberSpecHistoryId(),
+                    history.getMemberId(),
+                    history.getCharacterName(),
+                    history.getPreviousCombatPower(),
+                    history.getNextCombatPower(),
+                    history.getPreviousLevel(),
+                    history.getNextLevel(),
+                    history.getPreviousGuildName(),
+                    history.getNextGuildName(),
+                    history.getPreviousCharacterClass(),
+                    history.getNextCharacterClass(),
+                    history.getPreviousRank(),
+                    history.getNextRank(),
+                    history.getPreviousStatus(),
+                    history.getNextStatus(),
+                    history.getEditedByMemberId(),
+                    history.getEditedByName(),
+                    history.getCreatedAt()
+            );
+        }
     }
 }

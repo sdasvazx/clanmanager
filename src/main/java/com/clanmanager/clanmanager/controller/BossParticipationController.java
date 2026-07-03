@@ -56,6 +56,16 @@ public class BossParticipationController {
                 .toList();
     }
 
+    @GetMapping("/member/{memberId}")
+    public List<MemberBossParticipationDto> getMemberRecords(@PathVariable Long memberId) {
+        Member member = findMember(memberId);
+        return participationMemberRepository.findByMemberWithRecordOrderByRecent(member)
+                .stream()
+                .limit(80)
+                .map(MemberBossParticipationDto::from)
+                .toList();
+    }
+
     @PostMapping
     @Transactional
     public BossParticipationResponseDto createRecord(@RequestBody BossParticipationRequestDto request) {
@@ -239,6 +249,29 @@ public class BossParticipationController {
             return activityTypeRepository.findByTypeName("쟁탈전").orElse(null);
         }
         return activityTypeRepository.findByTypeName(name).orElse(null);
+    }
+
+    public record MemberBossParticipationDto(
+            Long recordId,
+            java.time.LocalDate bossDate,
+            java.time.LocalTime cutTime,
+            String bossName,
+            Integer score,
+            String clanName,
+            String characterName
+    ) {
+        public static MemberBossParticipationDto from(BossParticipationMember member) {
+            BossParticipationRecord record = member.getRecord();
+            return new MemberBossParticipationDto(
+                    record.getRecordId(),
+                    record.getBossDate(),
+                    record.getCutTime(),
+                    record.getBossName(),
+                    record.getScore(),
+                    member.getClanName(),
+                    member.getCharacterName()
+            );
+        }
     }
 
     private record NormalizedEntry(String characterName, String clanName) {

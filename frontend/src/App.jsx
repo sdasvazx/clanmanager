@@ -24,14 +24,14 @@ const menu = [
   ['admin', '관', '관리자 설정'],
 ];
 
-const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball']);
+const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball', 'spec-history']);
 
 const adminCards = [
   ['✓', '출석체크/보스설정', 'mint', 'attendance'],
   ['♙', '클랜원/전투력 관리', 'blue', 'member-admin'],
   ['⚙', '가중치 설정', 'orange', 'participation'],
   ['✿', '기타 설정', 'indigo', 'admin'],
-  ['▣', '스펙/장비 수정기록', 'amber', 'collection'],
+  ['▣', '스펙/장비 수정기록', 'amber', 'spec-history'],
   ['▥', '참여율 선택조회', 'cyan', 'participation'],
   ['⚠', '게헨나감지', 'red', 'roster'],
   ['🎯', '핀볼', 'purple', 'pinball'],
@@ -581,7 +581,11 @@ function Shell({ member, page, setPage, onLogout, children }) {
       </header>
       <aside className="sidebar">
         <nav>{visibleMenu.map(([id, icon, label]) => <button key={id} className={page === id ? 'menu-item active' : 'menu-item'} onClick={() => setPage(id)}><span className="menu-icon">{icon}</span><span>{label}</span></button>)}</nav>
-        <div className="side-note"><b>클랜 매니저</b><small>{member.role === 'ADMIN' ? '운영자 모드입니다' : '클랜 활동을 확인하세요'}</small></div>
+        <button type="button" className="side-note item-request-shortcut" onClick={() => setPage('item-request')}>
+          <b>아이템 신청</b>
+          <small>신청내역 확인 및 지급 처리</small>
+          <span>→</span>
+        </button>
       </aside>
       <main className="content">{children}</main>
     </div>
@@ -775,6 +779,8 @@ function Participation({ member, setPage }) {
   const [editingPeriodName, setEditingPeriodName] = useState('');
   const [periodMessage, setPeriodMessage] = useState('');
   const [searchName, setSearchName] = useState('');
+  const [memberBossHistory, setMemberBossHistory] = useState([]);
+  const [memberBossHistoryLoading, setMemberBossHistoryLoading] = useState(false);
 
   useEffect(() => {
     Promise.allSettled([request('/members'), request('/attendances'), request('/participation-periods')]).then(([memberResult, attendanceResult, periodResult]) => {
@@ -820,6 +826,17 @@ function Participation({ member, setPage }) {
     if (!keyword) return null;
     return rows.find((m) => normalize(m.characterName).includes(keyword)) || null;
   }, [rows, searchName]);
+  useEffect(() => {
+    if (!searchedMember?.memberId) {
+      setMemberBossHistory([]);
+      return;
+    }
+    setMemberBossHistoryLoading(true);
+    request(`/boss-participations/member/${searchedMember.memberId}`)
+      .then((history) => setMemberBossHistory(Array.isArray(history) ? history : []))
+      .catch(() => setMemberBossHistory([]))
+      .finally(() => setMemberBossHistoryLoading(false));
+  }, [searchedMember?.memberId]);
   const canSeeCombatPower = member?.role === 'ADMIN';
 
   const savePeriodName = async () => {
@@ -880,6 +897,29 @@ function Participation({ member, setPage }) {
                 {canSeeCombatPower && <div><small>전투력</small><strong>{formatNumber(searchedMember.combatPower)}</strong></div>}
               </>
             ) : <p>검색한 이름의 클랜원을 찾지 못했습니다.</p>}
+          </div>
+        )}
+        {searchedMember && (
+          <div className="participation-history-card">
+            <div className="section-heading">
+              <h2>{searchedMember.characterName} 보스 참여 기록</h2>
+              <span className="result-count">{memberBossHistory.length}건</span>
+            </div>
+            {memberBossHistoryLoading ? (
+              <div className="empty-state">참여 기록을 불러오는 중입니다.</div>
+            ) : memberBossHistory.length ? (
+              <div className="participation-history-grid">
+                {memberBossHistory.slice(0, 20).map((row) => (
+                  <div className="participation-history-item" key={`${row.recordId}-${row.bossName}-${row.bossDate}`}>
+                    <b>{row.bossDate}</b>
+                    <span>{String(row.cutTime || '').slice(0, 5)} · {row.bossName}</span>
+                    <small>{row.clanName || '-'} · {row.score || 1}점</small>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">아직 보스 참여 기록이 없습니다.</div>
+            )}
           </div>
         )}
       </section>
@@ -2328,6 +2368,142 @@ function CollectionPage({ member }) {
   );
 }
 
+function ItemRequestPage({ member }) {
+  const [rows, setRows] = useState([]);
+  const [tab, setTab] = useState('requests');
+  const [form, setForm] = useState({ itemName: '', memo: '' });
+  const [processMemo, setProcessMemo] = useState({});
+  const [message, setMessage] = useState('');
+  const isAdmin = member.role === 'ADMIN';
+  const load = () => request('/management/item-requests').then(setRows).catch((err) => setMessage(err.message));
+  useEffect(() => { load(); }, []);
+  const visibleRows = rows.filter((row) => isAdmin || row.requesterMemberId === member.memberId);
+  const requestRows = visibleRows.filter((row) => (tab === 'requests' ? row.status !== '지급완료' : row.status === '지급완료'));
+  const submit = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    try {
+      await request('/management/item-requests', {
+        method: 'POST',
+        body: JSON.stringify({ requesterMemberId: member.memberId, itemName: form.itemName, memo: form.memo }),
+      });
+      setForm({ itemName: '', memo: '' });
+      await load();
+      setMessage('아이템 신청이 접수되었습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+  const process = async (row, status) => {
+    setMessage('');
+    try {
+      await request(`/management/item-requests/${row.requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ actorMemberId: member.memberId, status, processedMemo: processMemo[row.requestId] || '' }),
+      });
+      setProcessMemo((prev) => ({ ...prev, [row.requestId]: '' }));
+      await load();
+      setMessage(status === '지급완료' ? '지급완료 처리했습니다.' : '반려 처리했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+  return (
+    <>
+      <div className="item-request-hero">
+        <div>
+          <h1>아이템신청 접수내역 & 아이템 등록</h1>
+          <p>필요한 아이템을 신청하고, 운영자는 확인 후 지급 처리를 진행합니다.</p>
+        </div>
+        <span className="result-count">{visibleRows.length}건</span>
+      </div>
+      <section className="white-card item-request-form-card">
+        <form className="item-request-form" onSubmit={submit}>
+          <input required value={form.itemName} onChange={(event) => setForm({ ...form, itemName: event.target.value })} placeholder="신청 아이템명" />
+          <input value={form.memo} onChange={(event) => setForm({ ...form, memo: event.target.value })} placeholder="메모: 필요한 이유, 옵션, 우선순위 등" />
+          <button className="primary-button">+ 신청 등록</button>
+        </form>
+        {message && <p className="vault-message">{message}</p>}
+      </section>
+      <section className="white-card">
+        <div className="item-request-tabs">
+          <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')}>신청내역</button>
+          <button className={tab === 'paid' ? 'active' : ''} onClick={() => setTab('paid')}>지급내역</button>
+        </div>
+        <div className="item-request-list">
+          {requestRows.map((row) => (
+            <article className={`item-request-card ${row.status === '지급완료' ? 'paid' : ''}`} key={row.requestId}>
+              <div>
+                <small>날짜: {new Date(row.createdAt).toLocaleString('ko-KR')}</small>
+                <b>대상자 {row.requesterName}</b>
+                <span>신청아이템: {row.itemName}</span>
+                {row.memo && <em>{row.memo}</em>}
+              </div>
+              <div className="item-request-state">
+                <span className={`claim-pill ${row.status === '지급완료' ? 'done' : 'pending'}`}>{row.status}</span>
+                {row.processedByName && <small>처리자: {row.processedByName}</small>}
+                {row.processedMemo && <small>{row.processedMemo}</small>}
+              </div>
+              {isAdmin && row.status === '접수' && (
+                <div className="item-request-actions">
+                  <input value={processMemo[row.requestId] || ''} onChange={(event) => setProcessMemo({ ...processMemo, [row.requestId]: event.target.value })} placeholder="처리 메모" />
+                  <button className="mini-button" onClick={() => process(row, '지급완료')}>지급완료</button>
+                  <button className="role-button danger" onClick={() => process(row, '반려')}>반려</button>
+                </div>
+              )}
+            </article>
+          ))}
+          {!requestRows.length && <div className="empty-state">표시할 아이템 신청이 없습니다.</div>}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function SpecHistoryPage({ setPage }) {
+  const [rows, setRows] = useState([]);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    request('/members/spec-histories').then(setRows).catch((err) => setMessage(err.message));
+  }, []);
+  const diff = (before, after, empty = '-') => `${before ?? empty} → ${after ?? empty}`;
+  return (
+    <>
+      <AdminBackButton setPage={setPage} />
+      <div className="page-title">
+        <h1>스펙/장비 수정기록</h1>
+        <p>클랜원 정보와 전투력 저장 시 변경 전후 기록을 남깁니다. 최근 기록 위주로 확인합니다.</p>
+      </div>
+      {message && <p className="vault-message">{message}</p>}
+      <section className="white-card spec-history-card">
+        <div className="section-heading">
+          <h2>최근 수정내역</h2>
+          <span className="result-count">{rows.length}건</span>
+        </div>
+        <div className="spec-history-list">
+          {rows.map((row) => (
+            <article className="spec-history-row" key={row.historyId}>
+              <div>
+                <b>{row.characterName}</b>
+                <small>{new Date(row.createdAt).toLocaleString('ko-KR')} · 수정자 {row.editedByName || '-'}</small>
+              </div>
+              <div className="spec-history-grid">
+                <span><small>전투력</small>{diff(formatNumber(row.previousCombatPower), formatNumber(row.nextCombatPower))}</span>
+                <span><small>레벨</small>{diff(row.previousLevel, row.nextLevel)}</span>
+                <span><small>클랜</small>{diff(row.previousGuildName, row.nextGuildName)}</span>
+                <span><small>클래스</small>{diff(row.previousCharacterClass, row.nextCharacterClass)}</span>
+                <span><small>직급</small>{diff(row.previousRank, row.nextRank)}</span>
+                <span><small>상태</small>{diff(row.previousStatus, row.nextStatus)}</span>
+              </div>
+            </article>
+          ))}
+          {!rows.length && <div className="empty-state">아직 수정 기록이 없습니다. 클랜원/전투력 관리에서 저장하면 이곳에 기록됩니다.</div>}
+        </div>
+      </section>
+    </>
+  );
+}
+
 function CrudPage({ title, description, canManage, form, rows, getId, columns, render, onDelete }) {
   return <><div className="page-title"><h1>{title}</h1><p>{description}</p></div>{canManage && <section className="white-card">{form}</section>}<section className="white-card"><div className="table-wrap"><table className="data-table"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}{canManage && <th>관리</th>}</tr></thead><tbody>{rows.map((row) => <tr key={getId(row)}>{render(row).map((cell, index) => <td key={index}>{cell}</td>)}{canManage && <td><button className="role-button danger" onClick={() => onDelete(getId(row))}>삭제</button></td>}</tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">아직 등록된 기록이 없습니다.</div>}</section></>;
 }
@@ -2695,6 +2871,23 @@ export default function App() {
   const logout = () => { sessionStorage.removeItem('clanMember'); setMember(null); setPage('lobby'); };
   if (!member) return <AuthScreen onLogin={login} />;
   if (member.role !== 'ADMIN' && adminOnlyPages.has(page)) return <Shell member={member} page={page} setPage={setPage} onLogout={logout}><AccessDenied /></Shell>;
-  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} /> : page === 'my-info' ? <MyInfo member={member} /> : page === 'participation' ? <Participation member={member} setPage={setPage} /> : page === 'attendance' ? <Attendance member={member} setPage={setPage} /> : page === 'payment' ? <PaymentClaimPage member={member} /> : page === 'ledger' ? <ClanVaultPage member={member} /> : page === 'book' ? <ClanVaultPage member={member} readonly /> : page === 'inventory' ? <InventoryPage member={member} /> : page === 'bidding' ? <BiddingPage member={member} /> : page === 'collection' ? <CollectionPage member={member} /> : page === 'roster' ? <RosterScanAdmin setPage={setPage} /> : page === 'pinball' ? <PinballPage setPage={setPage} /> : page === 'mypage' ? <MyPage member={member} /> : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : page === 'member-admin' ? <MemberAdminPage member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} /> : <Lobby member={member} setPage={setPage} />;
+  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} />
+    : page === 'my-info' ? <MyInfo member={member} />
+    : page === 'participation' ? <Participation member={member} setPage={setPage} />
+    : page === 'attendance' ? <Attendance member={member} setPage={setPage} />
+    : page === 'payment' ? <PaymentClaimPage member={member} />
+    : page === 'ledger' ? <ClanVaultPage member={member} />
+    : page === 'book' ? <ClanVaultPage member={member} readonly />
+    : page === 'inventory' ? <InventoryPage member={member} />
+    : page === 'bidding' ? <BiddingPage member={member} />
+    : page === 'collection' ? <CollectionPage member={member} />
+    : page === 'item-request' ? <ItemRequestPage member={member} />
+    : page === 'spec-history' ? <SpecHistoryPage setPage={setPage} />
+    : page === 'roster' ? <RosterScanAdmin setPage={setPage} />
+    : page === 'pinball' ? <PinballPage setPage={setPage} />
+    : page === 'mypage' ? <MyPage member={member} />
+    : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} />
+    : page === 'member-admin' ? <MemberAdminPage member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} />
+    : <Lobby member={member} setPage={setPage} />;
   return <Shell member={member} page={page} setPage={setPage} onLogout={logout}>{view}</Shell>;
 }

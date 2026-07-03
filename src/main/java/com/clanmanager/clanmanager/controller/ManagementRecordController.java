@@ -23,6 +23,7 @@ public class ManagementRecordController {
     private final CollectionItemRepository collectionItemRepository;
     private final CollectionStatusRepository collectionStatusRepository;
     private final CollectionHistoryRepository collectionHistoryRepository;
+    private final ItemRequestRepository itemRequestRepository;
     private final MemberRepository memberRepository;
 
     private static final List<String> DEFAULT_COLLECTION_ITEMS = List.of(
@@ -86,6 +87,53 @@ public class ManagementRecordController {
         validateAdmin(adminMemberId);
         itemBidRepository.deleteById(bidId);
         return Map.of("message", "입찰 기록 삭제 완료", "bidId", bidId);
+    }
+
+    @GetMapping("/item-requests")
+    public List<ItemRequestDto> getItemRequests() {
+        return itemRequestRepository.findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(ItemRequestDto::from)
+                .toList();
+    }
+
+    @PostMapping("/item-requests")
+    public ItemRequestDto createItemRequest(@RequestBody ItemRequestCreateRequest request) {
+        Member requester = validateMember(request.getRequesterMemberId());
+        String itemName = cleanRequired(request.getItemName(), "신청할 아이템명을 입력해 주세요.");
+        ItemRequest saved = itemRequestRepository.save(ItemRequest.builder()
+                .requester(requester)
+                .requesterName(requester.getCharacterName())
+                .itemName(itemName)
+                .memo(clean(request.getMemo()))
+                .status("접수")
+                .build());
+        return ItemRequestDto.from(saved);
+    }
+
+    @PatchMapping("/item-requests/{requestId}")
+    public ItemRequestDto processItemRequest(@PathVariable Long requestId, @RequestBody ItemRequestProcessRequest request) {
+        Member actor = validateMember(request.getActorMemberId());
+        ItemRequest itemRequest = itemRequestRepository.findById(requestId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 아이템 신청입니다."));
+
+        String status = cleanRequired(request.getStatus(), "처리 상태를 선택해 주세요.");
+        if (!List.of("접수", "지급완료", "반려").contains(status)) {
+            throw new IllegalArgumentException("처리 상태는 접수/지급완료/반려 중 하나여야 합니다.");
+        }
+        if (!itemRequest.getRequester().getMemberId().equals(actor.getMemberId()) && actor.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 다른 클랜원의 아이템 신청을 처리할 수 있습니다.");
+        }
+        if (!"접수".equals(status) && actor.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("아이템 지급/반려 처리는 운영자만 할 수 있습니다.");
+        }
+
+        itemRequest.setStatus(status);
+        itemRequest.setProcessedMemo(clean(request.getProcessedMemo()));
+        itemRequest.setProcessedBy(actor);
+        itemRequest.setProcessedByName(actor.getCharacterName());
+        itemRequest.setProcessedAt(java.time.LocalDateTime.now());
+        return ItemRequestDto.from(itemRequestRepository.save(itemRequest));
     }
 
     @GetMapping("/collections")
@@ -262,6 +310,10 @@ public class ManagementRecordController {
         return cleaned;
     }
 
+    private String clean(String value) {
+        return value == null ? "" : value.trim();
+    }
+
     private void seedDefaultCollectionItems() {
         if (collectionItemRepository.countByActiveTrue() > 0) {
             return;
@@ -302,6 +354,22 @@ public class ManagementRecordController {
 
     @Getter
     @Setter
+    public static class ItemRequestCreateRequest {
+        private Long requesterMemberId;
+        private String itemName;
+        private String memo;
+    }
+
+    @Getter
+    @Setter
+    public static class ItemRequestProcessRequest {
+        private Long actorMemberId;
+        private String status;
+        private String processedMemo;
+    }
+
+    @Getter
+    @Setter
     public static class CollectionRequest {
         private String characterName;
         private String itemName;
@@ -325,6 +393,36 @@ public class ManagementRecordController {
         private String state;
         private String memo;
         private Long actorMemberId;
+    }
+
+    public record ItemRequestDto(
+            Long requestId,
+            Long requesterMemberId,
+            String requesterName,
+            String itemName,
+            String memo,
+            String status,
+            Long processedByMemberId,
+            String processedByName,
+            String processedMemo,
+            java.time.LocalDateTime createdAt,
+            java.time.LocalDateTime processedAt
+    ) {
+        public static ItemRequestDto from(ItemRequest itemRequest) {
+            return new ItemRequestDto(
+                    itemRequest.getItemRequestId(),
+                    itemRequest.getRequester() == null ? null : itemRequest.getRequester().getMemberId(),
+                    itemRequest.getRequesterName(),
+                    itemRequest.getItemName(),
+                    itemRequest.getMemo(),
+                    itemRequest.getStatus(),
+                    itemRequest.getProcessedBy() == null ? null : itemRequest.getProcessedBy().getMemberId(),
+                    itemRequest.getProcessedByName(),
+                    itemRequest.getProcessedMemo(),
+                    itemRequest.getCreatedAt(),
+                    itemRequest.getProcessedAt()
+            );
+        }
     }
 
     public record CollectionDashboardResponse(
