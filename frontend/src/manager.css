@@ -376,6 +376,26 @@
   gap: 14px;
 }
 
+.batch-date-control {
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+  color: #41516a;
+  font-size: .86rem;
+  font-weight: 850;
+}
+
+.batch-date-control input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd8e8;
+  border-radius: 11px;
+  background: #fff;
+  color: #1e293b;
+  font-weight: 850;
+  outline: 0;
+}
+
 .boss-batch-row {
   display: grid;
   grid-template-columns: 180px 220px 150px 180px 110px minmax(260px, auto);

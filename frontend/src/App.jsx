@@ -1064,7 +1064,9 @@ function Attendance({ member, setPage }) {
               <h2>시간별 출석체크</h2>
               <p className="subtle">보스 시간별로 사진을 여러 장 넣으면 전체 인원을 합산해 보여줍니다. 초록색은 등록 클랜원, 주황색은 확인 필요입니다.</p>
             </div>
-            <span className="result-count">{form.bossDate}</span>
+            <label className="batch-date-control">출석 날짜
+              <input type="date" value={form.bossDate} onChange={(event) => setForm({ ...form, bossDate: event.target.value })} />
+            </label>
           </div>
           <div className="boss-batch-list">
             {batchRows.map((row) => {
