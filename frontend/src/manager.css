@@ -464,6 +464,15 @@
   height: 16px;
 }
 
+.precision-check {
+  color: #7c3aed;
+  font-weight: 900;
+}
+
+.precision-check input:checked {
+  accent-color: #7c3aed;
+}
+
 .batch-actions {
   display: flex;
   align-items: center;

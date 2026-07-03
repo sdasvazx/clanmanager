@@ -92,6 +92,12 @@ const copyToClipboard = async (text) => {
   document.body.removeChild(textarea);
 };
 const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+const normalizeForOcrMatch = (value) => normalize(value)
+  .replace(/2/g, 'z')
+  .replace(/0/g, 'o')
+  .replace(/[1il]/g, 'l')
+  .replace(/vv/g, 'w')
+  .replace(/rn/g, 'm');
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
 const bossCheckSlots = [
@@ -133,7 +139,7 @@ function groupByClan(rows) {
 }
 
 function extractOcrNames(text, registeredMembers = []) {
-  const ocrKey = (value) => normalize(value).replace(/2/g, 'z');
+  const ocrKey = normalizeForOcrMatch;
   const memberByNormalized = new Map(registeredMembers.flatMap((m) => [...new Set([normalize(m.characterName), ocrKey(m.characterName)])].map((key) => [key, m.characterName])));
   const wholeText = String(text ?? '');
   const normalizedText = normalize(wholeText);
@@ -163,8 +169,8 @@ function extractOcrNames(text, registeredMembers = []) {
 }
 
 function editDistance(a, b) {
-  const left = normalize(a).replace(/2/g, 'z');
-  const right = normalize(b).replace(/2/g, 'z');
+  const left = normalizeForOcrMatch(a);
+  const right = normalizeForOcrMatch(b);
   const matrix = Array.from({ length: left.length + 1 }, (_, row) => [row]);
   for (let column = 1; column <= right.length; column += 1) matrix[0][column] = column;
   for (let row = 1; row <= left.length; row += 1) {
@@ -178,16 +184,18 @@ function editDistance(a, b) {
 }
 
 function similarityScore(a, b) {
-  const left = normalize(a).replace(/2/g, 'z');
-  const right = normalize(b).replace(/2/g, 'z');
+  const left = normalizeForOcrMatch(a);
+  const right = normalizeForOcrMatch(b);
   if (!left || !right) return 0;
   if (left === right) return 1;
   if (left.includes(right) || right.includes(left)) return 0.92;
-  return 1 - (editDistance(left, right) / Math.max(left.length, right.length));
+  const distanceScore = 1 - (editDistance(left, right) / Math.max(left.length, right.length));
+  const overlap = [...new Set(left)].filter((char) => right.includes(char)).length / Math.max(1, new Set([...left, ...right]).size);
+  return Math.max(distanceScore, overlap * 0.82);
 }
 
 function findSimilarMembers(rawName, members, clanName, limit = 3) {
-  const targetClan = canonicalClanName(clanName);
+  const targetClan = String(clanName ?? '').trim() ? canonicalClanName(clanName) : '';
   return members
     .filter((member) => !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan)
     .map((member) => ({ member, score: similarityScore(rawName, member.characterName) }))
@@ -196,20 +204,65 @@ function findSimilarMembers(rawName, members, clanName, limit = 3) {
     .slice(0, limit);
 }
 
-function buildOcrReview(text, members, clanName) {
-  const exactNames = extractOcrNames(text, members);
-  const exactKeys = new Set(exactNames.map(normalize));
-  const rawCandidates = namesFromText(String(text ?? '')
+function candidateNamesFromOcrText(text, precise = false) {
+  const cleaned = String(text ?? '')
     .replace(/Lv\.?\s*\d+/gi, '\n')
     .replace(/Level\s*\d+/gi, '\n')
     .replace(/[|()[\]{}"'\`~!@#$%^&*_+=:;<>?/\\]/g, '\n')
-    .replace(/\s+/g, '\n'));
+    .replace(/\s+/g, '\n');
+  const lineCandidates = cleaned
+    .split(/\r?\n|,|·|ㆍ|•|-/)
+    .map((name) => name.trim())
+    .map((name) => name.replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, ''))
+    .filter((name) => /^[0-9A-Za-z가-힣]{2,16}$/.test(name));
+  const compact = precise ? normalize(String(text ?? '').replace(/Lv\.?\s*\d+/gi, ' ')).slice(0, 800) : '';
+  const compactCandidates = [];
+  if (precise) {
+    for (let index = 0; index < compact.length; index += 1) {
+      for (let size = 2; size <= 10; size += 1) {
+        const slice = compact.slice(index, index + size);
+        if (slice.length >= 2 && /[가-힣]/.test(slice)) compactCandidates.push(slice);
+      }
+    }
+  }
+  return [...new Set([...lineCandidates, ...compactCandidates])];
+}
+
+function buildOcrReview(text, members, clanName, options = {}) {
+  const precise = Boolean(options.precise);
+  const exactNames = extractOcrNames(text, members);
+  const exactKeys = new Set(exactNames.map(normalize));
+  const rawCandidates = candidateNamesFromOcrText(text, precise);
+  const blockedWords = new Set(['귀신', '귀신z', '로망', '운좋은', '운좋은사람들', '게헨나', '미분류', 'lv', 'level']);
+  const canAutoConfirm = (raw, suggestion) => {
+    const rawKey = normalizeForOcrMatch(raw);
+    const nameKey = normalizeForOcrMatch(suggestion.member.characterName);
+    const lengthGap = Math.abs(rawKey.length - nameKey.length);
+    if (rawKey.length < 3 || suggestion.score < 0.74) return false;
+    if (lengthGap > 2 && suggestion.score < 0.96) return false;
+    return true;
+  };
+  const confident = [];
   const ambiguous = rawCandidates
     .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
-    .map((raw) => ({ raw, suggestions: findSimilarMembers(raw, members, clanName) }))
-    .filter((item) => item.suggestions.length)
+    .filter((raw) => !blockedWords.has(normalize(raw)))
+    .map((raw) => ({ raw, suggestions: findSimilarMembers(raw, members, clanName, precise ? 5 : 3) }))
+    .filter((item) => {
+      if (!item.suggestions.length) return false;
+      if (precise) {
+        const [best, second] = item.suggestions;
+        const clearWinner = best.score >= 0.74 && (!second || best.score - second.score >= 0.06);
+        const nearExact = best.score >= 0.9;
+        if ((clearWinner || nearExact) && canAutoConfirm(item.raw, best)) {
+          confident.push(best.member.characterName);
+          exactKeys.add(normalize(best.member.characterName));
+          return false;
+        }
+      }
+      return true;
+    })
     .slice(0, 12);
-  return { exactNames, ambiguous };
+  return { exactNames: [...new Set([...exactNames, ...confident])], ambiguous };
 }
 function namesFromText(value) {
   return [...new Set(String(value ?? '').split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean))];
@@ -304,7 +357,7 @@ async function createPartyPanelFiles(file) {
   return panels.slice(0, 10);
 }
 
-async function recognizePartyPanels(file, members, onProgress) {
+async function recognizePartyPanels(file, members, onProgress, options = {}) {
   const panels = await createPartyPanelFiles(file);
   const worker = await createWorker('kor+eng', 1);
   const names = [];
@@ -316,7 +369,7 @@ async function recognizePartyPanels(file, members, onProgress) {
         const overall = Math.round(((index + (progressValue / 100)) / Math.max(1, panels.length)) * 100);
         onProgress?.(overall);
       });
-      const review = buildOcrReview(text, members, '');
+      const review = buildOcrReview(text, members, '', options);
       names.push(...review.exactNames.map((name) => ({ name, positions: [panel.partyNumber] })));
       ambiguous.push(...review.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
     }
@@ -741,6 +794,7 @@ function Attendance({ member, setPage }) {
     cutInput: slot.cutTime,
     longTerm: false,
     doubleScore: false,
+    precise: false,
     scanning: false,
     progress: 0,
     savedRecord: null,
@@ -864,7 +918,7 @@ function Attendance({ member, setPage }) {
         const result = await recognizePartyPanels(row.files[index], members, (progressValue) => {
           const overall = Math.round(((index + (progressValue / 100)) / row.files.length) * 100);
           updateBatchRow(key, { progress: overall });
-        });
+        }, { precise: row.precise });
         foundNames.push(...result.names.map((item) => ({
           ...item,
           fileIndex,
@@ -1161,8 +1215,9 @@ function Attendance({ member, setPage }) {
                   <input className="batch-time-input" value={row.cutInput} maxLength="5" onChange={(event) => updateBatchRow(row.key, { cutInput: event.target.value })} placeholder="컷 시간" />
                   <label className="batch-check"><input type="checkbox" checked={row.doubleScore} onChange={(event) => updateBatchRow(row.key, { doubleScore: event.target.checked })} /> 새벽/쟁 일정(2배)</label>
                   <label className="batch-check"><input type="checkbox" checked={row.longTerm} onChange={(event) => updateBatchRow(row.key, { longTerm: event.target.checked })} /> 장기전</label>
+                  <label className="batch-check precision-check"><input type="checkbox" checked={row.precise} onChange={(event) => updateBatchRow(row.key, { precise: event.target.checked })} /> 정밀인식</label>
                   <div className="batch-actions">
-                    <button type="button" className="outline-button no-margin" disabled={!row.files.length || row.scanning} onClick={() => scanBatchRow(row.key)}>{row.scanning ? `인식 ${row.progress}%` : '글자인식'}</button>
+                    <button type="button" className="outline-button no-margin" disabled={!row.files.length || row.scanning} onClick={() => scanBatchRow(row.key)}>{row.scanning ? `인식 ${row.progress}%` : row.precise ? '정밀인식' : '글자인식'}</button>
                     <button type="button" className="primary-button no-margin" disabled={row.scanning} onClick={() => saveBatchRow(row.key)}>인원체크 완료</button>
                     {row.savedRecord && <button type="button" className="roster-button roulette-button" onClick={() => copyRouletteNames(row.savedRecord)}>핀볼복사</button>}
                   </div>
