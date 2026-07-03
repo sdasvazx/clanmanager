@@ -99,6 +99,7 @@ const normalizeForOcrMatch = (value) => normalize(value)
   .replace(/vv/g, 'w')
   .replace(/rn/g, 'm');
 const OCR_CORRECTION_STORAGE_KEY = 'clanmanagerOcrCorrections';
+const OCR_FILTER_STORAGE_KEY = 'clanmanagerOcrFilters';
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
 const bossCheckSlots = [
@@ -218,6 +219,29 @@ function saveStoredOcrCorrections(corrections) {
   localStorage.setItem(OCR_CORRECTION_STORAGE_KEY, JSON.stringify(corrections));
 }
 
+function readStoredOcrFilters() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(OCR_FILTER_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? [...new Set(parsed.map(normalize).filter(Boolean))] : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredOcrFilters(filters) {
+  localStorage.setItem(OCR_FILTER_STORAGE_KEY, JSON.stringify([...new Set((filters || []).map(normalize).filter(Boolean))]));
+}
+
+function isOcrFilteredName(value, filters = []) {
+  const key = normalize(value);
+  const ocrKey = normalizeForOcrMatch(value);
+  return (filters || []).some((filter) => {
+    const filterKey = normalize(filter);
+    if (!filterKey) return false;
+    return key === filterKey || ocrKey === normalizeForOcrMatch(filterKey);
+  });
+}
+
 function findAutoCorrectedMember(rawName, members, clanName = '', corrections = {}) {
   const rawKey = normalize(rawName);
   const correctedName = corrections[rawKey];
@@ -276,7 +300,8 @@ function candidateNamesFromOcrText(text, precise = false) {
 function buildOcrReview(text, members, clanName, options = {}) {
   const precise = Boolean(options.precise);
   const corrections = options.corrections || {};
-  const exactNames = extractOcrNames(text, members);
+  const filters = options.filters || [];
+  const exactNames = extractOcrNames(text, members).filter((name) => !isOcrFilteredName(name, filters));
   const exactKeys = new Set(exactNames.map(normalize));
   const rawCandidates = candidateNamesFromOcrText(text, precise);
   const blockedWords = new Set(['귀신', '귀신z', '로망', '운좋은', '운좋은사람들', '게헨나', '미분류', 'lv', 'level']);
@@ -291,11 +316,13 @@ function buildOcrReview(text, members, clanName, options = {}) {
   const confident = [];
   const appliedCorrections = [];
   const ambiguous = rawCandidates
+    .filter((raw) => !isOcrFilteredName(raw, filters))
     .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
     .filter((raw) => /[가-힣]/.test(raw) || normalize(raw).length >= 4)
     .filter((raw) => !blockedWords.has(normalize(raw)))
     .map((raw) => {
       const corrected = findAutoCorrectedMember(raw, members, clanName, corrections);
+      if (corrected && isOcrFilteredName(corrected, filters)) return null;
       if (corrected && !exactKeys.has(normalize(corrected))) {
         confident.push(corrected);
         exactKeys.add(normalize(corrected));
@@ -892,10 +919,13 @@ function Attendance({ member, setPage }) {
   const [showCorrectionPanel, setShowCorrectionPanel] = useState(false);
   const [ocrCorrections, setOcrCorrections] = useState(() => readStoredOcrCorrections());
   const [correctionDraft, setCorrectionDraft] = useState({ wrong: '', right: '' });
+  const [ocrFilters, setOcrFilters] = useState(() => readStoredOcrFilters());
+  const [filterDraft, setFilterDraft] = useState('');
 
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
   const correctionEntries = useMemo(() => Object.entries(ocrCorrections).sort(([a], [b]) => a.localeCompare(b, 'ko-KR')), [ocrCorrections]);
+  const filterEntries = useMemo(() => [...ocrFilters].sort((a, b) => a.localeCompare(b, 'ko-KR')), [ocrFilters]);
   const saveOcrCorrection = () => {
     const wrong = normalize(correctionDraft.wrong);
     const right = correctionDraft.right.trim();
@@ -910,6 +940,19 @@ function Attendance({ member, setPage }) {
     delete next[wrongKey];
     setOcrCorrections(next);
     saveStoredOcrCorrections(next);
+  };
+  const saveOcrFilter = () => {
+    const filter = normalize(filterDraft);
+    if (!filter) return;
+    const next = [...new Set([...ocrFilters, filter])];
+    setOcrFilters(next);
+    saveStoredOcrFilters(next);
+    setFilterDraft('');
+  };
+  const removeOcrFilter = (filter) => {
+    const next = ocrFilters.filter((item) => item !== filter);
+    setOcrFilters(next);
+    saveStoredOcrFilters(next);
   };
   const memberByNormalizedName = useMemo(() => new Map(members.map((candidate) => [normalize(candidate.characterName), candidate])), [members]);
   const normalizeSources = (sources = []) => {
@@ -1032,7 +1075,7 @@ function Attendance({ member, setPage }) {
         const result = await recognizePartyPanels(row.files[index], members, (progressValue) => {
           const overall = Math.round(((index + (progressValue / 100)) / row.files.length) * 100);
           updateBatchRow(key, { progress: overall });
-        }, { precise: row.precise, corrections: ocrCorrections });
+        }, { precise: row.precise, corrections: ocrCorrections, filters: ocrFilters });
         fileReviews[index] = {
           ...fileReviews[index],
           dominantClan: result.dominantClan || '',
@@ -1191,7 +1234,7 @@ function Attendance({ member, setPage }) {
     setProgress(0);
     try {
       const text = await recognizeImageTextMultiple(file, setProgress);
-      const { exactNames: names, ambiguous } = buildOcrReview(text, members, form.clanName, { corrections: ocrCorrections });
+      const { exactNames: names, ambiguous } = buildOcrReview(text, members, form.clanName, { corrections: ocrCorrections, filters: ocrFilters });
       const merged = [...new Set([...namesFromText(currentDraftNames), ...names])];
       updateCurrentDraft(merged.join('\n'));
       setOcrAmbiguous(ambiguous);
@@ -1348,6 +1391,35 @@ function Attendance({ member, setPage }) {
                   </span>
                 ))}
                 {!correctionEntries.length && <p className="subtle">아직 등록된 자동치환이 없습니다.</p>}
+              </div>
+              <div className="correction-subsection">
+                <div>
+                  <h4>표시제외 필터</h4>
+                  <p className="subtle">OCR에는 잡히지만 명단에 필요 없는 값은 여기에 등록하세요. 등록된 값은 초록/주황 결과에 표시되지 않습니다.</p>
+                </div>
+                <div className="filter-form">
+                  <input
+                    value={filterDraft}
+                    onChange={(event) => setFilterDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        saveOcrFilter();
+                      }
+                    }}
+                    placeholder="예: SIR, AY"
+                  />
+                  <button type="button" className="outline-button no-margin" onClick={saveOcrFilter}>필터 추가</button>
+                </div>
+                <div className="correction-list">
+                  {filterEntries.map((filter) => (
+                    <span className="correction-chip filter-chip" key={filter}>
+                      <b>{filter}</b>
+                      <button type="button" onClick={() => removeOcrFilter(filter)}>삭제</button>
+                    </span>
+                  ))}
+                  {!filterEntries.length && <p className="subtle">아직 등록된 표시제외 필터가 없습니다.</p>}
+                </div>
               </div>
             </div>
           )}

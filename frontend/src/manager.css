@@ -439,6 +439,34 @@
   gap: 8px;
 }
 
+.correction-subsection {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed #cbd8e8;
+}
+
+.correction-subsection h4 {
+  margin: 0 0 4px;
+  color: #0f172a;
+  font-size: .95rem;
+}
+
+.filter-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.filter-form input {
+  width: 100%;
+  border: 1px solid #c9d7e8;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
 .correction-chip {
   display: inline-flex;
   align-items: center;
@@ -450,6 +478,12 @@
   color: #1e3a8a;
   font-size: .84rem;
   font-weight: 850;
+}
+
+.filter-chip {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 .correction-chip em {
