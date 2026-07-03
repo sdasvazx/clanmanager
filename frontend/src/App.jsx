@@ -27,8 +27,7 @@ const menu = [
 const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball']);
 
 const adminCards = [
-  ['✓', '출석체크', 'mint', 'roster'],
-  ['♕', '출석보스 설정', 'rose', 'attendance'],
+  ['✓', '출석체크/보스설정', 'mint', 'attendance'],
   ['♙', '클랜원 정보수정', 'blue', 'member-admin'],
   ['◴', '출석기록 관리', 'purple', 'attendance'],
   ['⚙', '가중치 설정', 'orange', 'participation'],
@@ -685,15 +684,39 @@ function Attendance({ member, setPage }) {
   const [preview, setPreview] = useState('');
   const [ocrStatus, setOcrStatus] = useState('');
   const [ocrAmbiguous, setOcrAmbiguous] = useState([]);
+  const [draftEdit, setDraftEdit] = useState(null);
+  const [ocrEdit, setOcrEdit] = useState(null);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('');
 
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
   const updateCurrentDraft = (value) => setDraftByClan((prev) => ({ ...prev, [form.clanName]: value }));
+  const isRegisteredDraftName = (name, clanName = form.clanName) => members.some((candidate) => (
+    normalize(candidate.characterName) === normalize(name)
+    && (!clanName || canonicalClanName(candidate.guildName || candidate.clanName) === canonicalClanName(clanName))
+  ));
   const addDraftName = (name) => {
     const merged = [...new Set([...namesFromText(currentDraftNames), name])];
     updateCurrentDraft(merged.join('\n'));
+  };
+  const replaceDraftName = (oldName, nextName) => {
+    const list = namesFromText(currentDraftNames);
+    updateCurrentDraft(list.map((name) => name === oldName ? nextName.trim() : name).filter(Boolean).join('\n'));
+    setDraftEdit(null);
+  };
+  const removeDraftName = (targetName) => {
+    updateCurrentDraft(namesFromText(currentDraftNames).filter((name) => name !== targetName).join('\n'));
+    setDraftEdit(null);
+  };
+  const addResolvedOcrName = (raw, name) => {
+    addDraftName(name);
+    setOcrAmbiguous((prev) => prev.filter((item) => item.raw !== raw));
+    setOcrEdit(null);
+  };
+  const ignoreOcrName = (raw) => {
+    setOcrAmbiguous((prev) => prev.filter((item) => item.raw !== raw));
+    setOcrEdit(null);
   };
   const rowsToDraftByClan = (rows) => rows.reduce((acc, row) => {
     const clanName = clanOptions.includes(row.clanName) ? row.clanName : clanOptions[0];
@@ -701,16 +724,24 @@ function Attendance({ member, setPage }) {
     return acc;
   }, {});
   const replaceSelectedDraftName = (clanName, oldName, nextName) => {
+    const trimmed = nextName.trim();
     setSelectedDraftByClan((prev) => {
       const list = namesFromText(prev[clanName] || '');
-      return { ...prev, [clanName]: list.map((name) => name === oldName ? nextName : name).filter(Boolean).join('\n') };
+      return { ...prev, [clanName]: list.map((name) => name === oldName ? trimmed : name).filter(Boolean).join('\n') };
     });
+    setSelectedMembers((prev) => prev.map((row) => (
+      row.clanName === clanName && row.characterName === oldName
+        ? { ...row, characterName: trimmed, matched: isRegisteredDraftName(trimmed, clanName) }
+        : row
+    )));
   };
   const removeSelectedDraftName = (clanName, targetName) => {
     setSelectedDraftByClan((prev) => {
       const list = namesFromText(prev[clanName] || '').filter((name) => name !== targetName);
       return { ...prev, [clanName]: list.join('\n') };
     });
+    setSelectedMembers((prev) => prev.filter((row) => !(row.clanName === clanName && row.characterName === targetName)));
+    setReviewEdit(null);
   };
 
   const load = () => Promise.all([request('/boss-participations'), request('/members')])
@@ -725,12 +756,14 @@ function Attendance({ member, setPage }) {
     setPreview(nextFile ? URL.createObjectURL(nextFile) : '');
     setOcrStatus('');
     setOcrAmbiguous([]);
+    setOcrEdit(null);
     setProgress(0);
   };
 
   const scanImage = async () => {
     if (!file) return;
     setOcrAmbiguous([]);
+    setOcrEdit(null);
     setOcrStatus('스샷 글자를 읽는 중입니다.');
     setProgress(0);
     try {
@@ -841,6 +874,10 @@ function Attendance({ member, setPage }) {
   }, {}), [selectedMembers]);
   const selectedRosterGroups = useMemo(() => Object.entries(groupedSelectedMembers)
     .filter(([clanName]) => !selectedClan || clanName === selectedClan), [groupedSelectedMembers, selectedClan]);
+  const currentDraftReview = useMemo(() => namesFromText(currentDraftNames).map((name) => ({
+    name,
+    matched: isRegisteredDraftName(name, form.clanName),
+  })), [currentDraftNames, form.clanName, members]);
 
   const visibleRecords = records.slice(0, 100);
 
@@ -877,6 +914,39 @@ function Attendance({ member, setPage }) {
             <label className="boss-names">현재 선택 클랜 명단<textarea value={currentDraftNames} onChange={(e) => updateCurrentDraft(e.target.value)} placeholder="한 줄에 한 명씩 입력됩니다." /></label>
             <button className="primary-button">참여내역 저장</button>
           </form>
+          {!!currentDraftReview.length && (
+            <div className="draft-review-panel">
+              <div className="section-heading compact">
+                <div>
+                  <h3>저장 전 명단 검토</h3>
+                  <p className="subtle">등록된 클랜원은 초록색, 확인이 필요한 이름은 주황색입니다. 주황색 이름은 저장 전에 바로 고쳐주세요.</p>
+                </div>
+                <span className="result-count">{currentDraftReview.length}명</span>
+              </div>
+              <div className="draft-review-list">
+                {currentDraftReview.map((item) => {
+                  const editing = draftEdit?.oldName === item.name;
+                  return (
+                    <span className={item.matched ? 'draft-chip matched' : 'draft-chip review'} key={item.name}>
+                      {editing ? (
+                        <>
+                          <input value={draftEdit.value} onChange={(e) => setDraftEdit({ ...draftEdit, value: e.target.value })} />
+                          <button type="button" onClick={() => replaceDraftName(item.name, draftEdit.value)}>적용</button>
+                          <button type="button" onClick={() => setDraftEdit(null)}>취소</button>
+                        </>
+                      ) : (
+                        <>
+                          {item.name}
+                          {!item.matched && <button type="button" onClick={() => setDraftEdit({ oldName: item.name, value: item.name })}>수정</button>}
+                          <button type="button" onClick={() => removeDraftName(item.name)}>삭제</button>
+                        </>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="boss-draft-summary">
             {clanOptions.map((clan) => <span key={clan} className={namesFromText(draftByClan[clan]).length ? 'ready' : ''}>{clan} {namesFromText(draftByClan[clan]).length}명</span>)}
           </div>
@@ -896,11 +966,25 @@ function Attendance({ member, setPage }) {
                     <b>인식값: {item.raw}</b>
                     <div className="ocr-suggestion-buttons">
                       {item.suggestions.map(({ member: suggestion, score }) => (
-                        <button type="button" key={suggestion.memberId} onClick={() => addDraftName(suggestion.characterName)}>
+                        <button type="button" key={suggestion.memberId} onClick={() => addResolvedOcrName(item.raw, suggestion.characterName)}>
                           {suggestion.characterName}
                           <small>{Math.round(score * 100)}%</small>
                         </button>
                       ))}
+                    </div>
+                    <div className="ocr-manual-row">
+                      {ocrEdit?.raw === item.raw ? (
+                        <>
+                          <input value={ocrEdit.value} onChange={(e) => setOcrEdit({ ...ocrEdit, value: e.target.value })} placeholder="직접 입력" />
+                          <button type="button" onClick={() => addResolvedOcrName(item.raw, ocrEdit.value)}>수정해서 추가</button>
+                          <button type="button" onClick={() => setOcrEdit(null)}>취소</button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" onClick={() => setOcrEdit({ raw: item.raw, value: item.raw })}>직접수정</button>
+                          <button type="button" onClick={() => ignoreOcrName(item.raw)}>무시</button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
