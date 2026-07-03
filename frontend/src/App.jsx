@@ -242,9 +242,23 @@ function isOcrFilteredName(value, filters = []) {
   });
 }
 
-function findAutoCorrectedMember(rawName, members, clanName = '', corrections = {}) {
+function findStoredCorrection(rawName, corrections = {}) {
   const rawKey = normalize(rawName);
-  const correctedName = corrections[rawKey];
+  const rawOcrKey = normalizeForOcrMatch(rawName);
+  if (corrections[rawKey]) return corrections[rawKey];
+  if (corrections[rawOcrKey]) return corrections[rawOcrKey];
+  const matched = Object.entries(corrections).find(([wrong]) => {
+    const wrongKey = normalize(wrong);
+    const wrongOcrKey = normalizeForOcrMatch(wrong);
+    if (!wrongKey) return false;
+    if (rawKey === wrongKey || rawOcrKey === wrongOcrKey) return true;
+    return wrongKey.length >= 3 && rawKey.length >= 3 && (rawKey.includes(wrongKey) || wrongKey.includes(rawKey));
+  });
+  return matched?.[1] || '';
+}
+
+function findAutoCorrectedMember(rawName, members, clanName = '', corrections = {}) {
+  const correctedName = findStoredCorrection(rawName, corrections);
   const scopedMembers = members.filter((member) => (
     !clanName || canonicalClanName(member.guildName || member.clanName) === canonicalClanName(clanName)
   ));
@@ -301,7 +315,15 @@ function buildOcrReview(text, members, clanName, options = {}) {
   const precise = Boolean(options.precise);
   const corrections = options.corrections || {};
   const filters = options.filters || [];
-  const exactNames = extractOcrNames(text, members).filter((name) => !isOcrFilteredName(name, filters));
+  const appliedCorrections = [];
+  const exactNames = extractOcrNames(text, members)
+    .filter((name) => !isOcrFilteredName(name, filters))
+    .map((name) => {
+      const corrected = findAutoCorrectedMember(name, members, clanName, corrections);
+      if (!corrected || isOcrFilteredName(corrected, filters)) return name;
+      if (normalize(corrected) !== normalize(name)) appliedCorrections.push({ wrong: name, right: corrected });
+      return corrected;
+    });
   const exactKeys = new Set(exactNames.map(normalize));
   const rawCandidates = candidateNamesFromOcrText(text, precise);
   const blockedWords = new Set(['귀신', '귀신z', '로망', '운좋은', '운좋은사람들', '게헨나', '미분류', 'lv', 'level']);
@@ -314,7 +336,6 @@ function buildOcrReview(text, members, clanName, options = {}) {
     return true;
   };
   const confident = [];
-  const appliedCorrections = [];
   const ambiguous = rawCandidates
     .filter((raw) => !isOcrFilteredName(raw, filters))
     .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
