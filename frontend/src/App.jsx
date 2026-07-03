@@ -98,6 +98,11 @@ const normalizeForOcrMatch = (value) => normalize(value)
   .replace(/[1il]/g, 'l')
   .replace(/vv/g, 'w')
   .replace(/rn/g, 'm');
+const nicknameAutoCorrections = {
+  가오가이가: '가오가이거',
+  레드바론: '레드바룬',
+  짱가: '짱개',
+};
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
 const bossCheckSlots = [
@@ -204,6 +209,18 @@ function findSimilarMembers(rawName, members, clanName, limit = 3) {
     .slice(0, limit);
 }
 
+function findAutoCorrectedMember(rawName, members, clanName = '') {
+  const rawKey = normalize(rawName);
+  const correctedName = nicknameAutoCorrections[rawKey];
+  const scopedMembers = members.filter((member) => (
+    !clanName || canonicalClanName(member.guildName || member.clanName) === canonicalClanName(clanName)
+  ));
+  const byName = new Map(members.map((member) => [normalize(member.characterName), member.characterName]));
+  const byScopedName = new Map(scopedMembers.map((member) => [normalize(member.characterName), member.characterName]));
+  if (correctedName) return byScopedName.get(normalize(correctedName)) || byName.get(normalize(correctedName)) || correctedName;
+  return '';
+}
+
 function inferDominantClanFromNames(names, members) {
   const memberByName = new Map(members.map((member) => [normalize(member.characterName), member]));
   const counts = new Map();
@@ -257,21 +274,31 @@ function buildOcrReview(text, members, clanName, options = {}) {
     const rawKey = normalizeForOcrMatch(raw);
     const nameKey = normalizeForOcrMatch(suggestion.member.characterName);
     const lengthGap = Math.abs(rawKey.length - nameKey.length);
-    if (rawKey.length < 3 || suggestion.score < 0.74) return false;
-    if (lengthGap > 2 && suggestion.score < 0.96) return false;
+    if (rawKey.length < 2 || suggestion.score < 0.68) return false;
+    if (lengthGap > 4 && suggestion.score < 0.92) return false;
     return true;
   };
   const confident = [];
   const ambiguous = rawCandidates
     .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
     .filter((raw) => !blockedWords.has(normalize(raw)))
+    .map((raw) => {
+      const corrected = findAutoCorrectedMember(raw, members, clanName);
+      if (corrected && !exactKeys.has(normalize(corrected))) {
+        confident.push(corrected);
+        exactKeys.add(normalize(corrected));
+        return null;
+      }
+      return raw;
+    })
+    .filter(Boolean)
     .map((raw) => ({ raw, suggestions: findSimilarMembers(raw, members, clanName, precise ? 5 : 3) }))
     .filter((item) => {
       if (!item.suggestions.length) return false;
       if (precise) {
         const [best, second] = item.suggestions;
-        const clearWinner = best.score >= 0.74 && (!second || best.score - second.score >= 0.06);
-        const nearExact = best.score >= 0.9;
+        const clearWinner = best.score >= 0.68 && (!second || best.score - second.score >= 0.04);
+        const nearExact = best.score >= 0.84;
         if ((clearWinner || nearExact) && canAutoConfirm(item.raw, best)) {
           confident.push(best.member.characterName);
           exactKeys.add(normalize(best.member.characterName));
@@ -1019,13 +1046,10 @@ function Attendance({ member, setPage }) {
   const saveBatchRow = async (key) => {
     const row = batchRows.find((item) => item.key === key);
     if (!row) return;
-    const unresolved = row.names.filter((item) => !item.matched).length + row.ambiguous.length;
-    if (!row.names.length) {
+    const confirmedNames = row.names.filter((item) => item.matched);
+    const skippedCount = row.names.filter((item) => !item.matched).length + row.ambiguous.length;
+    if (!confirmedNames.length) {
       updateBatchRow(key, { message: '먼저 사진을 넣고 인식해 주세요.' });
-      return;
-    }
-    if (unresolved) {
-      updateBatchRow(key, { message: `확인필요 ${unresolved}개를 수정/삭제/무시한 뒤 저장해 주세요.` });
       return;
     }
     try {
@@ -1038,10 +1062,10 @@ function Attendance({ member, setPage }) {
           bossName: row.bossName,
           score: Number(row.score || 1) * (row.doubleScore ? 2 : 1),
           memo: [row.longTerm ? '장기전' : '', row.doubleScore ? '새벽/쟁 일정 2배' : ''].filter(Boolean).join(', '),
-          members: row.names.map((item) => ({ characterName: item.name, clanName: item.clanName })),
+          members: confirmedNames.map((item) => ({ characterName: item.name, clanName: item.clanName })),
         }),
       });
-      updateBatchRow(key, { savedRecord: saved, message: `${saved.bossName} ${saved.totalCount}명 저장 완료` });
+      updateBatchRow(key, { savedRecord: saved, message: `${saved.bossName} ${saved.totalCount}명 저장 완료${skippedCount ? ` · 주황색 ${skippedCount}개 제외` : ''}` });
       await load();
     } catch (err) {
       updateBatchRow(key, { message: err.message });
@@ -1249,7 +1273,7 @@ function Attendance({ member, setPage }) {
           <div className="section-heading">
             <div>
               <h2>시간별 출석체크</h2>
-              <p className="subtle">보스 시간별로 사진을 여러 장 넣으면 전체 인원을 합산해 보여줍니다. 초록색은 등록 클랜원, 주황색은 확인 필요입니다.</p>
+              <p className="subtle">보스 시간별로 사진을 여러 장 넣으면 전체 인원을 합산해 보여줍니다. 초록색만 저장되고, 주황색 확인 필요 항목은 저장에서 제외됩니다.</p>
             </div>
             <label className="batch-date-control">출석 날짜
               <input type="date" value={form.bossDate} onChange={(event) => setForm({ ...form, bossDate: event.target.value })} />
