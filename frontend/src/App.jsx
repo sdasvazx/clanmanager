@@ -271,10 +271,26 @@ function ocrComparableVariants(value) {
 }
 
 const SPECIAL_DANG_NICKNAMES = ['\uBCF5\uB315\uB315\uC774', '\uB315\uD788', '\uC3C4\uBCF5\uC774'];
+const SPECIAL_TARGET_ALIAS_MAP = {
+  '\uB315\uD788': [
+    '\uB315\uD788', '\uB300\uD788', '\uB315\uC774', '\uB315\uD76C', '\uB369\uD788', '\uB369\uC774', '\uB354\uD788', '\uB2F9\uD788', '\uB31D\uD788', '\uB301\uD788',
+  ],
+  '\uBCF5\uB315\uB315\uC774': [
+    '\uBCF5\uB315\uB315\uC774', '\uBCF5\uB300\uB300\uC774', '\uBCF5\uB369\uB369\uC774', '\uBCF5\uB561\uB561\uC774', '\uBCF5\uB385\uB385\uC774', '\uBCF5\uB315\uB315',
+    '\uBD81\uB315\uB315\uC774', '\uBBC5\uB315\uB315\uC774', '\uC695\uB315\uB315\uC774', '\uBE05\uB315\uB315\uC774', '\uBE61\uB315\uB315\uC774',
+    '\uBCF5\uB315\uB300\uC774', '\uBCF5\uB300\uB315\uC774', '\uBCF5\uB31D\uB31D\uC774', '\uBCF5\uB301\uB301\uC774',
+  ],
+  '\uC3C4\uBCF5\uC774': [
+    '\uC3C4\uBCF5\uC774', '\uC3CC\uBCF5\uC774', '\uC3C4\uBF41\uC774', '\uC3C4\uD3ED\uC774', '\uC3C4\uBCF5', '\uC3C4\uBD81\uC774',
+    '\uC0C8\uBCF5\uC774', '\uC138\uBCF5\uC774', '\uC314\uBCF5\uC774', '\uC368\uBCF5\uC774', '\uC11C\uBCF5\uC774',
+    '\uC0C8\uD3ED\uC774', '\uC138\uD3ED\uC774', '\uC0C8\uBF41\uC774', '\uC3C4\uBCF5\uD788',
+  ],
+};
 const BOK_OCR_VARIANT_PATTERN = /[\uBCF5\uBD81\uBBC5\uC695\uBE05\uBE61]/g;
-const DANG_OCR_VARIANT_PATTERN = /[\uB315\uB561\uB9F9\uB369\uB385\uB381]/g;
+const DANG_OCR_VARIANT_PATTERN = /[\uB315\uB300\uB561\uB9F9\uB369\uB385\uB381\uB354\uB2F9\uB31D\uB301]/g;
 const DANG_SUFFIX_OCR_VARIANT_PATTERN = /[\uC774\uD788\uD76C\uBBF8\uB2C8]/g;
-const SSE_OCR_VARIANT_PATTERN = /[\uC3C4\uC138\uC0C8\uC314\uC368\uC11C]/g;
+const SSE_OCR_VARIANT_PATTERN = /[\uC3C4\uC3CC\uC138\uC0C8\uC314\uC368\uC11C]/g;
+const POK_OCR_VARIANT_PATTERN = /[\uD3ED\uBF41\uBD81]/g;
 
 function normalizeDangNickname(value) {
   return String(value ?? '')
@@ -288,10 +304,14 @@ function normalizeDangNickname(value) {
     .replace(BOK_OCR_VARIANT_PATTERN, '\uBCF5')
     .replace(DANG_OCR_VARIANT_PATTERN, '\uB315')
     .replace(SSE_OCR_VARIANT_PATTERN, '\uC3C4')
+    .replace(POK_OCR_VARIANT_PATTERN, '\uBCF5')
     .replace(DANG_SUFFIX_OCR_VARIANT_PATTERN, '\uC774');
 }
 
 const SPECIAL_DANG_NICKNAME_KEYS = SPECIAL_DANG_NICKNAMES.map((name) => normalizeDangNickname(name));
+const SPECIAL_TARGET_ALIAS_KEYS = Object.fromEntries(
+  Object.entries(SPECIAL_TARGET_ALIAS_MAP).map(([name, aliases]) => [name, new Set(aliases.map((alias) => normalizeDangNickname(alias)).filter(Boolean))]),
+);
 
 function countDangChars(value) {
   return (String(value ?? '').match(/\uB315/g) || []).length;
@@ -329,6 +349,10 @@ function findSpecialDangMember(rawName, members, clanName = '') {
     const targetKey = normalizeDangNickname(member.characterName);
     if (!targetKey) continue;
     if (rawKey === targetKey) return member.characterName;
+    if (SPECIAL_TARGET_ALIAS_KEYS[member.characterName]?.has(rawKey)) return member.characterName;
+    if ([...(SPECIAL_TARGET_ALIAS_KEYS[member.characterName] || [])].some((aliasKey) => aliasKey.length >= 3 && (rawKey.includes(aliasKey) || aliasKey.includes(rawKey)))) {
+      return member.characterName;
+    }
     if (targetKey === '\uBCF5\uB315\uB315\uC774') {
       if ((rawKey.includes(targetKey) || targetKey.includes(rawKey)) && rawKey.length >= 3) return member.characterName;
       if (looksLikeBokDangDang(rawKey)) return member.characterName;
@@ -780,7 +804,9 @@ async function createPartyNameSlotFiles(file) {
   const slotCount = 5;
   const slotWidth = image.naturalWidth / slotCount;
   const cropBands = [
+    { top: 0.30, height: 0.38, label: 'name-high' },
     { top: 0.34, height: 0.34, label: 'name-wide' },
+    { top: 0.39, height: 0.30, label: 'name-mid' },
     { top: 0.43, height: 0.28, label: 'name-center' },
     { top: 0.38, height: 0.46, label: 'name-level' },
   ];
