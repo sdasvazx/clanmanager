@@ -31,7 +31,8 @@
 [data-theme="dark"] .admin-reset-form,
 [data-theme="dark"] .password-form,
 [data-theme="dark"] .vault-form-card,
-[data-theme="dark"] .vault-balance {
+[data-theme="dark"] .vault-balance,
+[data-theme="dark"] .batch-manual-add {
   background: #172131;
   border-color: #2b3b52;
   color: #e5edf7;
@@ -52,6 +53,14 @@
 [data-theme="dark"] .metric small,
 [data-theme="dark"] .participation-search-result span,
 [data-theme="dark"] .participation-search-result small {
+  color: #9fb0c6;
+}
+
+[data-theme="dark"] .batch-manual-add b {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .batch-manual-add small {
   color: #9fb0c6;
 }
 
@@ -78,7 +87,8 @@
 [data-theme="dark"] textarea,
 [data-theme="dark"] .auth-card input,
 [data-theme="dark"] .filters input,
-[data-theme="dark"] .filters select {
+[data-theme="dark"] .filters select,
+[data-theme="dark"] .batch-manual-controls input {
   background: #0f1724;
   border-color: #34465f;
   color: #e5edf7;

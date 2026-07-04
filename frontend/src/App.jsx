@@ -1529,6 +1529,7 @@ function Attendance({ member, setPage }) {
   const [draftEdit, setDraftEdit] = useState(null);
   const [ocrEdit, setOcrEdit] = useState(null);
   const [batchEdit, setBatchEdit] = useState(null);
+  const [batchManualAdd, setBatchManualAdd] = useState({});
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('');
   const [showCorrectionPanel, setShowCorrectionPanel] = useState(false);
@@ -1795,6 +1796,26 @@ function Attendance({ member, setPage }) {
     });
   };
   const removeBatchName = (key, targetName) => updateBatchRow(key, (row) => ({ names: row.names.filter((item) => item.name !== targetName) }));
+  const addBatchManualName = (key) => {
+    const trimmed = (batchManualAdd[key] || '').trim();
+    if (!trimmed) return;
+    updateBatchRow(key, (row) => {
+      const firstFile = row.fileReviews?.[0] || {};
+      const manualSource = {
+        fileIndex: firstFile.fileIndex || 1,
+        fileName: firstFile.fileName || '직접 추가',
+        position: 99,
+      };
+      return {
+        names: uniqueRecognizedRows([
+          ...row.names,
+          classifyRecognizedName(trimmed, [99], [manualSource]),
+        ]),
+        message: `${trimmed} 직접 추가됨 · 등록된 클랜원 이름이면 저장에 포함됩니다.`,
+      };
+    });
+    setBatchManualAdd((prev) => ({ ...prev, [key]: '' }));
+  };
   const resolveBatchAmbiguous = (key, ambiguousKey, name) => updateBatchRow(key, (row) => {
     const trimmed = name.trim();
     if (!trimmed) return {};
@@ -2150,6 +2171,34 @@ function Attendance({ member, setPage }) {
                         <span className="clan-badge total">전체 {row.names.length}명</span>
                         {clanDisplayOrder.map((clan) => counts[clan] ? <span className={`clan-badge ${normalize(clan)}`} key={clan}>{clan} {counts[clan]}명</span> : null)}
                         {!!unresolved && <span className="review-count">확인필요 {unresolved}개</span>}
+                      </div>
+                      <div className="batch-manual-add">
+                        <div>
+                          <b>빠진 인원 직접 추가</b>
+                          <small>OCR이 한 명을 놓쳤을 때 등록된 닉네임을 검색해서 바로 명단에 넣을 수 있습니다.</small>
+                        </div>
+                        <div className="batch-manual-controls">
+                          <input
+                            list="member-name-suggestions"
+                            value={batchManualAdd[row.key] || ''}
+                            onChange={(event) => setBatchManualAdd((prev) => ({ ...prev, [row.key]: event.target.value }))}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                addBatchManualName(row.key);
+                              }
+                            }}
+                            placeholder="닉네임 검색/입력"
+                          />
+                          <button type="button" className="primary-button no-margin" onClick={() => addBatchManualName(row.key)}>추가</button>
+                        </div>
+                        {!!(batchManualAdd[row.key] || '').trim() && (
+                          <div className="name-suggestion-list inline">
+                            {memberNameSuggestions(batchManualAdd[row.key]).map((candidate) => (
+                              <button type="button" key={candidate.memberId} onClick={() => setBatchManualAdd((prev) => ({ ...prev, [row.key]: candidate.characterName }))}>{candidate.characterName}</button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="batch-photo-groups">
                         {groupedBatchReview(row).map((fileGroup) => (
