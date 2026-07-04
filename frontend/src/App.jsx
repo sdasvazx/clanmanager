@@ -270,11 +270,60 @@ function ocrComparableVariants(value) {
   return [...variants].filter(Boolean);
 }
 
+const SPECIAL_DANG_NICKNAMES = ['\uBCF5\uB315\uB315\uC774', '\uB315\uD788'];
+const DANG_OCR_VARIANT_PATTERN = /[\uB315\uB561\uB9F9\uB369\uB385\uB381]/g;
+
+function normalizeDangNickname(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^0-9a-z\uAC00-\uD7A3]/g, '')
+    .replace(/2/g, 'z')
+    .replace(/0/g, 'o')
+    .replace(/[1il]/g, 'l')
+    .replace(/vv/g, 'w')
+    .replace(/rn/g, 'm')
+    .replace(DANG_OCR_VARIANT_PATTERN, '\uB315')
+    .replace(/[\uD76C\uC774]/g, '\uD788');
+}
+
+function countDangChars(value) {
+  return (String(value ?? '').match(/\uB315/g) || []).length;
+}
+
+function findSpecialDangMember(rawName, members, clanName = '') {
+  const rawKey = normalizeDangNickname(rawName);
+  if (!rawKey) return '';
+  const targetClan = String(clanName ?? '').trim() ? canonicalClanName(clanName) : '';
+  const candidates = members.filter((member) => {
+    const name = member.characterName;
+    if (!SPECIAL_DANG_NICKNAMES.includes(name)) return false;
+    return !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan;
+  });
+  for (const member of candidates) {
+    const targetKey = normalizeDangNickname(member.characterName);
+    if (!targetKey) continue;
+    if (rawKey === targetKey) return member.characterName;
+    if (targetKey === '\uBCF5\uB315\uB315\uD788' || targetKey === '\uBCF5\uB315\uB315\uC774') {
+      if ((rawKey.includes(targetKey) || targetKey.includes(rawKey)) && rawKey.length >= 3) return member.characterName;
+      if (rawKey.startsWith('\uBCF5') && countDangChars(rawKey) >= 2) return member.characterName;
+    }
+    if (targetKey === '\uB315\uD788') {
+      if (rawKey.includes(targetKey)) return member.characterName;
+      if (rawKey.startsWith('\uB315') && rawKey.length <= 3 && /[\uD788\uC774\uD76C]/.test(String(rawName ?? ''))) return member.characterName;
+    }
+  }
+  return '';
+}
+
 function findSimilarMembers(rawName, members, clanName, limit = 3) {
   const targetClan = String(clanName ?? '').trim() ? canonicalClanName(clanName) : '';
+  const specialName = findSpecialDangMember(rawName, members, clanName);
   return members
     .filter((member) => !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan)
-    .map((member) => ({ member, score: similarityScore(rawName, member.characterName) }))
+    .map((member) => ({
+      member,
+      score: Math.max(similarityScore(rawName, member.characterName), specialName === member.characterName ? 0.98 : 0),
+    }))
     .filter(({ score }) => score >= 0.58)
     .sort((a, b) => b.score - a.score || a.member.characterName.localeCompare(b.member.characterName, 'ko-KR'))
     .slice(0, limit);
@@ -339,6 +388,8 @@ function findAutoCorrectedMember(rawName, members, clanName = '', corrections = 
   const byName = new Map(members.map((member) => [normalize(member.characterName), member.characterName]));
   const byScopedName = new Map(scopedMembers.map((member) => [normalize(member.characterName), member.characterName]));
   if (correctedName) return byScopedName.get(normalize(correctedName)) || byName.get(normalize(correctedName)) || correctedName;
+  const specialDangName = findSpecialDangMember(rawName, members, clanName);
+  if (specialDangName) return specialDangName;
   return '';
 }
 
