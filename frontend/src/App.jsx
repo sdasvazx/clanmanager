@@ -688,7 +688,7 @@ const loadImageElement = (file) => new Promise((resolve, reject) => {
   image.src = URL.createObjectURL(file);
 });
 
-async function createOcrVariants(file) {
+async function createOcrVariants(file, precise = false) {
   const image = await loadImageElement(file);
   const makeCanvas = (scale, mode, threshold = 120) => {
     const canvas = document.createElement('canvas');
@@ -711,9 +711,13 @@ async function createOcrVariants(file) {
     }
     return canvas;
   };
-  return [
+  const baseVariants = [
     file,
     await canvasToBlob(makeCanvas(2, 'contrast')),
+  ];
+  if (!precise) return baseVariants.filter(Boolean);
+  return [
+    ...baseVariants,
     await canvasToBlob(makeCanvas(2.4, 'threshold')),
     await canvasToBlob(makeCanvas(2.8, 'contrast')),
     await canvasToBlob(makeCanvas(3.2, 'threshold')),
@@ -758,8 +762,8 @@ async function createNameSlotOcrVariants(file) {
   ].filter(Boolean);
 }
 
-async function recognizeOcrVariantsWithWorker(file, worker, onProgress) {
-  const variants = await createOcrVariants(file);
+async function recognizeOcrVariantsWithWorker(file, worker, onProgress, precise = false) {
+  const variants = await createOcrVariants(file, precise);
   const texts = [];
   for (let index = 0; index < variants.length; index += 1) {
     onProgress?.(Math.round((index / variants.length) * 100));
@@ -920,6 +924,7 @@ function detectRosterContentBounds(image) {
 async function recognizePartyPanels(file, members, onProgress, options = {}) {
   const panels = await createPartyPanelFiles(file);
   const worker = await createWorker('kor+eng', 1);
+  const precise = Boolean(options.precise);
   const names = [];
   const ambiguous = [];
   const appliedCorrections = [];
@@ -934,16 +939,19 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
     for (let index = 0; index < panels.length; index += 1) {
       const panel = panels[index];
       let text = await recognizeOcrVariantsWithWorker(panel.file, worker, (progressValue) => {
-        const overall = Math.round(((index + ((progressValue / 100) * 0.55)) / Math.max(1, panels.length)) * 100);
+        const baseWeight = precise ? 0.55 : 1;
+        const overall = Math.round(((index + ((progressValue / 100) * baseWeight)) / Math.max(1, panels.length)) * 100);
         onProgress?.(overall);
-      });
-      const slotFiles = await createPartyNameSlotFiles(panel.file);
-      for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
-        const slot = slotFiles[slotIndex];
-        const slotText = await recognizeNameSlotWithWorker(slot.file, worker);
-        text += `\n${slotText}`;
-        const overall = Math.round(((index + 0.55 + (((slotIndex + 1) / Math.max(1, slotFiles.length)) * 0.45)) / Math.max(1, panels.length)) * 100);
-        onProgress?.(overall);
+      }, precise);
+      if (precise) {
+        const slotFiles = await createPartyNameSlotFiles(panel.file);
+        for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
+          const slot = slotFiles[slotIndex];
+          const slotText = await recognizeNameSlotWithWorker(slot.file, worker);
+          text += `\n${slotText}`;
+          const overall = Math.round(((index + 0.55 + (((slotIndex + 1) / Math.max(1, slotFiles.length)) * 0.45)) / Math.max(1, panels.length)) * 100);
+          onProgress?.(overall);
+        }
       }
       panelTexts.push({ panel, text });
     }
