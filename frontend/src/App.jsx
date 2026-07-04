@@ -581,8 +581,8 @@ function buildOcrReview(text, members, clanName, options = {}) {
     const rawKey = normalizeForOcrMatch(raw);
     const nameKey = normalizeForOcrMatch(suggestion.member.characterName);
     const lengthGap = Math.abs(rawKey.length - nameKey.length);
-    if (rawKey.length < 2 || suggestion.score < 0.72) return false;
-    if (lengthGap > 3 && suggestion.score < 0.9) return false;
+    if (rawKey.length < 2 || suggestion.score < 0.76) return false;
+    if (lengthGap > 2 && suggestion.score < 0.92) return false;
     return true;
   };
   const shouldShowAmbiguous = (raw, suggestions) => {
@@ -592,14 +592,23 @@ function buildOcrReview(text, members, clanName, options = {}) {
     const rawKey = normalizeForOcrMatch(raw);
     const nameKey = normalizeForOcrMatch(best.member.characterName);
     const lengthGap = Math.abs(rawKey.length - nameKey.length);
-    if (best.score < 0.7) return false;
-    if (lengthGap > 3 && best.score < 0.9) return false;
-    if (rawKey.length <= 3 && best.score < 0.82) return false;
-    if (second && best.score - second.score < 0.03 && best.score < 0.86) return false;
+    if (best.score < 0.84) return false;
+    if (lengthGap > 2 && best.score < 0.94) return false;
+    if (rawKey.length <= 3 && best.score < 0.9) return false;
+    if (second && best.score - second.score < 0.08) return false;
     return true;
   };
+  const rankAmbiguous = (item) => {
+    const [best, second] = item.suggestions;
+    const rawKey = normalizeForOcrMatch(item.raw);
+    const nameKey = normalizeForOcrMatch(best.member.characterName);
+    const margin = best.score - (second?.score || 0);
+    const lengthPenalty = Math.abs(rawKey.length - nameKey.length) * 0.03;
+    return best.score + margin - lengthPenalty;
+  };
   const confident = [];
-  const ambiguous = rawCandidates
+  const bestAmbiguousByMember = new Map();
+  rawCandidates
     .filter((raw) => !isOcrFilteredName(raw, filters))
     .filter((raw) => !isNoisyOcrCandidate(raw))
     .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
@@ -632,7 +641,14 @@ function buildOcrReview(text, members, clanName, options = {}) {
       }
       return true;
     })
-    .slice(0, 12);
+    .forEach((item) => {
+      const bestName = item.suggestions[0].member.characterName;
+      const current = bestAmbiguousByMember.get(bestName);
+      if (!current || rankAmbiguous(item) > rankAmbiguous(current)) bestAmbiguousByMember.set(bestName, item);
+    });
+  const ambiguous = [...bestAmbiguousByMember.values()]
+    .sort((a, b) => rankAmbiguous(b) - rankAmbiguous(a))
+    .slice(0, 2);
   return { exactNames: [...new Set([...exactNames, ...confident])], ambiguous, appliedCorrections };
 }
 function namesFromText(value) {
