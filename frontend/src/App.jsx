@@ -272,6 +272,7 @@ function ocrComparableVariants(value) {
 
 const SPECIAL_DANG_NICKNAMES = ['\uBCF5\uB315\uB315\uC774', '\uB315\uD788'];
 const DANG_OCR_VARIANT_PATTERN = /[\uB315\uB561\uB9F9\uB369\uB385\uB381]/g;
+const DANG_SUFFIX_OCR_VARIANT_PATTERN = /[\uC774\uD788\uD76C\uBBF8\uB2C8]/g;
 
 function normalizeDangNickname(value) {
   return String(value ?? '')
@@ -283,11 +284,23 @@ function normalizeDangNickname(value) {
     .replace(/vv/g, 'w')
     .replace(/rn/g, 'm')
     .replace(DANG_OCR_VARIANT_PATTERN, '\uB315')
-    .replace(/[\uD76C\uC774]/g, '\uD788');
+    .replace(DANG_SUFFIX_OCR_VARIANT_PATTERN, '\uC774');
 }
 
 function countDangChars(value) {
   return (String(value ?? '').match(/\uB315/g) || []).length;
+}
+
+function looksLikeBokDangDang(rawKey) {
+  if (!rawKey.includes('\uBCF5')) return false;
+  if (countDangChars(rawKey) >= 2) return true;
+  return similarityScore(rawKey, '\uBCF5\uB315\uB315\uC774') >= 0.62;
+}
+
+function looksLikeDangHi(rawKey) {
+  if (!rawKey.startsWith('\uB315')) return false;
+  if (rawKey.includes('\uB315\uC774')) return true;
+  return rawKey.length <= 3 && similarityScore(rawKey, '\uB315\uD788') >= 0.62;
 }
 
 function findSpecialDangMember(rawName, members, clanName = '') {
@@ -303,16 +316,35 @@ function findSpecialDangMember(rawName, members, clanName = '') {
     const targetKey = normalizeDangNickname(member.characterName);
     if (!targetKey) continue;
     if (rawKey === targetKey) return member.characterName;
-    if (targetKey === '\uBCF5\uB315\uB315\uD788' || targetKey === '\uBCF5\uB315\uB315\uC774') {
+    if (targetKey === '\uBCF5\uB315\uB315\uC774') {
       if ((rawKey.includes(targetKey) || targetKey.includes(rawKey)) && rawKey.length >= 3) return member.characterName;
-      if (rawKey.startsWith('\uBCF5') && countDangChars(rawKey) >= 2) return member.characterName;
+      if (looksLikeBokDangDang(rawKey)) return member.characterName;
     }
-    if (targetKey === '\uB315\uD788') {
+    if (targetKey === '\uB315\uC774') {
       if (rawKey.includes(targetKey)) return member.characterName;
-      if (rawKey.startsWith('\uB315') && rawKey.length <= 3 && /[\uD788\uC774\uD76C]/.test(String(rawName ?? ''))) return member.characterName;
+      if (looksLikeDangHi(rawKey)) return member.characterName;
     }
   }
   return '';
+}
+
+function extractSpecialDangNamesFromText(text, members, clanName = '') {
+  const chunks = new Set(tokenizeOcrNicknames(text));
+  const compact = normalizeDangNickname(String(text ?? '').replace(/Lv\.?\s*\d+/gi, ' '));
+  for (let index = 0; index < compact.length; index += 1) {
+    for (let size = 2; size <= 8; size += 1) {
+      const slice = compact.slice(index, index + size);
+      if (slice.length >= 2 && (slice.includes('\uBCF5') || slice.includes('\uB315'))) {
+        chunks.add(slice);
+      }
+    }
+  }
+  const names = [];
+  chunks.forEach((chunk) => {
+    const matched = findSpecialDangMember(chunk, members, clanName);
+    if (matched) names.push(matched);
+  });
+  return [...new Set(names)];
 }
 
 function findSimilarMembers(rawName, members, clanName, limit = 3) {
@@ -456,7 +488,7 @@ function buildOcrReview(text, members, clanName, options = {}) {
   const corrections = options.corrections || {};
   const filters = options.filters || [];
   const appliedCorrections = [];
-  const exactNames = extractOcrNames(text, members)
+  const exactNames = [...new Set([...extractOcrNames(text, members), ...extractSpecialDangNamesFromText(text, members, clanName)])]
     .filter((name) => !isOcrFilteredName(name, filters))
     .map((name) => {
       const corrected = findAutoCorrectedMember(name, members, clanName, corrections);
