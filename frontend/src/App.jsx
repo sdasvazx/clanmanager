@@ -614,7 +614,7 @@ const loadImageElement = (file) => new Promise((resolve, reject) => {
 
 async function createOcrVariants(file) {
   const image = await loadImageElement(file);
-  const makeCanvas = (scale, mode) => {
+  const makeCanvas = (scale, mode, threshold = 120) => {
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -626,7 +626,7 @@ async function createOcrVariants(file) {
       const { data } = imageData;
       for (let index = 0; index < data.length; index += 4) {
         const gray = (data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114);
-        const value = mode === 'threshold' ? (gray > 120 ? 255 : 0) : Math.max(0, Math.min(255, (gray - 120) * 1.65 + 140));
+        const value = mode === 'threshold' ? (gray > threshold ? 255 : 0) : Math.max(0, Math.min(255, (gray - threshold) * 1.65 + 140));
         data[index] = value;
         data[index + 1] = value;
         data[index + 2] = value;
@@ -644,6 +644,41 @@ async function createOcrVariants(file) {
   ].filter(Boolean);
 }
 
+async function createNameSlotOcrVariants(file) {
+  const image = await loadImageElement(file);
+  const makeCanvas = (scale, mode, threshold = 112) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = false;
+    context.fillStyle = '#000';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const { data } = imageData;
+    for (let index = 0; index < data.length; index += 4) {
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const gray = (r * 0.299) + (g * 0.587) + (b * 0.114);
+      const boosted = Math.max(r, g, b);
+      const value = mode === 'threshold'
+        ? (boosted > threshold || gray > threshold ? 255 : 0)
+        : Math.max(0, Math.min(255, (boosted - threshold) * 1.9 + 150));
+      data[index] = value;
+      data[index + 1] = value;
+      data[index + 2] = value;
+    }
+    context.putImageData(imageData, 0, 0);
+    return canvas;
+  };
+  return [
+    await canvasToBlob(makeCanvas(4, 'contrast', 108)),
+    await canvasToBlob(makeCanvas(5, 'threshold', 108)),
+  ].filter(Boolean);
+}
+
 async function recognizeOcrVariantsWithWorker(file, worker, onProgress) {
   const variants = await createOcrVariants(file);
   const texts = [];
@@ -653,6 +688,25 @@ async function recognizeOcrVariantsWithWorker(file, worker, onProgress) {
     texts.push(data.text);
   }
   onProgress?.(100);
+  return texts.join('\n');
+}
+
+async function recognizeNameSlotWithWorker(file, worker) {
+  const variants = await createNameSlotOcrVariants(file);
+  const texts = [];
+  const previousParameters = {
+    tessedit_pageseg_mode: '6',
+  };
+  await worker.setParameters({
+    preserve_interword_spaces: '1',
+    user_defined_dpi: '450',
+    tessedit_pageseg_mode: '7',
+  });
+  for (let index = 0; index < variants.length; index += 1) {
+    const { data } = await worker.recognize(variants[index]);
+    texts.push(data.text);
+  }
+  await worker.setParameters(previousParameters);
   return texts.join('\n');
 }
 
@@ -700,6 +754,28 @@ async function createPartyPanelFiles(file) {
     }
   }
   return panels.slice(0, 10);
+}
+
+async function createPartyNameSlotFiles(file) {
+  const image = await loadImageElement(file);
+  const slots = [];
+  const slotCount = 5;
+  const slotWidth = image.naturalWidth / slotCount;
+  const cropTop = Math.max(0, Math.round(image.naturalHeight * 0.43));
+  const cropHeight = Math.max(24, Math.round(image.naturalHeight * 0.36));
+  for (let index = 0; index < slotCount; index += 1) {
+    const sx = Math.max(0, Math.round((index * slotWidth) - (slotWidth * 0.06)));
+    const sw = Math.min(image.naturalWidth - sx, Math.round(slotWidth * 1.12));
+    const canvas = document.createElement('canvas');
+    canvas.width = sw;
+    canvas.height = cropHeight;
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = false;
+    context.drawImage(image, sx, cropTop, sw, cropHeight, 0, 0, sw, cropHeight);
+    const blob = await canvasToBlob(canvas);
+    if (blob) slots.push({ slotNumber: index + 1, file: blob });
+  }
+  return slots;
 }
 
 function detectRosterContentBounds(image) {
@@ -766,10 +842,18 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
     });
     for (let index = 0; index < panels.length; index += 1) {
       const panel = panels[index];
-      const text = await recognizeOcrVariantsWithWorker(panel.file, worker, (progressValue) => {
-        const overall = Math.round(((index + (progressValue / 100)) / Math.max(1, panels.length)) * 100);
+      let text = await recognizeOcrVariantsWithWorker(panel.file, worker, (progressValue) => {
+        const overall = Math.round(((index + ((progressValue / 100) * 0.55)) / Math.max(1, panels.length)) * 100);
         onProgress?.(overall);
       });
+      const slotFiles = await createPartyNameSlotFiles(panel.file);
+      for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
+        const slot = slotFiles[slotIndex];
+        const slotText = await recognizeNameSlotWithWorker(slot.file, worker);
+        text += `\n${slotText}`;
+        const overall = Math.round(((index + 0.55 + (((slotIndex + 1) / Math.max(1, slotFiles.length)) * 0.45)) / Math.max(1, panels.length)) * 100);
+        onProgress?.(overall);
+      }
       panelTexts.push({ panel, text });
     }
     const firstPassReviews = panelTexts.map(({ text }) => buildOcrReview(text, members, '', options));
