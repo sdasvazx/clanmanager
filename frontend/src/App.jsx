@@ -234,12 +234,40 @@ function editDistance(a, b) {
 function similarityScore(a, b) {
   const left = normalizeForOcrMatch(a);
   const right = normalizeForOcrMatch(b);
-  if (!left || !right) return 0;
-  if (left === right) return 1;
-  if (left.includes(right) || right.includes(left)) return 0.92;
-  const distanceScore = 1 - (editDistance(left, right) / Math.max(left.length, right.length));
-  const overlap = [...new Set(left)].filter((char) => right.includes(char)).length / Math.max(1, new Set([...left, ...right]).size);
-  return Math.max(distanceScore, overlap * 0.82);
+  const leftVariants = ocrComparableVariants(left);
+  const rightVariants = ocrComparableVariants(right);
+  let best = 0;
+  leftVariants.forEach((leftKey) => {
+    rightVariants.forEach((rightKey) => {
+      if (!leftKey || !rightKey) return;
+      if (leftKey === rightKey) {
+        best = Math.max(best, 1);
+        return;
+      }
+      if (leftKey.includes(rightKey) || rightKey.includes(leftKey)) {
+        best = Math.max(best, 0.92);
+      }
+      const distanceScore = 1 - (editDistance(leftKey, rightKey) / Math.max(leftKey.length, rightKey.length));
+      const overlap = [...new Set(leftKey)].filter((char) => rightKey.includes(char)).length / Math.max(1, new Set([...leftKey, ...rightKey]).size);
+      best = Math.max(best, distanceScore, overlap * 0.82);
+    });
+  });
+  return best;
+}
+
+function ocrComparableVariants(value) {
+  const key = String(value ?? '');
+  const variants = new Set([key]);
+  variants.add(key
+    .replace(/땡|맹|덩|뎅|뎡/g, '댕')
+    .replace(/햄|험|헴/g, '햄'));
+  variants.add(key
+    .replace(/바|버|ㅂ|나|냐/g, 'vh')
+    .replace(/땡|맹|덩|뎅|뎡/g, '댕'));
+  variants.add(key
+    .replace(/vh/g, '바')
+    .replace(/땡|맹|덩|뎅|뎡/g, '댕'));
+  return [...variants].filter(Boolean);
 }
 
 function findSimilarMembers(rawName, members, clanName, limit = 3) {
@@ -510,24 +538,77 @@ async function recognizeImageTextMultiple(file, onProgress) {
 async function createPartyPanelFiles(file) {
   const image = await loadImageElement(file);
   const columns = 2;
-  const panelWidth = Math.floor(image.naturalWidth / columns);
-  const estimatedPanelHeight = Math.max(120, Math.round(panelWidth * 0.23));
-  const rows = Math.max(1, Math.min(5, Math.round(image.naturalHeight / estimatedPanelHeight)));
-  const panelHeight = Math.floor(image.naturalHeight / rows);
+  const bounds = detectRosterContentBounds(image);
+  const cropX = bounds.x;
+  const cropY = bounds.y;
+  const cropWidth = bounds.width;
+  const cropHeight = bounds.height;
+  const panelWidth = Math.floor(cropWidth / columns);
+  const estimatedPanelHeight = Math.max(88, Math.round(panelWidth * 0.24));
+  const rows = Math.max(1, Math.min(5, Math.round(cropHeight / estimatedPanelHeight)));
+  const panelHeight = Math.floor(cropHeight / rows);
   const panels = [];
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const canvas = document.createElement('canvas');
       canvas.width = panelWidth;
-      canvas.height = row === rows - 1 ? image.naturalHeight - (row * panelHeight) : panelHeight;
+      canvas.height = row === rows - 1 ? cropHeight - (row * panelHeight) : panelHeight;
       const context = canvas.getContext('2d');
       context.imageSmoothingEnabled = false;
-      context.drawImage(image, column * panelWidth, row * panelHeight, panelWidth, canvas.height, 0, 0, panelWidth, canvas.height);
+      context.drawImage(image, cropX + (column * panelWidth), cropY + (row * panelHeight), panelWidth, canvas.height, 0, 0, panelWidth, canvas.height);
       const blob = await canvasToBlob(canvas);
       if (blob) panels.push({ partyNumber: (row * columns) + column + 1, file: blob });
     }
   }
   return panels.slice(0, 10);
+}
+
+function detectRosterContentBounds(image) {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext('2d');
+  context.drawImage(image, 0, 0);
+  const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+  const columnScores = Array(width).fill(0);
+  const rowScores = Array(height).fill(0);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const r = data[index];
+      const g = data[index + 1];
+      const b = data[index + 2];
+      const brightness = (r + g + b) / 3;
+      const isTextOrLine = brightness > 72 || (g > 85 && b > 65) || (r > 95 && g > 80 && b < 70);
+      if (isTextOrLine) {
+        columnScores[x] += 1;
+        rowScores[y] += 1;
+      }
+    }
+  }
+  const findRange = (scores, minScore, padding, max) => {
+    let start = 0;
+    let end = max - 1;
+    while (start < max && scores[start] < minScore) start += 1;
+    while (end > start && scores[end] < minScore) end -= 1;
+    return {
+      start: Math.max(0, start - padding),
+      end: Math.min(max - 1, end + padding),
+    };
+  };
+  const xRange = findRange(columnScores, Math.max(3, Math.round(height * 0.025)), 10, width);
+  const yRange = findRange(rowScores, Math.max(8, Math.round(width * 0.012)), 6, height);
+  const detectedWidth = xRange.end - xRange.start + 1;
+  const detectedHeight = yRange.end - yRange.start + 1;
+  if (detectedWidth < width * 0.35 || detectedHeight < height * 0.45) {
+    return { x: 0, y: 0, width, height };
+  }
+  return {
+    x: xRange.start,
+    y: yRange.start,
+    width: detectedWidth,
+    height: detectedHeight,
+  };
 }
 
 async function recognizePartyPanels(file, members, onProgress, options = {}) {
