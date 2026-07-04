@@ -561,6 +561,17 @@ function candidateNamesFromOcrTextSafe(text, precise = false) {
   return [...new Set([...tokens, ...merged])];
 }
 
+function ambiguousCandidateRank(item) {
+  const [best, second] = item?.suggestions || [];
+  if (!best) return 0;
+  const rawKey = normalizeForOcrMatch(item.raw);
+  const nameKey = normalizeForOcrMatch(best.member.characterName);
+  const margin = best.score - (second?.score || 0);
+  const lengthPenalty = Math.abs(rawKey.length - nameKey.length) * 0.04;
+  const shortPenalty = rawKey.length <= 3 ? 0.08 : 0;
+  return best.score + margin - lengthPenalty - shortPenalty;
+}
+
 function buildOcrReview(text, members, clanName, options = {}) {
   const precise = Boolean(options.precise);
   const corrections = options.corrections || {};
@@ -597,14 +608,6 @@ function buildOcrReview(text, members, clanName, options = {}) {
     if (rawKey.length <= 3 && best.score < 0.9) return false;
     if (second && best.score - second.score < 0.08) return false;
     return true;
-  };
-  const rankAmbiguous = (item) => {
-    const [best, second] = item.suggestions;
-    const rawKey = normalizeForOcrMatch(item.raw);
-    const nameKey = normalizeForOcrMatch(best.member.characterName);
-    const margin = best.score - (second?.score || 0);
-    const lengthPenalty = Math.abs(rawKey.length - nameKey.length) * 0.03;
-    return best.score + margin - lengthPenalty;
   };
   const confident = [];
   const bestAmbiguousByMember = new Map();
@@ -644,11 +647,11 @@ function buildOcrReview(text, members, clanName, options = {}) {
     .forEach((item) => {
       const bestName = item.suggestions[0].member.characterName;
       const current = bestAmbiguousByMember.get(bestName);
-      if (!current || rankAmbiguous(item) > rankAmbiguous(current)) bestAmbiguousByMember.set(bestName, item);
+      if (!current || ambiguousCandidateRank(item) > ambiguousCandidateRank(current)) bestAmbiguousByMember.set(bestName, item);
     });
   const ambiguous = [...bestAmbiguousByMember.values()]
-    .sort((a, b) => rankAmbiguous(b) - rankAmbiguous(a))
-    .slice(0, 2);
+    .sort((a, b) => ambiguousCandidateRank(b) - ambiguousCandidateRank(a))
+    .slice(0, 1);
   return { exactNames: [...new Set([...exactNames, ...confident])], ambiguous, appliedCorrections };
 }
 function namesFromText(value) {
@@ -933,6 +936,20 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
       ambiguous.push(...review.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
       appliedCorrections.push(...(review.appliedCorrections || []).map((item) => ({ ...item, positions: [panel.partyNumber] })));
     });
+    const confirmedNameKeys = new Set(names.map((item) => normalize(item.name)));
+    const bestAmbiguousByMember = new Map();
+    ambiguous.forEach((item) => {
+      const bestName = item.suggestions?.[0]?.member?.characterName;
+      if (!bestName || confirmedNameKeys.has(normalize(bestName))) return;
+      const current = bestAmbiguousByMember.get(bestName);
+      if (!current || ambiguousCandidateRank(item) > ambiguousCandidateRank(current)) {
+        bestAmbiguousByMember.set(bestName, item);
+      }
+    });
+    const limitedAmbiguous = [...bestAmbiguousByMember.values()]
+      .sort((a, b) => ambiguousCandidateRank(b) - ambiguousCandidateRank(a))
+      .slice(0, 7);
+    ambiguous.splice(0, ambiguous.length, ...limitedAmbiguous);
   } finally {
     await worker.terminate();
   }
