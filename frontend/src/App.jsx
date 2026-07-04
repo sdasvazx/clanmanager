@@ -189,8 +189,9 @@ function extractOcrNames(text, registeredMembers = []) {
     .filter((name) => /^[0-9A-Za-z가-힣]{2,10}$/.test(name))
     .filter((name) => !/^[A-Za-z0-9]+$/.test(name))
     .filter((name) => !blockedWords.has(normalize(name)))
-    .map((name) => memberByNormalized.get(normalize(name)) ?? memberByNormalized.get(ocrKey(name)) ?? name)
-    .filter((name) => !matchedKeys.has(normalize(name)) || memberByNormalized.has(normalize(name)) || memberByNormalized.has(ocrKey(name)));
+    .map((name) => memberByNormalized.get(normalize(name)) ?? memberByNormalized.get(ocrKey(name)) ?? '')
+    .filter(Boolean)
+    .filter((name) => !matchedKeys.has(normalize(name)));
   return [...new Set([...matched, ...guessed])];
 }
 
@@ -624,10 +625,10 @@ function buildOcrReview(text, members, clanName, options = {}) {
     const rawKey = normalizeForOcrMatch(raw);
     const nameKey = normalizeForOcrMatch(best.member.characterName);
     const lengthGap = Math.abs(rawKey.length - nameKey.length);
-    if (best.score < 0.84) return false;
-    if (lengthGap > 2 && best.score < 0.94) return false;
-    if (rawKey.length <= 3 && best.score < 0.9) return false;
-    if (second && best.score - second.score < 0.08) return false;
+    if (best.score < 0.88) return false;
+    if (lengthGap > 2 && best.score < 0.96) return false;
+    if (rawKey.length <= 3 && best.score < 0.93) return false;
+    if (second && best.score - second.score < 0.12) return false;
     return true;
   };
   const confident = [];
