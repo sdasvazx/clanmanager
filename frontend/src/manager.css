@@ -2089,6 +2089,141 @@
   font-size: 1.35rem;
 }
 
+.collection-wide-wrap {
+  max-height: 70vh;
+  border: 1px solid #dfe9f6;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.collection-wide-table {
+  min-width: 1200px;
+  width: max-content;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.collection-wide-table th,
+.collection-wide-table td {
+  min-width: 132px;
+  padding: 9px 10px;
+  border-right: 1px solid #edf2f7;
+  border-bottom: 1px solid #edf2f7;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.collection-wide-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f8fbff;
+  color: #26364f;
+  font-size: .82rem;
+  font-weight: 900;
+}
+
+.collection-wide-table .collection-member-head,
+.collection-wide-table .collection-member-name {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  min-width: 160px;
+  text-align: left;
+  background: #fff;
+  box-shadow: 1px 0 0 #edf2f7;
+}
+
+.collection-wide-table th.collection-member-head {
+  background: #f8fbff;
+  z-index: 5;
+}
+
+.collection-member-name b {
+  display: block;
+  color: #17233a;
+}
+
+.collection-member-name small {
+  color: #718096;
+  font-size: .75rem;
+}
+
+.collection-item-header {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.collection-item-header b {
+  max-width: 150px;
+  line-height: 1.25;
+  word-break: keep-all;
+}
+
+.collection-item-header span,
+.collection-item-edit.compact {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+.collection-item-header button,
+.collection-item-edit.compact button {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #2563eb;
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.collection-item-header button:last-child {
+  background: #fff1f2;
+  color: #e11d48;
+}
+
+.collection-item-edit.compact input {
+  width: 130px;
+  padding: 6px 8px;
+  border: 1px solid #cbd8e8;
+  border-radius: 8px;
+}
+
+.collection-status-cell {
+  display: inline-flex;
+  width: 86px;
+  justify-content: center;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: .82rem;
+  font-weight: 950;
+}
+
+.collection-status-cell.완료 {
+  background: #16a34a;
+  color: #fff;
+}
+
+.collection-status-cell.미완료 {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.collection-status-cell.회수 {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.collection-status-cell:disabled {
+  cursor: wait;
+  opacity: .7;
+}
+
 .collection-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));

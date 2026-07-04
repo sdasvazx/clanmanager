@@ -835,12 +835,21 @@ async function createPartyPanelFiles(file) {
   const panels = [];
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
+      const baseX = cropX + (column * panelWidth);
+      const baseY = cropY + (row * panelHeight);
+      const baseHeight = row === rows - 1 ? cropHeight - (row * panelHeight) : panelHeight;
+      const padX = Math.round(panelWidth * 0.018);
+      const padY = Math.max(4, Math.round(panelHeight * 0.08));
+      const sx = Math.max(cropX, baseX - padX);
+      const sy = Math.max(cropY, baseY - padY);
+      const ex = Math.min(cropX + cropWidth, baseX + panelWidth + padX);
+      const ey = Math.min(cropY + cropHeight, baseY + baseHeight + padY);
       const canvas = document.createElement('canvas');
-      canvas.width = panelWidth;
-      canvas.height = row === rows - 1 ? cropHeight - (row * panelHeight) : panelHeight;
+      canvas.width = Math.max(1, ex - sx);
+      canvas.height = Math.max(1, ey - sy);
       const context = canvas.getContext('2d');
       context.imageSmoothingEnabled = false;
-      context.drawImage(image, cropX + (column * panelWidth), cropY + (row * panelHeight), panelWidth, canvas.height, 0, 0, panelWidth, canvas.height);
+      context.drawImage(image, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
       const blob = await canvasToBlob(canvas);
       if (blob) panels.push({ partyNumber: (row * columns) + column + 1, file: blob });
     }
@@ -952,7 +961,7 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
         onProgress?.(overall);
       }, precise);
       const quickReview = !precise ? buildOcrReview(text, members, '', options) : null;
-      const needsAdaptiveSlotScan = !precise && quickReview.exactNames.length < 4;
+      const needsAdaptiveSlotScan = !precise && quickReview.exactNames.length < 5;
       if (precise || needsAdaptiveSlotScan) {
         const slotFiles = await createPartyNameSlotFiles(panel.file, precise);
         for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
@@ -2701,31 +2710,66 @@ function ClanVaultPage({ member, readonly = false }) {
   const [members, setMembers] = useState([]);
   const [mode, setMode] = useState('deposit');
   const [form, setForm] = useState({ amountDiamonds: '', balanceDiamonds: '', targetMemberId: '', memo: '' });
+  const [targetSearch, setTargetSearch] = useState('');
+  const [selectedTargetIds, setSelectedTargetIds] = useState([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const typeText = { DEPOSIT: '입금', DISTRIBUTION: '분배', WITHDRAW: '차감', ADJUSTMENT: '잔액수정' };
   const typeTone = { DEPOSIT: 'green', DISTRIBUTION: 'blue', WITHDRAW: 'red', ADJUSTMENT: 'purple' };
   const load = async () => { const [vault, memberRows] = await Promise.all([request('/vault'), request('/members')]); setSummary(vault); setMembers(memberRows); };
   useEffect(() => { load().catch((err) => setMessage(err.message)); }, []);
+  const filteredTargets = members.filter((target) => {
+    const query = normalize(targetSearch);
+    if (!query) return true;
+    return normalize(target.characterName).includes(query) || normalize(canonicalClanName(target.guildName)).includes(query);
+  });
+  const selectedTargets = members.filter((target) => selectedTargetIds.includes(String(target.memberId)));
+  const toggleTarget = (targetId) => {
+    const id = String(targetId);
+    setSelectedTargetIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+  };
+  const selectFilteredTargets = () => {
+    const ids = filteredTargets.map((target) => String(target.memberId));
+    setSelectedTargetIds((prev) => [...new Set([...prev, ...ids])]);
+  };
   const submit = async (event) => {
     event.preventDefault();
+    const amount = Number(form.amountDiamonds || 0);
+    const balance = Number(form.balanceDiamonds || 0);
+    if (mode === 'distribute' && selectedTargetIds.length === 0) {
+      setMessage('분배받을 클랜원을 한 명 이상 선택해 주세요.');
+      return;
+    }
+    const confirmText = mode === 'distribute'
+      ? `${selectedTargetIds.length}명에게 각각 ${money(amount)} 다이아를 분배 기록으로 추가할까요?`
+      : mode === 'adjust'
+        ? `클랜금고 잔액을 ${money(balance)} 다이아로 수정할까요?`
+        : `${mode === 'deposit' ? '입금' : '차감'} ${money(amount)} 다이아 기록을 저장할까요?`;
+    if (!window.confirm(confirmText)) return;
     setLoading(true);
     setMessage('');
     const body = { memo: form.memo, createdByMemberId: member.memberId };
-    if (mode === 'adjust') body.balanceDiamonds = Number(form.balanceDiamonds || 0);
-    else body.amountDiamonds = Number(form.amountDiamonds || 0);
-    if (mode === 'distribute') body.targetMemberId = Number(form.targetMemberId || 0);
+    if (mode === 'adjust') body.balanceDiamonds = balance;
+    else body.amountDiamonds = amount;
     const path = mode === 'deposit' ? '/vault/deposit' : mode === 'distribute' ? '/vault/distribute' : mode === 'withdraw' ? '/vault/withdraw' : '/vault/balance';
     const method = mode === 'adjust' ? 'PATCH' : 'POST';
     try {
-      await request(path, { method, body: JSON.stringify(body) });
+      if (mode === 'distribute') {
+        for (const targetMemberId of selectedTargetIds) {
+          await request(path, { method, body: JSON.stringify({ ...body, targetMemberId: Number(targetMemberId) }) });
+        }
+      } else {
+        await request(path, { method, body: JSON.stringify(body) });
+      }
       setForm({ amountDiamonds: '', balanceDiamonds: '', targetMemberId: '', memo: '' });
+      setSelectedTargetIds([]);
+      setTargetSearch('');
       await load();
-      setMessage('금고 내용을 저장했습니다.');
+      setMessage(mode === 'distribute' ? `${selectedTargetIds.length}명 분배 기록을 저장했습니다.` : '금고 내용을 저장했습니다.');
     } catch (err) { setMessage(err.message); } finally { setLoading(false); }
   };
   const transactions = summary?.recentTransactions ?? [];
-  return <><div className="page-title"><h1>{readonly ? '장부 조회' : '통장현황'}</h1><p>클랜 금고의 다이아 잔액과 입금·분배·차감 기록을 관리합니다.</p></div><div className="vault-grid"><section className="white-card vault-balance"><span className="vault-icon">💎</span><p>현재 클랜금고 잔액</p><strong>{money(summary?.balanceDiamonds)}</strong><small>입금 {summary?.depositCount ?? 0}건 · 분배 {summary?.distributionCount ?? 0}건</small></section>{!readonly && <section className="white-card vault-form-card"><div className="section-heading"><h2>금고 기록 추가</h2></div><div className="vault-tabs"><button className={mode === 'deposit' ? 'active' : ''} onClick={() => setMode('deposit')}>입금</button><button className={mode === 'distribute' ? 'active' : ''} onClick={() => setMode('distribute')}>분배</button><button className={mode === 'withdraw' ? 'active' : ''} onClick={() => setMode('withdraw')}>차감</button><button className={mode === 'adjust' ? 'active' : ''} onClick={() => setMode('adjust')}>잔액수정</button></div><form className="vault-form" onSubmit={submit}>{mode === 'distribute' && <label>받는 클랜원<select required value={form.targetMemberId} onChange={(e) => setForm({ ...form, targetMemberId: e.target.value })}><option value="">클랜원 선택</option>{members.map((m) => <option value={m.memberId} key={m.memberId}>{m.characterName}</option>)}</select></label>}{mode === 'adjust' ? <label>새 금고 잔액<input required min="0" type="number" value={form.balanceDiamonds} onChange={(e) => setForm({ ...form, balanceDiamonds: e.target.value })} placeholder="현재 총 다이아 개수" /></label> : <label>다이아 수량<input required min="1" type="number" value={form.amountDiamonds} onChange={(e) => setForm({ ...form, amountDiamonds: e.target.value })} placeholder="기록할 다이아 수량" /></label>}<label>메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 에노크 분배, 보스 수익 입금" /></label><button className="primary-button" disabled={loading}>{loading ? '저장 중...' : '금고 기록 저장'}</button>{message && <p className="vault-message">{message}</p>}</form></section>}</div><section className="white-card"><div className="section-heading"><h2>거래내역</h2><span className="result-count">{transactions.length}건</span></div><div className="table-wrap"><table className="data-table vault-table"><thead><tr><th>시간</th><th>종류</th><th>대상</th><th>수량</th><th>처리 후 잔액</th><th>메모</th><th>기록자</th></tr></thead><tbody>{transactions.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td><span className={`vault-type ${typeTone[row.type]}`}>{typeText[row.type] ?? row.type}</span></td><td>{row.targetMemberName ?? '-'}</td><td>{money(row.amountDiamonds)}</td><td><b>{money(row.balanceAfter)}</b></td><td>{row.memo || '-'}</td><td>{row.createdByMemberName ?? '-'}</td></tr>)}</tbody></table></div>{!transactions.length && <div className="empty-state">아직 금고 거래내역이 없습니다.</div>}</section></>;
+  return <><div className="page-title"><h1>{readonly ? '장부 조회' : '통장현황'}</h1><p>클랜 금고의 다이아 잔액과 입금·분배·차감 기록을 관리합니다.</p></div><div className="vault-grid"><section className="white-card vault-balance"><span className="vault-icon">💎</span><p>현재 클랜금고 잔액</p><strong>{money(summary?.balanceDiamonds)}</strong><small>입금 {summary?.depositCount ?? 0}건 · 분배 {summary?.distributionCount ?? 0}건</small></section>{!readonly && <section className="white-card vault-form-card"><div className="section-heading"><h2>금고 기록 추가</h2></div><div className="vault-tabs"><button type="button" className={mode === 'deposit' ? 'active' : ''} onClick={() => setMode('deposit')}>입금</button><button type="button" className={mode === 'distribute' ? 'active' : ''} onClick={() => setMode('distribute')}>분배</button><button type="button" className={mode === 'withdraw' ? 'active' : ''} onClick={() => setMode('withdraw')}>차감</button><button type="button" className={mode === 'adjust' ? 'active' : ''} onClick={() => setMode('adjust')}>잔액수정</button></div><form className="vault-form" onSubmit={submit}>{mode === 'distribute' && <div className="vault-target-picker"><label>받는 클랜원 검색<input value={targetSearch} onChange={(e) => setTargetSearch(e.target.value)} placeholder="닉네임/클랜명으로 필터링" /></label><div className="vault-target-actions"><button type="button" className="mini-button" onClick={selectFilteredTargets}>현재 필터 전체선택</button><button type="button" className="mini-button" onClick={() => setSelectedTargetIds([])}>선택해제</button><span>{selectedTargetIds.length}명 선택됨</span></div><div className="vault-selected-targets">{selectedTargets.map((target) => <span key={target.memberId}>{target.characterName}<button type="button" onClick={() => toggleTarget(target.memberId)}>×</button></span>)}</div><div className="vault-target-list">{filteredTargets.map((target) => <label key={target.memberId} className={selectedTargetIds.includes(String(target.memberId)) ? 'selected' : ''}><input type="checkbox" checked={selectedTargetIds.includes(String(target.memberId))} onChange={() => toggleTarget(target.memberId)} /><b>{target.characterName}</b><small>{canonicalClanName(target.guildName)}</small></label>)}</div></div>}{mode === 'adjust' ? <label>새 금고 잔액<input required min="0" type="number" value={form.balanceDiamonds} onChange={(e) => setForm({ ...form, balanceDiamonds: e.target.value })} placeholder="현재 총 다이아 개수" /></label> : <label>다이아 수량<input required min="1" type="number" value={form.amountDiamonds} onChange={(e) => setForm({ ...form, amountDiamonds: e.target.value })} placeholder="기록할 다이아 수량" /></label>}<label>메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 에노크 분배, 보스 수익 입금" /></label><button className="primary-button" disabled={loading}>{loading ? '저장 중...' : '금고 기록 저장'}</button>{message && <p className="vault-message">{message}</p>}</form></section>}</div><section className="white-card"><div className="section-heading"><h2>거래내역</h2><span className="result-count">{transactions.length}건</span></div><div className="table-wrap"><table className="data-table vault-table"><thead><tr><th>시간</th><th>종류</th><th>대상</th><th>수량</th><th>처리 후 잔액</th><th>메모</th><th>기록자</th></tr></thead><tbody>{transactions.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td><span className={`vault-type ${typeTone[row.type]}`}>{typeText[row.type] ?? row.type}</span></td><td>{row.targetMemberName ?? '-'}</td><td>{money(row.amountDiamonds)}</td><td><b>{money(row.balanceAfter)}</b></td><td>{row.memo || '-'}</td><td>{row.createdByMemberName ?? '-'}</td></tr>)}</tbody></table></div>{!transactions.length && <div className="empty-state">아직 금고 거래내역이 없습니다.</div>}</section></>;
 }
 
 function PaymentPage({ member }) {
@@ -2781,11 +2825,11 @@ function InventoryPage({ member }) {
 function BiddingPage({ member }) {
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState({ itemName: '', bidder: '', bidDiamonds: '', memo: '' });
-  const canManage = member.role === 'ADMIN';
+  const canDelete = member.role === 'ADMIN';
   const load = () => request('/management/bids').then(setRows).catch(() => {});
   useEffect(() => { load(); }, []);
   const add = async (event) => { event.preventDefault(); await request('/management/bids', { method: 'POST', body: JSON.stringify({ ...form, bidDiamonds: Number(form.bidDiamonds || 0), adminMemberId: member.memberId }) }); setForm({ itemName: '', bidder: '', bidDiamonds: '', memo: '' }); await load(); };
-  return <CrudPage title="아이템입찰" description="아이템별 입찰자와 입찰 다이아를 조회합니다." canManage={canManage} form={<form className="record-form" onSubmit={add}><input required placeholder="아이템명" value={form.itemName} onChange={(e) => setForm({ ...form, itemName: e.target.value })} /><input required placeholder="입찰자" value={form.bidder} onChange={(e) => setForm({ ...form, bidder: e.target.value })} /><input required type="number" min="0" placeholder="입찰 다이아" value={form.bidDiamonds} onChange={(e) => setForm({ ...form, bidDiamonds: e.target.value })} /><input placeholder="메모" value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} /><button className="primary-button">입찰 등록</button></form>} rows={rows} getId={(row) => row.itemBidId} columns={['아이템', '입찰자', '입찰가', '메모', '등록일']} render={(row) => [row.itemName, row.bidder, money(row.bidDiamonds), row.memo || '-', new Date(row.createdAt).toLocaleDateString('ko-KR')]} onDelete={async (id) => { await request(`/management/bids/${id}?adminMemberId=${member.memberId}`, { method: 'DELETE' }); await load(); }} />;
+  return <CrudPage title="아이템입찰" description="아이템별 입찰자와 입찰 다이아를 조회합니다. 모든 클랜원이 입찰 글을 등록할 수 있습니다." canCreate form={<form className="record-form" onSubmit={add}><input required placeholder="아이템명" value={form.itemName} onChange={(e) => setForm({ ...form, itemName: e.target.value })} /><input required placeholder="입찰자" value={form.bidder} onChange={(e) => setForm({ ...form, bidder: e.target.value })} /><input required type="number" min="0" placeholder="입찰 다이아" value={form.bidDiamonds} onChange={(e) => setForm({ ...form, bidDiamonds: e.target.value })} /><input placeholder="메모" value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} /><button className="primary-button">입찰 등록</button></form>} rows={rows} getId={(row) => row.itemBidId} columns={['아이템', '입찰자', '입찰가', '메모', '등록일']} render={(row) => [row.itemName, row.bidder, money(row.bidDiamonds), row.memo || '-', new Date(row.createdAt).toLocaleDateString('ko-KR')]} canDelete={canDelete} onDelete={async (id) => { await request(`/management/bids/${id}?adminMemberId=${member.memberId}`, { method: 'DELETE' }); await load(); }} />;
 }
 
 function CollectionPage({ member }) {
@@ -2886,6 +2930,15 @@ function CollectionPage({ member }) {
     }, { 완료: 0, 미완료: 0, 회수: 0 });
     return { item, rows, counts };
   }), [data.items, data.members, statusMap]);
+  const collectionCell = (targetMember, item) => {
+    const key = `${targetMember.memberId}:${item.itemId}`;
+    const status = statusMap.get(key);
+    return { key, status, state: status?.state || '미완료' };
+  };
+  const toggleCollectionStatus = (targetMember, item) => {
+    const { state } = collectionCell(targetMember, item);
+    updateStatus(targetMember, item, state === '완료' ? '미완료' : '완료');
+  };
   return (
     <>
       <div className="page-title">
@@ -2916,53 +2969,58 @@ function CollectionPage({ member }) {
           <div><small>관리 인원</small><b>{data.members.length}명</b></div>
           <div><small>완료율</small><b>{totalCount ? Math.round((completedCount / totalCount) * 100) : 0}%</b></div>
         </div>
-        <div className="collection-card-grid">
-          {itemSummaries.map(({ item, rows, counts }) => (
-            <article className="collection-item-card" key={item.itemId}>
-              <header>
-                <div>
-                  {editingItem?.itemId === item.itemId ? (
-                    <span className="collection-item-edit">
-                      <input value={editingItem.itemName} onChange={(event) => setEditingItem({ ...editingItem, itemName: event.target.value })} />
-                      <button type="button" onClick={renameItem}>저장</button>
-                      <button type="button" onClick={() => setEditingItem(null)}>취소</button>
-                    </span>
-                  ) : (
-                    <h3>{item.itemName}</h3>
-                  )}
-                  <p>완료해야 할 컬렉템/스킬 항목입니다.</p>
-                </div>
-                {editingItem?.itemId !== item.itemId && (
-                  <div className="collection-item-actions">
-                    <button type="button" title="항목명 수정" onClick={() => setEditingItem(item)}>이름수정</button>
-                    <button type="button" title="항목 숨김" onClick={() => deleteItem(item)}>숨김</button>
-                  </div>
-                )}
-              </header>
-              <div className="collection-state-summary">
-                <span className="done">완료 <b>{counts.완료 || 0}</b></span>
-                <span className="pending">미완료 <b>{counts.미완료 || 0}</b></span>
-                <span className="returned">회수 <b>{counts.회수 || 0}</b></span>
-              </div>
-              <div className="collection-member-list">
-                {rows.map(({ key, member: targetMember, status, state }) => (
-                  <div className={`collection-member-card ${state}`} key={key}>
-                    <div>
-                      <b>{targetMember.characterName}</b>
-                      <small>{targetMember.guildName || '클랜 미지정'}</small>
-                    </div>
-                    <select className={`collection-state ${state}`} value={state} disabled={savingCell === key} onChange={(event) => updateStatus(targetMember, item, event.target.value)}>
-                      <option>미완료</option>
-                      <option>완료</option>
-                      <option>회수</option>
-                    </select>
-                    <input value={memoByCell[key] ?? ''} onChange={(event) => setMemoByCell({ ...memoByCell, [key]: event.target.value })} placeholder={status?.memo || '메모'} />
-                    {status?.updatedByName && <small className="collection-updated">{status.updatedByName} · {new Date(status.updatedAt).toLocaleDateString('ko-KR')}</small>}
-                  </div>
+        <div className="table-wrap collection-wide-wrap">
+          <table className="collection-wide-table">
+            <thead>
+              <tr>
+                <th className="collection-member-head">클랜원</th>
+                <th>클랜</th>
+                {data.items.map((item) => (
+                  <th key={item.itemId}>
+                    {editingItem?.itemId === item.itemId ? (
+                      <span className="collection-item-edit compact">
+                        <input value={editingItem.itemName} onChange={(event) => setEditingItem({ ...editingItem, itemName: event.target.value })} />
+                        <button type="button" onClick={renameItem}>저장</button>
+                        <button type="button" onClick={() => setEditingItem(null)}>취소</button>
+                      </span>
+                    ) : (
+                      <span className="collection-item-header">
+                        <b>{item.itemName}</b>
+                        <span>
+                          <button type="button" onClick={() => setEditingItem(item)}>수정</button>
+                          <button type="button" onClick={() => deleteItem(item)}>숨김</button>
+                        </span>
+                      </span>
+                    )}
+                  </th>
                 ))}
-              </div>
-            </article>
-          ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.members.map((targetMember) => (
+                <tr key={targetMember.memberId}>
+                  <td className="collection-member-name"><b>{targetMember.characterName}</b><small>{targetMember.characterClass || '-'}</small></td>
+                  <td><span className={`clan-badge ${normalize(canonicalClanName(targetMember.guildName))}`}>{canonicalClanName(targetMember.guildName)}</span></td>
+                  {data.items.map((item) => {
+                    const { key, status, state } = collectionCell(targetMember, item);
+                    return (
+                      <td key={key}>
+                        <button
+                          type="button"
+                          className={`collection-status-cell ${state}`}
+                          disabled={savingCell === key}
+                          title={status?.updatedByName ? `${status.updatedByName} · ${new Date(status.updatedAt).toLocaleString('ko-KR')}` : '클릭해서 완료/미완료 변경'}
+                          onClick={() => toggleCollectionStatus(targetMember, item)}
+                        >
+                          {savingCell === key ? '저장중' : state === '완료' ? '완료' : state === '회수' ? '회수' : '미완료'}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
         {!data.members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
         {!data.items.length && <div className="empty-state">등록된 컬렉템 항목이 없습니다. 위에서 항목을 먼저 추가하세요.</div>}
@@ -3128,8 +3186,8 @@ function SpecHistoryPage({ setPage }) {
   );
 }
 
-function CrudPage({ title, description, canManage, form, rows, getId, columns, render, onDelete }) {
-  return <><div className="page-title"><h1>{title}</h1><p>{description}</p></div>{canManage && <section className="white-card">{form}</section>}<section className="white-card"><div className="table-wrap"><table className="data-table"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}{canManage && <th>관리</th>}</tr></thead><tbody>{rows.map((row) => <tr key={getId(row)}>{render(row).map((cell, index) => <td key={index}>{cell}</td>)}{canManage && <td><button className="role-button danger" onClick={() => onDelete(getId(row))}>삭제</button></td>}</tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">아직 등록된 기록이 없습니다.</div>}</section></>;
+function CrudPage({ title, description, canManage, canCreate = canManage, canDelete = canManage, form, rows, getId, columns, render, onDelete }) {
+  return <><div className="page-title"><h1>{title}</h1><p>{description}</p></div>{canCreate && <section className="white-card">{form}</section>}<section className="white-card"><div className="table-wrap"><table className="data-table"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}{canDelete && <th>관리</th>}</tr></thead><tbody>{rows.map((row) => <tr key={getId(row)}>{render(row).map((cell, index) => <td key={index}>{cell}</td>)}{canDelete && <td><button className="role-button danger" onClick={() => onDelete(getId(row))}>삭제</button></td>}</tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">아직 등록된 기록이 없습니다.</div>}</section></>;
 }
 
 function MyPage({ member, setPage, favoritePages = [] }) {

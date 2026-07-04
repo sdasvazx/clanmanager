@@ -204,11 +204,28 @@
 [data-theme="dark"] .favorite-menu-empty,
 [data-theme="dark"] .collection-summary-grid div,
 [data-theme="dark"] .collection-item-card,
+[data-theme="dark"] .collection-wide-wrap,
+[data-theme="dark"] .collection-wide-table .collection-member-name,
 [data-theme="dark"] .collection-member-card,
-[data-theme="dark"] .collection-member-card input {
+[data-theme="dark"] .collection-member-card input,
+[data-theme="dark"] .vault-target-picker,
+[data-theme="dark"] .vault-target-list,
+[data-theme="dark"] .vault-target-list label {
   background: #172131;
   border-color: #26364d;
   color: #d6e0ed;
+}
+
+[data-theme="dark"] .collection-wide-table th,
+[data-theme="dark"] .collection-wide-table th.collection-member-head {
+  background: #111b2a;
+  border-color: #26364d;
+  color: #d6e0ed;
+}
+
+[data-theme="dark"] .collection-wide-table td,
+[data-theme="dark"] .collection-wide-table th {
+  border-color: #26364d;
 }
 
 [data-theme="dark"] .collection-item-card {
@@ -218,8 +235,16 @@
 [data-theme="dark"] .collection-summary-grid b,
 [data-theme="dark"] .collection-item-card h3,
 [data-theme="dark"] .collection-member-card b,
+[data-theme="dark"] .collection-member-name b,
 [data-theme="dark"] .collection-log-toggle {
   color: #f8fafc;
+}
+
+[data-theme="dark"] .vault-target-list label.selected,
+[data-theme="dark"] .vault-selected-targets span {
+  background: #20385b;
+  border-color: #31527f;
+  color: #bcd7ff;
 }
 
 [data-theme="dark"] .collection-member-card.완료 {
