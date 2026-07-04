@@ -1069,11 +1069,17 @@ function FavoriteLinks({ favorites, setPage, emptyText = '왼쪽 메뉴의 ☆�
 function Shell({ member, page, setPage, onLogout, children, favorites = [], toggleFavorite }) {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('clanTheme') || 'light');
-  const visibleMenu = menu.filter(([id]) => member.role === 'ADMIN' || !adminOnlyPages.has(id));
+  const [favoriteOnly, setFavoriteOnly] = useState(() => localStorage.getItem('clanFavoriteOnlyMenu') === 'true');
+  const visibleMenu = menu
+    .filter(([id]) => member.role === 'ADMIN' || !adminOnlyPages.has(id))
+    .filter(([id]) => !favoriteOnly || favorites.includes(id));
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('clanTheme', theme);
   }, [theme]);
+  useEffect(() => {
+    localStorage.setItem('clanFavoriteOnlyMenu', favoriteOnly ? 'true' : 'false');
+  }, [favoriteOnly]);
   return (
     <div className={`shell ${collapsed ? 'collapsed' : ''}`}>
       <header className="topbar">
@@ -1085,6 +1091,13 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
         <button className="logout-icon" title="로그아웃" onClick={onLogout}>⇥</button>
       </header>
       <aside className="sidebar">
+        <div className="menu-view-toggle">
+          <button type="button" className={!favoriteOnly ? 'active' : ''} onClick={() => setFavoriteOnly(false)}>전체</button>
+          <button type="button" className={favoriteOnly ? 'active' : ''} onClick={() => setFavoriteOnly(true)}>즐겨찾기</button>
+        </div>
+        {favoriteOnly && !visibleMenu.length && (
+          <div className="favorite-menu-empty">☆를 눌러 자주 쓰는 메뉴를 추가하세요.</div>
+        )}
         <nav>{visibleMenu.map(([id, icon, label]) => {
           const starred = favorites.includes(id);
           return (
@@ -2713,6 +2726,7 @@ function CollectionPage({ member }) {
   const [editingItem, setEditingItem] = useState(null);
   const [memoByCell, setMemoByCell] = useState({});
   const [savingCell, setSavingCell] = useState('');
+  const [showLogs, setShowLogs] = useState(false);
   const load = () => request('/management/collection-dashboard').then(setData).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
   const statusMap = useMemo(() => {
@@ -2786,6 +2800,23 @@ function CollectionPage({ member }) {
   };
   const completedCount = data.statuses.filter((row) => row.state === '완료').length;
   const totalCount = data.members.length * data.items.length;
+  const itemSummaries = useMemo(() => data.items.map((item) => {
+    const rows = data.members.map((targetMember) => {
+      const key = `${targetMember.memberId}:${item.itemId}`;
+      const status = statusMap.get(key);
+      return {
+        key,
+        member: targetMember,
+        status,
+        state: status?.state || '미완료',
+      };
+    });
+    const counts = rows.reduce((acc, row) => {
+      acc[row.state] = (acc[row.state] || 0) + 1;
+      return acc;
+    }, { 완료: 0, 미완료: 0, 회수: 0 });
+    return { item, rows, counts };
+  }), [data.items, data.members, statusMap]);
   return (
     <>
       <div className="page-title">
@@ -2803,75 +2834,77 @@ function CollectionPage({ member }) {
         </form>
       </section>
       {message && <p className="vault-message">{message}</p>}
-      <div className="collection-layout">
-        <section className="white-card collection-main-card">
-          <div className="section-heading">
-            <div>
-              <h2>지급현황</h2>
-              <p className="subtle">완료/미완료/회수 상태를 바로 변경할 수 있습니다.</p>
-            </div>
-            <span className="result-count">완료 {completedCount} / {totalCount}</span>
+      <section className="white-card collection-main-card">
+        <div className="section-heading">
+          <div>
+            <h2>지급현황</h2>
+            <p className="subtle">아이템별로 완료/미완료 인원을 나눠서 보여줍니다. 사람 이름 옆 상태를 바꾸면 바로 저장됩니다.</p>
           </div>
-          <div className="table-wrap collection-table-wrap">
-            <table className="data-table collection-table">
-              <thead>
-                <tr>
-                  <th className="sticky-col">닉네임</th>
-                  <th>클랜</th>
-                  {data.items.map((item) => (
-                    <th key={item.itemId}>
-                      {editingItem?.itemId === item.itemId ? (
-                        <span className="collection-item-edit">
-                          <input value={editingItem.itemName} onChange={(event) => setEditingItem({ ...editingItem, itemName: event.target.value })} />
-                          <button type="button" onClick={renameItem}>저장</button>
-                          <button type="button" onClick={() => setEditingItem(null)}>취소</button>
-                        </span>
-                      ) : (
-                        <span className="collection-item-head">
-                          {item.itemName}
-                          <button type="button" title="항목명 수정" onClick={() => setEditingItem(item)}>✎</button>
-                          <button type="button" title="항목 숨김" onClick={() => deleteItem(item)}>×</button>
-                        </span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.members.map((targetMember) => (
-                  <tr key={targetMember.memberId}>
-                    <td className="sticky-col"><b>{targetMember.characterName}</b></td>
-                    <td>{targetMember.guildName || '-'}</td>
-                    {data.items.map((item) => {
-                      const key = `${targetMember.memberId}:${item.itemId}`;
-                      const status = statusMap.get(key);
-                      const state = status?.state || '미완료';
-                      return (
-                        <td key={key}>
-                          <div className="collection-cell">
-                            <select className={`collection-state ${state}`} value={state} disabled={savingCell === key} onChange={(event) => updateStatus(targetMember, item, event.target.value)}>
-                              <option>미완료</option>
-                              <option>완료</option>
-                              <option>회수</option>
-                            </select>
-                            <input value={memoByCell[key] ?? ''} onChange={(event) => setMemoByCell({ ...memoByCell, [key]: event.target.value })} placeholder={status?.memo || '메모'} />
-                            {status?.updatedByName && <small>{status.updatedByName} · {new Date(status.updatedAt).toLocaleDateString('ko-KR')}</small>}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
+          <span className="result-count">완료 {completedCount} / {totalCount}</span>
+        </div>
+        <div className="collection-summary-grid">
+          <div><small>전체 항목</small><b>{data.items.length}개</b></div>
+          <div><small>관리 인원</small><b>{data.members.length}명</b></div>
+          <div><small>완료율</small><b>{totalCount ? Math.round((completedCount / totalCount) * 100) : 0}%</b></div>
+        </div>
+        <div className="collection-card-grid">
+          {itemSummaries.map(({ item, rows, counts }) => (
+            <article className="collection-item-card" key={item.itemId}>
+              <header>
+                <div>
+                  {editingItem?.itemId === item.itemId ? (
+                    <span className="collection-item-edit">
+                      <input value={editingItem.itemName} onChange={(event) => setEditingItem({ ...editingItem, itemName: event.target.value })} />
+                      <button type="button" onClick={renameItem}>저장</button>
+                      <button type="button" onClick={() => setEditingItem(null)}>취소</button>
+                    </span>
+                  ) : (
+                    <h3>{item.itemName}</h3>
+                  )}
+                  <p>완료해야 할 컬렉템/스킬 항목입니다.</p>
+                </div>
+                {editingItem?.itemId !== item.itemId && (
+                  <div className="collection-item-actions">
+                    <button type="button" title="항목명 수정" onClick={() => setEditingItem(item)}>이름수정</button>
+                    <button type="button" title="항목 숨김" onClick={() => deleteItem(item)}>숨김</button>
+                  </div>
+                )}
+              </header>
+              <div className="collection-state-summary">
+                <span className="done">완료 <b>{counts.완료 || 0}</b></span>
+                <span className="pending">미완료 <b>{counts.미완료 || 0}</b></span>
+                <span className="returned">회수 <b>{counts.회수 || 0}</b></span>
+              </div>
+              <div className="collection-member-list">
+                {rows.map(({ key, member: targetMember, status, state }) => (
+                  <div className={`collection-member-card ${state}`} key={key}>
+                    <div>
+                      <b>{targetMember.characterName}</b>
+                      <small>{targetMember.guildName || '클랜 미지정'}</small>
+                    </div>
+                    <select className={`collection-state ${state}`} value={state} disabled={savingCell === key} onChange={(event) => updateStatus(targetMember, item, event.target.value)}>
+                      <option>미완료</option>
+                      <option>완료</option>
+                      <option>회수</option>
+                    </select>
+                    <input value={memoByCell[key] ?? ''} onChange={(event) => setMemoByCell({ ...memoByCell, [key]: event.target.value })} placeholder={status?.memo || '메모'} />
+                    {status?.updatedByName && <small className="collection-updated">{status.updatedByName} · {new Date(status.updatedAt).toLocaleDateString('ko-KR')}</small>}
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-          {!data.members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
-        </section>
-        <aside className="white-card collection-log-card">
-          <div className="section-heading">
-            <h2>변경/지급 로그</h2>
-            <span className="result-count">{data.histories.length}건</span>
-          </div>
+              </div>
+            </article>
+          ))}
+        </div>
+        {!data.members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
+        {!data.items.length && <div className="empty-state">등록된 컬렉템 항목이 없습니다. 위에서 항목을 먼저 추가하세요.</div>}
+      </section>
+      <section className="white-card collection-log-card collapsible">
+        <button type="button" className="collection-log-toggle" onClick={() => setShowLogs(!showLogs)}>
+          <span>변경/지급 로그</span>
+          <b>{data.histories.length}건</b>
+          <em>{showLogs ? '접기' : '열어보기'}</em>
+        </button>
+        {showLogs && (
           <div className="collection-log-list">
             {data.histories.map((log) => (
               <div className="collection-log-row" key={log.historyId}>
@@ -2884,8 +2917,8 @@ function CollectionPage({ member }) {
             ))}
             {!data.histories.length && <div className="empty-state">아직 변경 로그가 없습니다.</div>}
           </div>
-        </aside>
-      </div>
+        )}
+      </section>
     </>
   );
 }

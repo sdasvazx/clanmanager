@@ -189,3 +189,40 @@
   background: #20385b;
   color: #bcd7ff;
 }
+
+[data-theme="dark"] .menu-view-toggle,
+[data-theme="dark"] .favorite-menu-empty,
+[data-theme="dark"] .collection-summary-grid div,
+[data-theme="dark"] .collection-item-card,
+[data-theme="dark"] .collection-member-card,
+[data-theme="dark"] .collection-member-card input {
+  background: #172131;
+  border-color: #26364d;
+  color: #d6e0ed;
+}
+
+[data-theme="dark"] .collection-item-card {
+  background: linear-gradient(180deg, #172131, #141d2b);
+}
+
+[data-theme="dark"] .collection-summary-grid b,
+[data-theme="dark"] .collection-item-card h3,
+[data-theme="dark"] .collection-member-card b,
+[data-theme="dark"] .collection-log-toggle {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .collection-member-card.완료 {
+  background: #12351f;
+  border-color: #246b3b;
+}
+
+[data-theme="dark"] .collection-member-card.회수 {
+  background: #3b161b;
+  border-color: #7f1d1d;
+}
+
+[data-theme="dark"] .collection-log-toggle b {
+  background: #20385b;
+  color: #bcd7ff;
+}
