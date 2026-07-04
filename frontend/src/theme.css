@@ -167,3 +167,25 @@
   background: #12351f;
   color: #95f0b4;
 }
+
+[data-theme="dark"] .menu-row {
+  background: #172131;
+  border-color: #26364d;
+}
+
+[data-theme="dark"] .menu-row:hover,
+[data-theme="dark"] .menu-row.active {
+  background: #223149;
+}
+
+[data-theme="dark"] .favorite-link-grid button,
+[data-theme="dark"] .favorite-empty {
+  background: #172131;
+  border-color: #26364d;
+  color: #d6e0ed;
+}
+
+[data-theme="dark"] .favorite-link-grid span {
+  background: #20385b;
+  color: #bcd7ff;
+}

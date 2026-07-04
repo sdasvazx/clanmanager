@@ -37,6 +37,27 @@ const adminCards = [
   ['🎯', '핀볼', 'purple', 'pinball'],
 ];
 
+const favoriteStorageKey = (member) => `clanmanager:favorites:${member?.memberId || 'guest'}`;
+const pageMetaList = [
+  ...menu.map(([id, icon, label]) => ({ id, icon, label })),
+  { id: 'member-admin', icon: '관', label: '클랜원/전투력 관리' },
+  { id: 'pinball', icon: '핀', label: '핀볼' },
+  { id: 'spec-history', icon: '스', label: '스펙/장비 기록' },
+  { id: 'roster', icon: '스', label: '출석 OCR' },
+  { id: 'item-request', icon: '신', label: '아이템 신청' },
+];
+const pageMetaMap = new Map(pageMetaList.map((item) => [item.id, item]));
+const pageMeta = (id) => pageMetaMap.get(id) || { id, icon: '★', label: id };
+const readFavorites = (member) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(favoriteStorageKey(member)) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((id) => pageMetaMap.has(id)) : [];
+  } catch {
+    return [];
+  }
+};
+const writeFavorites = (member, ids) => localStorage.setItem(favoriteStorageKey(member), JSON.stringify(ids));
+
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
@@ -1020,7 +1041,32 @@ function AuthScreen({ onLogin }) {
   );
 }
 
-function Shell({ member, page, setPage, onLogout, children }) {
+function FavoriteLinks({ favorites, setPage, emptyText = '왼쪽 메뉴의 ☆를 눌러 자주 쓰는 페이지를 추가하세요.' }) {
+  return (
+    <section className="white-card favorite-links">
+      <div className="section-heading compact">
+        <div>
+          <h2>즐겨찾기</h2>
+          <p className="subtle">자주 쓰는 화면을 바로 열 수 있습니다.</p>
+        </div>
+      </div>
+      {favorites.length ? (
+        <div className="favorite-link-grid">
+          {favorites.map((item) => (
+            <button type="button" key={item.id} onClick={() => setPage(item.id)}>
+              <span>{item.icon}</span>
+              <b>{item.label}</b>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="favorite-empty">{emptyText}</p>
+      )}
+    </section>
+  );
+}
+
+function Shell({ member, page, setPage, onLogout, children, favorites = [], toggleFavorite }) {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('clanTheme') || 'light');
   const visibleMenu = menu.filter(([id]) => member.role === 'ADMIN' || !adminOnlyPages.has(id));
@@ -1039,7 +1085,22 @@ function Shell({ member, page, setPage, onLogout, children }) {
         <button className="logout-icon" title="로그아웃" onClick={onLogout}>⇥</button>
       </header>
       <aside className="sidebar">
-        <nav>{visibleMenu.map(([id, icon, label]) => <button key={id} className={page === id ? 'menu-item active' : 'menu-item'} onClick={() => setPage(id)}><span className="menu-icon">{icon}</span><span>{label}</span></button>)}</nav>
+        <nav>{visibleMenu.map(([id, icon, label]) => {
+          const starred = favorites.includes(id);
+          return (
+            <div key={id} className={page === id ? 'menu-row active' : 'menu-row'}>
+              <button className="menu-item" onClick={() => setPage(id)}><span className="menu-icon">{icon}</span><span>{label}</span></button>
+              <button
+                type="button"
+                className={starred ? 'favorite-toggle active' : 'favorite-toggle'}
+                title={starred ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                onClick={() => toggleFavorite?.(id)}
+              >
+                {starred ? '★' : '☆'}
+              </button>
+            </div>
+          );
+        })}</nav>
         <button type="button" className="side-note item-request-shortcut" onClick={() => setPage('item-request')}>
           <b>아이템 신청</b>
           <small>신청내역 확인 및 지급 처리</small>
@@ -1097,7 +1158,7 @@ function NoticePanel({ member, notices, onReload }) {
   );
 }
 
-function Lobby({ member, setPage }) {
+function Lobby({ member, setPage, favoritePages = [] }) {
   const [notices, setNotices] = useState([]);
   const [members, setMembers] = useState([]);
   const [attendances, setAttendances] = useState([]);
@@ -1138,6 +1199,7 @@ function Lobby({ member, setPage }) {
       <NoticePanel member={member} notices={notices} onReload={load} />
       {message && <div className="info-banner warning-banner">{message}</div>}
       <div className="page-title center"><h1>클랜 종합정보</h1><p>클랜별 참여율과 참여점수를 한눈에 확인합니다.</p></div>
+      <FavoriteLinks favorites={favoritePages} setPage={setPage} />
       <ParticipationRanking rows={participationRows} totalCount={members.length} />
       <section className="white-card quick-actions"><h2>빠른 메뉴</h2><div><button onClick={() => setPage('attendance')}>오늘의 출석 확인</button><button onClick={() => setPage('participation')}>참여율 조회</button>{member.role === 'ADMIN' && <button onClick={() => setPage('ledger')}>클랜금고 관리</button>}</div></section>
     </>
@@ -2028,9 +2090,10 @@ function Attendance({ member, setPage }) {
                       {!!row.files.length && <small>{row.files.length}장 선택됨</small>}
                     </label>
                     {!!row.files.length && (
-                      <div className="batch-file-list">
+                      <div className="batch-file-list selected-photo-list">
                         {row.fileReviews.map((fileItem) => (
-                          <span className="batch-file-chip" key={`${row.key}-${fileItem.fileIndex}-${fileItem.fileName}`}>
+                          <span className="batch-file-chip selected-photo-chip" key={`${row.key}-${fileItem.fileIndex}-${fileItem.fileName}`}>
+                            {fileItem.previewUrl && <img src={fileItem.previewUrl} alt={`선택 사진 ${fileItem.fileIndex}`} />}
                             <b>{fileItem.fileIndex}</b>
                             <em>{fileItem.fileName}</em>
                             <button type="button" disabled={row.scanning} onClick={() => removeBatchFile(row.key, fileItem.fileIndex)} aria-label={`${fileItem.fileName} 삭제`}>×</button>
@@ -2967,7 +3030,7 @@ function CrudPage({ title, description, canManage, form, rows, getId, columns, r
   return <><div className="page-title"><h1>{title}</h1><p>{description}</p></div>{canManage && <section className="white-card">{form}</section>}<section className="white-card"><div className="table-wrap"><table className="data-table"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}{canManage && <th>관리</th>}</tr></thead><tbody>{rows.map((row) => <tr key={getId(row)}>{render(row).map((cell, index) => <td key={index}>{cell}</td>)}{canManage && <td><button className="role-button danger" onClick={() => onDelete(getId(row))}>삭제</button></td>}</tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">아직 등록된 기록이 없습니다.</div>}</section></>;
 }
 
-function MyPage({ member }) {
+function MyPage({ member, setPage, favoritePages = [] }) {
   const [info, setInfo] = useState(null);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordMessage, setPasswordMessage] = useState('');
@@ -2989,10 +3052,10 @@ function MyPage({ member }) {
       setPasswordMessage('비밀번호를 변경했습니다. 다음 로그인부터 새 비밀번호를 사용하세요.');
     } catch (err) { setPasswordMessage(err.message); }
   };
-  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><ProfileCard member={member} info={info} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div></section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
+  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><FavoriteLinks favorites={favoritePages} setPage={setPage} /><ProfileCard member={member} info={info} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div></section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
 }
 
-function Admin({ member, setPage, onMemberUpdate, memberOnly = false }) {
+function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites = [], toggleFavorite }) {
   const emptyCreateForm = { characterName: '', initialPassword: '112200', guildName: '', characterClass: '', level: '', combatPower: '', rank: '', status: '활동중', active: true };
   const emptyEditForm = { characterName: '', guildName: '', characterClass: '', level: '', combatPower: '', rank: '', status: '', active: true };
   const [members, setMembers] = useState([]);
@@ -3325,12 +3388,24 @@ function MemberAdminPage({ member, setPage, onMemberUpdate }) {
 export default function App() {
   const [member, setMember] = useState(() => JSON.parse(sessionStorage.getItem('clanMember') || 'null'));
   const [page, setPage] = useState('lobby');
+  const [favorites, setFavorites] = useState(() => readFavorites(JSON.parse(sessionStorage.getItem('clanMember') || 'null')));
   const login = (data) => { sessionStorage.setItem('clanMember', JSON.stringify(data)); setMember(data); };
   const updateCurrentMember = (data) => { sessionStorage.setItem('clanMember', JSON.stringify(data)); setMember(data); };
-  const logout = () => { sessionStorage.removeItem('clanMember'); setMember(null); setPage('lobby'); };
+  const logout = () => { sessionStorage.removeItem('clanMember'); setMember(null); setPage('lobby'); setFavorites([]); };
+  useEffect(() => { if (member) setFavorites(readFavorites(member)); }, [member?.memberId]);
+  const visibleFavoritePages = favorites
+    .filter((id) => member?.role === 'ADMIN' || !adminOnlyPages.has(id))
+    .map(pageMeta);
+  const toggleFavorite = (targetPage) => {
+    setFavorites((prev) => {
+      const next = prev.includes(targetPage) ? prev.filter((id) => id !== targetPage) : [...prev, targetPage];
+      writeFavorites(member, next);
+      return next;
+    });
+  };
   if (!member) return <AuthScreen onLogin={login} />;
-  if (member.role !== 'ADMIN' && adminOnlyPages.has(page)) return <Shell member={member} page={page} setPage={setPage} onLogout={logout}><AccessDenied /></Shell>;
-  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} />
+  if (member.role !== 'ADMIN' && adminOnlyPages.has(page)) return <Shell member={member} page={page} setPage={setPage} onLogout={logout} favorites={favorites} toggleFavorite={toggleFavorite}><AccessDenied /></Shell>;
+  const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} favoritePages={visibleFavoritePages} />
     : page === 'my-info' ? <MyInfo member={member} />
     : page === 'participation' ? <Participation member={member} setPage={setPage} />
     : page === 'attendance' ? <Attendance member={member} setPage={setPage} />
@@ -3344,9 +3419,9 @@ export default function App() {
     : page === 'spec-history' ? <SpecHistoryPage setPage={setPage} />
     : page === 'roster' ? <RosterScanAdmin setPage={setPage} />
     : page === 'pinball' ? <PinballPage setPage={setPage} />
-    : page === 'mypage' ? <MyPage member={member} />
-    : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} />
+    : page === 'mypage' ? <MyPage member={member} setPage={setPage} favoritePages={visibleFavoritePages} />
+    : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} favorites={favorites} toggleFavorite={toggleFavorite} />
     : page === 'member-admin' ? <MemberAdminPage member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} />
-    : <Lobby member={member} setPage={setPage} />;
-  return <Shell member={member} page={page} setPage={setPage} onLogout={logout}>{view}</Shell>;
+    : <Lobby member={member} setPage={setPage} favoritePages={visibleFavoritePages} />;
+  return <Shell member={member} page={page} setPage={setPage} onLogout={logout} favorites={favorites} toggleFavorite={toggleFavorite}>{view}</Shell>;
 }
