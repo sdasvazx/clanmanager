@@ -271,6 +271,7 @@ function ocrComparableVariants(value) {
 }
 
 const SPECIAL_DANG_NICKNAMES = ['\uBCF5\uB315\uB315\uC774', '\uB315\uD788'];
+const BOK_OCR_VARIANT_PATTERN = /[\uBCF5\uBD81\uBBC5\uC695\uBE05\uBE61]/g;
 const DANG_OCR_VARIANT_PATTERN = /[\uB315\uB561\uB9F9\uB369\uB385\uB381]/g;
 const DANG_SUFFIX_OCR_VARIANT_PATTERN = /[\uC774\uD788\uD76C\uBBF8\uB2C8]/g;
 
@@ -283,17 +284,21 @@ function normalizeDangNickname(value) {
     .replace(/[1il]/g, 'l')
     .replace(/vv/g, 'w')
     .replace(/rn/g, 'm')
+    .replace(BOK_OCR_VARIANT_PATTERN, '\uBCF5')
     .replace(DANG_OCR_VARIANT_PATTERN, '\uB315')
     .replace(DANG_SUFFIX_OCR_VARIANT_PATTERN, '\uC774');
 }
+
+const SPECIAL_DANG_NICKNAME_KEYS = SPECIAL_DANG_NICKNAMES.map((name) => normalizeDangNickname(name));
 
 function countDangChars(value) {
   return (String(value ?? '').match(/\uB315/g) || []).length;
 }
 
 function looksLikeBokDangDang(rawKey) {
-  if (!rawKey.includes('\uBCF5')) return false;
-  if (countDangChars(rawKey) >= 2) return true;
+  if (rawKey.includes('\uBCF5') && countDangChars(rawKey) >= 2) return true;
+  if (rawKey.includes('\uBCF5') && rawKey.includes('\uB315') && rawKey.length <= 6) return true;
+  if (countDangChars(rawKey) >= 2 && rawKey.length <= 6) return true;
   return similarityScore(rawKey, '\uBCF5\uB315\uB315\uC774') >= 0.62;
 }
 
@@ -308,8 +313,8 @@ function findSpecialDangMember(rawName, members, clanName = '') {
   if (!rawKey) return '';
   const targetClan = String(clanName ?? '').trim() ? canonicalClanName(clanName) : '';
   const candidates = members.filter((member) => {
-    const name = member.characterName;
-    if (!SPECIAL_DANG_NICKNAMES.includes(name)) return false;
+    const nameKey = normalizeDangNickname(member.characterName);
+    if (!SPECIAL_DANG_NICKNAME_KEYS.includes(nameKey)) return false;
     return !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan;
   });
   for (const member of candidates) {
