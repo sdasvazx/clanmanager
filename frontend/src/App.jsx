@@ -352,16 +352,51 @@ function extractSpecialDangNamesFromText(text, members, clanName = '') {
   return [...new Set(names)];
 }
 
+const OCR_MEMBER_PREFIXES = ['귀신', '귀신z', '로망', '운좋은', '운좋은사람들'];
+
+function isNoisyOcrCandidate(rawName) {
+  const raw = String(rawName ?? '').trim();
+  const key = normalizeForOcrMatch(raw);
+  if (!key || key.length < 2) return true;
+  if (/^\d+$/.test(key)) return true;
+  if (/^lv?\d*$/i.test(key)) return true;
+  if (/[가-힣]\d{2,}$/.test(raw) || /\d{2,}[가-힣]/.test(raw)) return true;
+  if (/^귀신\d+$/i.test(raw) || /^로망\d+$/i.test(raw)) return true;
+  if (key.length <= 2 && !/[a-z]/.test(key)) return true;
+  return false;
+}
+
+function findPrefixOmittedMember(rawName, members, clanName = '') {
+  if (isNoisyOcrCandidate(rawName)) return '';
+  const rawKey = normalizeForOcrMatch(rawName);
+  if (rawKey.length < 2 || /\d/.test(rawKey)) return '';
+  const targetClan = String(clanName ?? '').trim() ? canonicalClanName(clanName) : '';
+  const scopedMembers = members.filter((member) => !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan);
+  const matches = scopedMembers.filter((member) => {
+    const nameKey = normalizeForOcrMatch(member.characterName);
+    return OCR_MEMBER_PREFIXES.some((prefix) => {
+      const prefixKey = normalizeForOcrMatch(prefix);
+      return nameKey === `${prefixKey}${rawKey}` || (nameKey.startsWith(prefixKey) && nameKey.slice(prefixKey.length) === rawKey);
+    });
+  });
+  return matches.length === 1 ? matches[0].characterName : '';
+}
+
 function findSimilarMembers(rawName, members, clanName, limit = 3) {
   const targetClan = String(clanName ?? '').trim() ? canonicalClanName(clanName) : '';
   const specialName = findSpecialDangMember(rawName, members, clanName);
+  const prefixOmittedName = findPrefixOmittedMember(rawName, members, clanName);
   return members
     .filter((member) => !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan)
     .map((member) => ({
       member,
-      score: Math.max(similarityScore(rawName, member.characterName), specialName === member.characterName ? 0.98 : 0),
+      score: Math.max(
+        similarityScore(rawName, member.characterName),
+        specialName === member.characterName ? 0.98 : 0,
+        prefixOmittedName === member.characterName ? 0.96 : 0,
+      ),
     }))
-    .filter(({ score }) => score >= 0.58)
+    .filter(({ score }) => score >= 0.66)
     .sort((a, b) => b.score - a.score || a.member.characterName.localeCompare(b.member.characterName, 'ko-KR'))
     .slice(0, limit);
 }
@@ -427,6 +462,8 @@ function findAutoCorrectedMember(rawName, members, clanName = '', corrections = 
   if (correctedName) return byScopedName.get(normalize(correctedName)) || byName.get(normalize(correctedName)) || correctedName;
   const specialDangName = findSpecialDangMember(rawName, members, clanName);
   if (specialDangName) return specialDangName;
+  const prefixOmittedName = findPrefixOmittedMember(rawName, members, clanName);
+  if (prefixOmittedName) return prefixOmittedName;
   return '';
 }
 
@@ -508,13 +545,27 @@ function buildOcrReview(text, members, clanName, options = {}) {
     const rawKey = normalizeForOcrMatch(raw);
     const nameKey = normalizeForOcrMatch(suggestion.member.characterName);
     const lengthGap = Math.abs(rawKey.length - nameKey.length);
-    if (rawKey.length < 2 || suggestion.score < 0.7) return false;
-    if (lengthGap > 4 && suggestion.score < 0.9) return false;
+    if (rawKey.length < 2 || suggestion.score < 0.72) return false;
+    if (lengthGap > 3 && suggestion.score < 0.9) return false;
+    return true;
+  };
+  const shouldShowAmbiguous = (raw, suggestions) => {
+    if (isNoisyOcrCandidate(raw)) return false;
+    const [best, second] = suggestions;
+    if (!best) return false;
+    const rawKey = normalizeForOcrMatch(raw);
+    const nameKey = normalizeForOcrMatch(best.member.characterName);
+    const lengthGap = Math.abs(rawKey.length - nameKey.length);
+    if (best.score < 0.7) return false;
+    if (lengthGap > 3 && best.score < 0.9) return false;
+    if (rawKey.length <= 3 && best.score < 0.82) return false;
+    if (second && best.score - second.score < 0.03 && best.score < 0.86) return false;
     return true;
   };
   const confident = [];
   const ambiguous = rawCandidates
     .filter((raw) => !isOcrFilteredName(raw, filters))
+    .filter((raw) => !isNoisyOcrCandidate(raw))
     .filter((raw) => normalize(raw).length >= 2 && !exactKeys.has(normalize(raw)))
     .filter((raw) => /[가-힣]/.test(raw) || normalize(raw).length >= 4)
     .filter((raw) => !blockedWords.has(normalize(raw)))
@@ -532,7 +583,7 @@ function buildOcrReview(text, members, clanName, options = {}) {
     .filter(Boolean)
     .map((raw) => ({ raw, suggestions: findSimilarMembers(raw, members, clanName, precise ? 5 : 3) }))
     .filter((item) => {
-      if (!item.suggestions.length) return false;
+      if (!shouldShowAmbiguous(item.raw, item.suggestions)) return false;
       if (precise) {
         const [best, second] = item.suggestions;
         const clearWinner = best.score >= 0.72 && (!second || best.score - second.score >= 0.04);
