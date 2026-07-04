@@ -98,6 +98,9 @@ const normalizeForOcrMatch = (value) => normalize(value)
   .replace(/[1il]/g, 'l')
   .replace(/vv/g, 'w')
   .replace(/rn/g, 'm');
+const KOREAN_CHAR_PATTERN = /[\uAC00-\uD7A3]/;
+const NICKNAME_CHAR_PATTERN = /[^0-9A-Za-z\uAC00-\uD7A3]/g;
+const OCR_NOISE_WORDS = new Set(['lv', 'lvl', 'level', 'l', 'v', 'iv', 'il', 'i', '공격대', '파티', '자리', '빈칸', '추가']);
 const OCR_CORRECTION_STORAGE_KEY = 'clanmanagerOcrCorrections';
 const OCR_FILTER_STORAGE_KEY = 'clanmanagerOcrFilters';
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망'];
@@ -170,6 +173,49 @@ function extractOcrNames(text, registeredMembers = []) {
   return [...new Set([...matched, ...guessed])];
 }
 
+function cleanOcrNicknameToken(value) {
+  let token = String(value ?? '')
+    .replace(/Lv\.?\s*\d+/gi, ' ')
+    .replace(/Level\s*\d+/gi, ' ')
+    .replace(/\bL\s*v\.?\s*\d+/gi, ' ')
+    .replace(/^[#\s]*\d{1,2}\s*/, '')
+    .replace(/\+\s*$/, '')
+    .trim();
+  token = token
+    .replace(/[|｜¦]/g, 'I')
+    .replace(/[‘’“”"']/g, '')
+    .replace(NICKNAME_CHAR_PATTERN, '')
+    .trim();
+  const key = normalize(token);
+  if (!key || OCR_NOISE_WORDS.has(key)) return '';
+  if (/^\d+$/.test(key)) return '';
+  if (/^lv?\d+$/i.test(key)) return '';
+  if (token.length < 2 || token.length > 16) return '';
+  if (!KOREAN_CHAR_PATTERN.test(token) && !/[A-Z]/.test(token) && token.length < 4) return '';
+  return token;
+}
+
+function tokenizeOcrNicknames(text) {
+  const lines = String(text ?? '')
+    .replace(/Lv\.?\s*\d+/gi, '\n')
+    .replace(/Level\s*\d+/gi, '\n')
+    .replace(/\bL\s*v\.?\s*\d+/gi, '\n')
+    .split(/\r?\n/);
+  const tokens = [];
+  lines.forEach((line) => {
+    const cleanedLine = line
+      .replace(/[()[\]{}<>]/g, ' ')
+      .replace(/[~!@#$%^&*_+=:;?/\\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    cleanedLine.split(/[\s,·ㆍ•]+/).forEach((part) => {
+      const token = cleanOcrNicknameToken(part);
+      if (token) tokens.push(token);
+    });
+  });
+  return [...new Set(tokens)];
+}
+
 function editDistance(a, b) {
   const left = normalizeForOcrMatch(a);
   const right = normalizeForOcrMatch(b);
@@ -201,7 +247,7 @@ function findSimilarMembers(rawName, members, clanName, limit = 3) {
   return members
     .filter((member) => !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan)
     .map((member) => ({ member, score: similarityScore(rawName, member.characterName) }))
-    .filter(({ score }) => score >= 0.42)
+    .filter(({ score }) => score >= 0.58)
     .sort((a, b) => b.score - a.score || a.member.characterName.localeCompare(b.member.characterName, 'ko-KR'))
     .slice(0, limit);
 }
@@ -311,6 +357,21 @@ function candidateNamesFromOcrText(text, precise = false) {
   return [...new Set([...lineCandidates, ...compactCandidates])];
 }
 
+function candidateNamesFromOcrTextSafe(text, precise = false) {
+  const tokens = tokenizeOcrNicknames(text);
+  if (!precise) return tokens;
+  const merged = [];
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    const left = tokens[index];
+    const right = tokens[index + 1];
+    if (left.length <= 4 && right.length <= 4) {
+      const joined = cleanOcrNicknameToken(`${left}${right}`);
+      if (joined) merged.push(joined);
+    }
+  }
+  return [...new Set([...tokens, ...merged])];
+}
+
 function buildOcrReview(text, members, clanName, options = {}) {
   const precise = Boolean(options.precise);
   const corrections = options.corrections || {};
@@ -325,14 +386,14 @@ function buildOcrReview(text, members, clanName, options = {}) {
       return corrected;
     });
   const exactKeys = new Set(exactNames.map(normalize));
-  const rawCandidates = candidateNamesFromOcrText(text, precise);
+  const rawCandidates = candidateNamesFromOcrTextSafe(text, precise);
   const blockedWords = new Set(['귀신', '귀신z', '로망', '운좋은', '운좋은사람들', '게헨나', '미분류', 'lv', 'level']);
   const canAutoConfirm = (raw, suggestion) => {
     const rawKey = normalizeForOcrMatch(raw);
     const nameKey = normalizeForOcrMatch(suggestion.member.characterName);
     const lengthGap = Math.abs(rawKey.length - nameKey.length);
-    if (rawKey.length < 2 || suggestion.score < 0.68) return false;
-    if (lengthGap > 4 && suggestion.score < 0.92) return false;
+    if (rawKey.length < 2 || suggestion.score < 0.7) return false;
+    if (lengthGap > 4 && suggestion.score < 0.9) return false;
     return true;
   };
   const confident = [];
@@ -358,8 +419,8 @@ function buildOcrReview(text, members, clanName, options = {}) {
       if (!item.suggestions.length) return false;
       if (precise) {
         const [best, second] = item.suggestions;
-        const clearWinner = best.score >= 0.68 && (!second || best.score - second.score >= 0.04);
-        const nearExact = best.score >= 0.84;
+        const clearWinner = best.score >= 0.72 && (!second || best.score - second.score >= 0.04);
+        const nearExact = best.score >= 0.82;
         if ((clearWinner || nearExact) && canAutoConfirm(item.raw, best)) {
           confident.push(best.member.characterName);
           exactKeys.add(normalize(best.member.characterName));
@@ -435,6 +496,11 @@ async function recognizeImageTextMultiple(file, onProgress) {
     },
   });
   try {
+    await worker.setParameters({
+      preserve_interword_spaces: '1',
+      user_defined_dpi: '300',
+      tessedit_pageseg_mode: '6',
+    });
     return await recognizeOcrVariantsWithWorker(file, worker, onProgress);
   } finally {
     await worker.terminate();
@@ -473,6 +539,11 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
   const panelTexts = [];
   let dominantClan = '';
   try {
+    await worker.setParameters({
+      preserve_interword_spaces: '1',
+      user_defined_dpi: '300',
+      tessedit_pageseg_mode: '6',
+    });
     for (let index = 0; index < panels.length; index += 1) {
       const panel = panels[index];
       const text = await recognizeOcrVariantsWithWorker(panel.file, worker, (progressValue) => {
