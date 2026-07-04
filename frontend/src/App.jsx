@@ -724,7 +724,7 @@ async function createOcrVariants(file, precise = false) {
   ].filter(Boolean);
 }
 
-async function createNameSlotOcrVariants(file) {
+async function createNameSlotOcrVariants(file, precise = true) {
   const image = await loadImageElement(file);
   const makeCanvas = (scale, mode, threshold = 112) => {
     const canvas = document.createElement('canvas');
@@ -753,9 +753,13 @@ async function createNameSlotOcrVariants(file) {
     context.putImageData(imageData, 0, 0);
     return canvas;
   };
-  return [
+  const baseVariants = [
     file,
     await canvasToBlob(makeCanvas(3.2, 'contrast', 104)),
+  ];
+  if (!precise) return baseVariants.filter(Boolean);
+  return [
+    ...baseVariants,
     await canvasToBlob(makeCanvas(4, 'contrast', 108)),
     await canvasToBlob(makeCanvas(4.6, 'threshold', 102)),
     await canvasToBlob(makeCanvas(5.4, 'contrast', 100)),
@@ -774,13 +778,14 @@ async function recognizeOcrVariantsWithWorker(file, worker, onProgress, precise 
   return texts.join('\n');
 }
 
-async function recognizeNameSlotWithWorker(file, worker) {
-  const variants = await createNameSlotOcrVariants(file);
+async function recognizeNameSlotWithWorker(file, worker, precise = true) {
+  const variants = await createNameSlotOcrVariants(file, precise);
   const texts = [];
-  for (const pageSegMode of ['7', '6']) {
+  const pageSegModes = precise ? ['7', '6'] : ['7'];
+  for (const pageSegMode of pageSegModes) {
     await worker.setParameters({
       preserve_interword_spaces: '1',
-      user_defined_dpi: '450',
+      user_defined_dpi: precise ? '450' : '360',
       tessedit_pageseg_mode: pageSegMode,
     });
     for (let index = 0; index < variants.length; index += 1) {
@@ -842,17 +847,19 @@ async function createPartyPanelFiles(file) {
   return panels.slice(0, 10);
 }
 
-async function createPartyNameSlotFiles(file) {
+async function createPartyNameSlotFiles(file, precise = true) {
   const image = await loadImageElement(file);
   const slots = [];
   const slotCount = 5;
   const slotWidth = image.naturalWidth / slotCount;
-  const cropBands = [
+  const cropBands = precise ? [
     { top: 0.30, height: 0.38, label: 'name-high' },
     { top: 0.34, height: 0.34, label: 'name-wide' },
     { top: 0.39, height: 0.30, label: 'name-mid' },
     { top: 0.43, height: 0.28, label: 'name-center' },
     { top: 0.38, height: 0.46, label: 'name-level' },
+  ] : [
+    { top: 0.34, height: 0.38, label: 'name-fast' },
   ];
   for (let index = 0; index < slotCount; index += 1) {
     const sx = Math.max(0, Math.round((index * slotWidth) - (slotWidth * 0.08)));
@@ -943,13 +950,17 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
         const overall = Math.round(((index + ((progressValue / 100) * baseWeight)) / Math.max(1, panels.length)) * 100);
         onProgress?.(overall);
       }, precise);
-      if (precise) {
-        const slotFiles = await createPartyNameSlotFiles(panel.file);
+      const quickReview = !precise ? buildOcrReview(text, members, '', options) : null;
+      const needsAdaptiveSlotScan = !precise && quickReview.exactNames.length < 4;
+      if (precise || needsAdaptiveSlotScan) {
+        const slotFiles = await createPartyNameSlotFiles(panel.file, precise);
         for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
           const slot = slotFiles[slotIndex];
-          const slotText = await recognizeNameSlotWithWorker(slot.file, worker);
+          const slotText = await recognizeNameSlotWithWorker(slot.file, worker, precise);
           text += `\n${slotText}`;
-          const overall = Math.round(((index + 0.55 + (((slotIndex + 1) / Math.max(1, slotFiles.length)) * 0.45)) / Math.max(1, panels.length)) * 100);
+          const slotStart = precise ? 0.55 : 0.82;
+          const slotWeight = precise ? 0.45 : 0.18;
+          const overall = Math.round(((index + slotStart + (((slotIndex + 1) / Math.max(1, slotFiles.length)) * slotWeight)) / Math.max(1, panels.length)) * 100);
           onProgress?.(overall);
         }
       }
