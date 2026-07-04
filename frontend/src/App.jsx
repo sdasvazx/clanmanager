@@ -40,6 +40,8 @@ const adminCards = [
 const favoriteStorageKey = (member) => `clanmanager:favorites:${member?.memberId || 'guest'}`;
 const pageMetaList = [
   ...menu.map(([id, icon, label]) => ({ id, icon, label })),
+  { id: 'attendance', icon: '✓', label: '출석체크/보스설정' },
+  { id: 'participation', icon: '가', label: '참여율/가중치 설정' },
   { id: 'member-admin', icon: '관', label: '클랜원/전투력 관리' },
   { id: 'pinball', icon: '핀', label: '핀볼' },
   { id: 'spec-history', icon: '스', label: '스펙/장비 기록' },
@@ -1099,9 +1101,19 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('clanTheme') || 'light');
   const [favoriteOnly, setFavoriteOnly] = useState(() => localStorage.getItem('clanFavoriteOnlyMenu') === 'true');
-  const visibleMenu = menu
+  const baseVisibleMenu = menu
     .filter(([id]) => member.role === 'ADMIN' || !adminOnlyPages.has(id))
     .filter(([id]) => !favoriteOnly || favorites.includes(id));
+  const extraFavoriteMenu = favoriteOnly
+    ? favorites
+      .filter((id) => !menu.some(([menuId]) => menuId === id))
+      .filter((id) => member.role === 'ADMIN' || !adminOnlyPages.has(id))
+      .map((id) => {
+        const meta = pageMeta(id);
+        return [meta.id, meta.icon, meta.label];
+      })
+    : [];
+  const visibleMenu = [...baseVisibleMenu, ...extraFavoriteMenu];
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('clanTheme', theme);
@@ -1236,14 +1248,32 @@ function Lobby({ member, setPage, favoritePages = [] }) {
       return { ...m, attendanceCount: count, participationRate: top ? Math.round((count / top) * 1000) / 10 : 0 };
     }).sort((a, b) => b.attendanceCount - a.attendanceCount || (b.combatPower || 0) - (a.combatPower || 0));
   }, [members, attendances]);
+  const quickActions = [
+    ['participation', '참여율 조회'],
+    ['payment', '분배 조회'],
+    ['book', '통장 조회'],
+    ['mypage', '마이페이지'],
+    ...(member.role === 'ADMIN' ? [
+      ['attendance', '출석 등록'],
+      ['pinball', '핀볼'],
+      ['member-admin', '클랜원 관리'],
+    ] : []),
+  ];
   return (
     <>
       <NoticePanel member={member} notices={notices} onReload={load} />
       {message && <div className="info-banner warning-banner">{message}</div>}
       <div className="page-title center"><h1>클랜 종합정보</h1><p>클랜별 참여율과 참여점수를 한눈에 확인합니다.</p></div>
       <FavoriteLinks favorites={favoritePages} setPage={setPage} />
+      <section className="white-card quick-actions">
+        <h2>빠른 메뉴</h2>
+        <div>
+          {quickActions.map(([target, label]) => (
+            <button type="button" key={target} onClick={() => setPage(target)}>{label}</button>
+          ))}
+        </div>
+      </section>
       <ParticipationRanking rows={participationRows} totalCount={members.length} />
-      <section className="white-card quick-actions"><h2>빠른 메뉴</h2><div><button onClick={() => setPage('attendance')}>오늘의 출석 확인</button><button onClick={() => setPage('participation')}>참여율 조회</button>{member.role === 'ADMIN' && <button onClick={() => setPage('ledger')}>클랜금고 관리</button>}</div></section>
     </>
   );
 }
@@ -2714,6 +2744,7 @@ function ClanVaultPage({ member, readonly = false }) {
   const [selectedTargetIds, setSelectedTargetIds] = useState([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [confirmVaultAction, setConfirmVaultAction] = useState(null);
   const typeText = { DEPOSIT: '입금', DISTRIBUTION: '분배', WITHDRAW: '차감', ADJUSTMENT: '잔액수정' };
   const typeTone = { DEPOSIT: 'green', DISTRIBUTION: 'blue', WITHDRAW: 'red', ADJUSTMENT: 'purple' };
   const load = async () => { const [vault, memberRows] = await Promise.all([request('/vault'), request('/members')]); setSummary(vault); setMembers(memberRows); };
@@ -2745,17 +2776,28 @@ function ClanVaultPage({ member, readonly = false }) {
       : mode === 'adjust'
         ? `클랜금고 잔액을 ${money(balance)} 다이아로 수정할까요?`
         : `${mode === 'deposit' ? '입금' : '차감'} ${money(amount)} 다이아 기록을 저장할까요?`;
-    if (!window.confirm(confirmText)) return;
+    setConfirmVaultAction({
+      mode,
+      amount,
+      balance,
+      memo: form.memo,
+      selectedTargetIds: [...selectedTargetIds],
+      confirmText,
+    });
+  };
+  const executeVaultAction = async () => {
+    if (!confirmVaultAction) return;
     setLoading(true);
     setMessage('');
-    const body = { memo: form.memo, createdByMemberId: member.memberId };
-    if (mode === 'adjust') body.balanceDiamonds = balance;
-    else body.amountDiamonds = amount;
-    const path = mode === 'deposit' ? '/vault/deposit' : mode === 'distribute' ? '/vault/distribute' : mode === 'withdraw' ? '/vault/withdraw' : '/vault/balance';
-    const method = mode === 'adjust' ? 'PATCH' : 'POST';
+    const actionMode = confirmVaultAction.mode;
+    const body = { memo: confirmVaultAction.memo, createdByMemberId: member.memberId };
+    if (actionMode === 'adjust') body.balanceDiamonds = confirmVaultAction.balance;
+    else body.amountDiamonds = confirmVaultAction.amount;
+    const path = actionMode === 'deposit' ? '/vault/deposit' : actionMode === 'distribute' ? '/vault/distribute' : actionMode === 'withdraw' ? '/vault/withdraw' : '/vault/balance';
+    const method = actionMode === 'adjust' ? 'PATCH' : 'POST';
     try {
-      if (mode === 'distribute') {
-        for (const targetMemberId of selectedTargetIds) {
+      if (actionMode === 'distribute') {
+        for (const targetMemberId of confirmVaultAction.selectedTargetIds) {
           await request(path, { method, body: JSON.stringify({ ...body, targetMemberId: Number(targetMemberId) }) });
         }
       } else {
@@ -2765,11 +2807,12 @@ function ClanVaultPage({ member, readonly = false }) {
       setSelectedTargetIds([]);
       setTargetSearch('');
       await load();
-      setMessage(mode === 'distribute' ? `${selectedTargetIds.length}명 분배 기록을 저장했습니다.` : '금고 내용을 저장했습니다.');
+      setMessage(actionMode === 'distribute' ? `${confirmVaultAction.selectedTargetIds.length}명 분배 기록을 저장했습니다.` : '금고 내용을 저장했습니다.');
+      setConfirmVaultAction(null);
     } catch (err) { setMessage(err.message); } finally { setLoading(false); }
   };
   const transactions = summary?.recentTransactions ?? [];
-  return <><div className="page-title"><h1>{readonly ? '장부 조회' : '통장현황'}</h1><p>클랜 금고의 다이아 잔액과 입금·분배·차감 기록을 관리합니다.</p></div><div className="vault-grid"><section className="white-card vault-balance"><span className="vault-icon">💎</span><p>현재 클랜금고 잔액</p><strong>{money(summary?.balanceDiamonds)}</strong><small>입금 {summary?.depositCount ?? 0}건 · 분배 {summary?.distributionCount ?? 0}건</small></section>{!readonly && <section className="white-card vault-form-card"><div className="section-heading"><h2>금고 기록 추가</h2></div><div className="vault-tabs"><button type="button" className={mode === 'deposit' ? 'active' : ''} onClick={() => setMode('deposit')}>입금</button><button type="button" className={mode === 'distribute' ? 'active' : ''} onClick={() => setMode('distribute')}>분배</button><button type="button" className={mode === 'withdraw' ? 'active' : ''} onClick={() => setMode('withdraw')}>차감</button><button type="button" className={mode === 'adjust' ? 'active' : ''} onClick={() => setMode('adjust')}>잔액수정</button></div><form className="vault-form" onSubmit={submit}>{mode === 'distribute' && <div className="vault-target-picker"><label>받는 클랜원 검색<input value={targetSearch} onChange={(e) => setTargetSearch(e.target.value)} placeholder="닉네임/클랜명으로 필터링" /></label><div className="vault-target-actions"><button type="button" className="mini-button" onClick={selectFilteredTargets}>현재 필터 전체선택</button><button type="button" className="mini-button" onClick={() => setSelectedTargetIds([])}>선택해제</button><span>{selectedTargetIds.length}명 선택됨</span></div><div className="vault-selected-targets">{selectedTargets.map((target) => <span key={target.memberId}>{target.characterName}<button type="button" onClick={() => toggleTarget(target.memberId)}>×</button></span>)}</div><div className="vault-target-list">{filteredTargets.map((target) => <label key={target.memberId} className={selectedTargetIds.includes(String(target.memberId)) ? 'selected' : ''}><input type="checkbox" checked={selectedTargetIds.includes(String(target.memberId))} onChange={() => toggleTarget(target.memberId)} /><b>{target.characterName}</b><small>{canonicalClanName(target.guildName)}</small></label>)}</div></div>}{mode === 'adjust' ? <label>새 금고 잔액<input required min="0" type="number" value={form.balanceDiamonds} onChange={(e) => setForm({ ...form, balanceDiamonds: e.target.value })} placeholder="현재 총 다이아 개수" /></label> : <label>다이아 수량<input required min="1" type="number" value={form.amountDiamonds} onChange={(e) => setForm({ ...form, amountDiamonds: e.target.value })} placeholder="기록할 다이아 수량" /></label>}<label>메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 에노크 분배, 보스 수익 입금" /></label><button className="primary-button" disabled={loading}>{loading ? '저장 중...' : '금고 기록 저장'}</button>{message && <p className="vault-message">{message}</p>}</form></section>}</div><section className="white-card"><div className="section-heading"><h2>거래내역</h2><span className="result-count">{transactions.length}건</span></div><div className="table-wrap"><table className="data-table vault-table"><thead><tr><th>시간</th><th>종류</th><th>대상</th><th>수량</th><th>처리 후 잔액</th><th>메모</th><th>기록자</th></tr></thead><tbody>{transactions.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td><span className={`vault-type ${typeTone[row.type]}`}>{typeText[row.type] ?? row.type}</span></td><td>{row.targetMemberName ?? '-'}</td><td>{money(row.amountDiamonds)}</td><td><b>{money(row.balanceAfter)}</b></td><td>{row.memo || '-'}</td><td>{row.createdByMemberName ?? '-'}</td></tr>)}</tbody></table></div>{!transactions.length && <div className="empty-state">아직 금고 거래내역이 없습니다.</div>}</section></>;
+  return <><div className="page-title"><h1>{readonly ? '장부 조회' : '통장현황'}</h1><p>클랜 금고의 다이아 잔액과 입금·분배·차감 기록을 관리합니다.</p></div><div className="vault-grid"><section className="white-card vault-balance"><span className="vault-icon">💎</span><p>현재 클랜금고 잔액</p><strong>{money(summary?.balanceDiamonds)}</strong><small>입금 {summary?.depositCount ?? 0}건 · 분배 {summary?.distributionCount ?? 0}건</small></section>{!readonly && <section className="white-card vault-form-card"><div className="section-heading"><h2>금고 기록 추가</h2></div><div className="vault-tabs"><button type="button" className={mode === 'deposit' ? 'active' : ''} onClick={() => setMode('deposit')}>입금</button><button type="button" className={mode === 'distribute' ? 'active' : ''} onClick={() => setMode('distribute')}>분배</button><button type="button" className={mode === 'withdraw' ? 'active' : ''} onClick={() => setMode('withdraw')}>차감</button><button type="button" className={mode === 'adjust' ? 'active' : ''} onClick={() => setMode('adjust')}>잔액수정</button></div><form className="vault-form" onSubmit={submit}>{mode === 'distribute' && <div className="vault-target-picker"><label>받는 클랜원 검색<input value={targetSearch} onChange={(e) => setTargetSearch(e.target.value)} placeholder="닉네임/클랜명으로 필터링" /></label><div className="vault-target-actions"><button type="button" className="mini-button" onClick={selectFilteredTargets}>현재 필터 전체선택</button><button type="button" className="mini-button" onClick={() => setSelectedTargetIds([])}>선택해제</button><span>{selectedTargetIds.length}명 선택됨</span></div><div className="vault-selected-targets">{selectedTargets.map((target) => <span key={target.memberId}>{target.characterName}<button type="button" onClick={() => toggleTarget(target.memberId)}>×</button></span>)}</div><div className="vault-target-list">{filteredTargets.map((target) => <label key={target.memberId} className={selectedTargetIds.includes(String(target.memberId)) ? 'selected' : ''}><input type="checkbox" checked={selectedTargetIds.includes(String(target.memberId))} onChange={() => toggleTarget(target.memberId)} /><b>{target.characterName}</b><small>{canonicalClanName(target.guildName)}</small></label>)}</div></div>}{mode === 'adjust' ? <label>새 금고 잔액<input required min="0" type="number" value={form.balanceDiamonds} onChange={(e) => setForm({ ...form, balanceDiamonds: e.target.value })} placeholder="현재 총 다이아 개수" /></label> : <label>다이아 수량<input required min="1" type="number" value={form.amountDiamonds} onChange={(e) => setForm({ ...form, amountDiamonds: e.target.value })} placeholder="기록할 다이아 수량" /></label>}<label>메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 에노크 분배, 보스 수익 입금" /></label><button className="primary-button" disabled={loading}>{loading ? '저장 중...' : '금고 기록 저장'}</button>{message && <p className="vault-message">{message}</p>}</form></section>}</div><section className="white-card"><div className="section-heading"><h2>거래내역</h2><span className="result-count">{transactions.length}건</span></div><div className="table-wrap"><table className="data-table vault-table"><thead><tr><th>시간</th><th>종류</th><th>대상</th><th>수량</th><th>처리 후 잔액</th><th>메모</th><th>기록자</th></tr></thead><tbody>{transactions.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td><span className={`vault-type ${typeTone[row.type]}`}>{typeText[row.type] ?? row.type}</span></td><td>{row.targetMemberName ?? '-'}</td><td>{money(row.amountDiamonds)}</td><td><b>{money(row.balanceAfter)}</b></td><td>{row.memo || '-'}</td><td>{row.createdByMemberName ?? '-'}</td></tr>)}</tbody></table></div>{!transactions.length && <div className="empty-state">아직 금고 거래내역이 없습니다.</div>}</section>{confirmVaultAction && <div className="confirm-modal-backdrop" role="dialog" aria-modal="true"><div className="confirm-modal"><span>💎</span><h2>금고 기록을 저장할까요?</h2><p>{confirmVaultAction.confirmText}</p><div className="confirm-modal-actions"><button type="button" className="outline-button no-margin" disabled={loading} onClick={() => setConfirmVaultAction(null)}>취소</button><button type="button" className="primary-button no-margin" disabled={loading} onClick={executeVaultAction}>{loading ? '저장 중...' : '확인'}</button></div></div></div>}</>;
 }
 
 function PaymentPage({ member }) {
@@ -3389,11 +3432,24 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
       <>
         <div className="page-title"><h1>관리자 설정</h1><p>클랜 운영에 필요한 설정 메뉴입니다.</p></div>
         <div className="admin-grid">
-          {adminCards.map(([icon, title, color, target]) => (
-            <button className={`admin-card ${color}`} key={title} onClick={() => setPage(target)}>
-              <span>{icon}</span><b>{title}</b><small>{target === 'attendance' ? '출석 인식·보스 기록 관리' : target === 'member-admin' ? '클랜원 정보·전투력 관리' : '바로 이동'}</small>
-            </button>
-          ))}
+          {adminCards.map(([icon, title, color, target]) => {
+            const starred = favorites.includes(target);
+            return (
+              <div className={`admin-card-wrap ${color}`} key={title}>
+                <button className={`admin-card ${color}`} onClick={() => setPage(target)}>
+                  <span>{icon}</span><b>{title}</b><small>{target === 'attendance' ? '출석 인식·보스 기록 관리' : target === 'member-admin' ? '클랜원 정보·전투력 관리' : '바로 이동'}</small>
+                </button>
+                <button
+                  type="button"
+                  className={starred ? 'admin-card-favorite active' : 'admin-card-favorite'}
+                  title={starred ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                  onClick={() => toggleFavorite?.(target)}
+                >
+                  {starred ? '★' : '☆'}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </>
     );

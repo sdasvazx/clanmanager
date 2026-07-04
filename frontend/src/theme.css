@@ -247,6 +247,20 @@
   color: #bcd7ff;
 }
 
+[data-theme="dark"] .confirm-modal {
+  background: #172131;
+  border-color: #2b3b52;
+  color: #e5edf7;
+}
+
+[data-theme="dark"] .confirm-modal > span {
+  background: #20385b;
+}
+
+[data-theme="dark"] .confirm-modal p {
+  color: #9fb0c6;
+}
+
 [data-theme="dark"] .collection-member-card.완료 {
   background: #12351f;
   border-color: #246b3b;

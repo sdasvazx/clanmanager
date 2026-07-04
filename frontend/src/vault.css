@@ -172,6 +172,58 @@
   font-weight: 750;
 }
 
+.confirm-modal-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, .48);
+  backdrop-filter: blur(3px);
+}
+
+.confirm-modal {
+  width: min(100%, 420px);
+  padding: 28px;
+  border: 1px solid #dbe7f6;
+  border-radius: 22px;
+  background: #fff;
+  color: #17233a;
+  text-align: center;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+}
+
+.confirm-modal > span {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 14px;
+  border-radius: 18px;
+  background: #eff6ff;
+  font-size: 1.6rem;
+}
+
+.confirm-modal h2 {
+  margin-bottom: 8px;
+  font-size: 1.25rem;
+}
+
+.confirm-modal p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.55;
+  word-break: keep-all;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
 .vault-table {
   min-width: 900px;
 }
