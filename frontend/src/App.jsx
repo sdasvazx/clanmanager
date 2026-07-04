@@ -270,10 +270,11 @@ function ocrComparableVariants(value) {
   return [...variants].filter(Boolean);
 }
 
-const SPECIAL_DANG_NICKNAMES = ['\uBCF5\uB315\uB315\uC774', '\uB315\uD788'];
+const SPECIAL_DANG_NICKNAMES = ['\uBCF5\uB315\uB315\uC774', '\uB315\uD788', '\uC3C4\uBCF5\uC774'];
 const BOK_OCR_VARIANT_PATTERN = /[\uBCF5\uBD81\uBBC5\uC695\uBE05\uBE61]/g;
 const DANG_OCR_VARIANT_PATTERN = /[\uB315\uB561\uB9F9\uB369\uB385\uB381]/g;
 const DANG_SUFFIX_OCR_VARIANT_PATTERN = /[\uC774\uD788\uD76C\uBBF8\uB2C8]/g;
+const SSE_OCR_VARIANT_PATTERN = /[\uC3C4\uC138\uC0C8\uC314\uC368\uC11C]/g;
 
 function normalizeDangNickname(value) {
   return String(value ?? '')
@@ -286,6 +287,7 @@ function normalizeDangNickname(value) {
     .replace(/rn/g, 'm')
     .replace(BOK_OCR_VARIANT_PATTERN, '\uBCF5')
     .replace(DANG_OCR_VARIANT_PATTERN, '\uB315')
+    .replace(SSE_OCR_VARIANT_PATTERN, '\uC3C4')
     .replace(DANG_SUFFIX_OCR_VARIANT_PATTERN, '\uC774');
 }
 
@@ -306,6 +308,12 @@ function looksLikeDangHi(rawKey) {
   if (!rawKey.startsWith('\uB315')) return false;
   if (rawKey.includes('\uB315\uC774')) return true;
   return rawKey.length <= 3 && similarityScore(rawKey, '\uB315\uD788') >= 0.62;
+}
+
+function looksLikeSseBokI(rawKey) {
+  if (rawKey.includes('\uC3C4') && rawKey.includes('\uBCF5')) return true;
+  if (rawKey.includes('\uBCF5') && rawKey.length <= 4) return similarityScore(rawKey, '\uC3C4\uBCF5\uC774') >= 0.58;
+  return similarityScore(rawKey, '\uC3C4\uBCF5\uC774') >= 0.62;
 }
 
 function findSpecialDangMember(rawName, members, clanName = '') {
@@ -329,6 +337,10 @@ function findSpecialDangMember(rawName, members, clanName = '') {
       if (rawKey.includes(targetKey)) return member.characterName;
       if (looksLikeDangHi(rawKey)) return member.characterName;
     }
+    if (targetKey === '\uC3C4\uBCF5\uC774') {
+      if (rawKey.includes(targetKey)) return member.characterName;
+      if (looksLikeSseBokI(rawKey)) return member.characterName;
+    }
   }
   return '';
 }
@@ -339,7 +351,7 @@ function extractSpecialDangNamesFromText(text, members, clanName = '') {
   for (let index = 0; index < compact.length; index += 1) {
     for (let size = 2; size <= 8; size += 1) {
       const slice = compact.slice(index, index + size);
-      if (slice.length >= 2 && (slice.includes('\uBCF5') || slice.includes('\uB315'))) {
+      if (slice.length >= 2 && (slice.includes('\uBCF5') || slice.includes('\uB315') || slice.includes('\uC3C4'))) {
         chunks.add(slice);
       }
     }
@@ -674,8 +686,11 @@ async function createNameSlotOcrVariants(file) {
     return canvas;
   };
   return [
+    file,
+    await canvasToBlob(makeCanvas(3.2, 'contrast', 104)),
     await canvasToBlob(makeCanvas(4, 'contrast', 108)),
-    await canvasToBlob(makeCanvas(5, 'threshold', 108)),
+    await canvasToBlob(makeCanvas(4.6, 'threshold', 102)),
+    await canvasToBlob(makeCanvas(5.4, 'contrast', 100)),
   ].filter(Boolean);
 }
 
@@ -694,19 +709,22 @@ async function recognizeOcrVariantsWithWorker(file, worker, onProgress) {
 async function recognizeNameSlotWithWorker(file, worker) {
   const variants = await createNameSlotOcrVariants(file);
   const texts = [];
-  const previousParameters = {
-    tessedit_pageseg_mode: '6',
-  };
+  for (const pageSegMode of ['7', '6']) {
+    await worker.setParameters({
+      preserve_interword_spaces: '1',
+      user_defined_dpi: '450',
+      tessedit_pageseg_mode: pageSegMode,
+    });
+    for (let index = 0; index < variants.length; index += 1) {
+      const { data } = await worker.recognize(variants[index]);
+      texts.push(data.text);
+    }
+  }
   await worker.setParameters({
     preserve_interword_spaces: '1',
-    user_defined_dpi: '450',
-    tessedit_pageseg_mode: '7',
+    user_defined_dpi: '300',
+    tessedit_pageseg_mode: '6',
   });
-  for (let index = 0; index < variants.length; index += 1) {
-    const { data } = await worker.recognize(variants[index]);
-    texts.push(data.text);
-  }
-  await worker.setParameters(previousParameters);
   return texts.join('\n');
 }
 
@@ -761,19 +779,26 @@ async function createPartyNameSlotFiles(file) {
   const slots = [];
   const slotCount = 5;
   const slotWidth = image.naturalWidth / slotCount;
-  const cropTop = Math.max(0, Math.round(image.naturalHeight * 0.43));
-  const cropHeight = Math.max(24, Math.round(image.naturalHeight * 0.36));
+  const cropBands = [
+    { top: 0.34, height: 0.34, label: 'name-wide' },
+    { top: 0.43, height: 0.28, label: 'name-center' },
+    { top: 0.38, height: 0.46, label: 'name-level' },
+  ];
   for (let index = 0; index < slotCount; index += 1) {
-    const sx = Math.max(0, Math.round((index * slotWidth) - (slotWidth * 0.06)));
-    const sw = Math.min(image.naturalWidth - sx, Math.round(slotWidth * 1.12));
-    const canvas = document.createElement('canvas');
-    canvas.width = sw;
-    canvas.height = cropHeight;
-    const context = canvas.getContext('2d');
-    context.imageSmoothingEnabled = false;
-    context.drawImage(image, sx, cropTop, sw, cropHeight, 0, 0, sw, cropHeight);
-    const blob = await canvasToBlob(canvas);
-    if (blob) slots.push({ slotNumber: index + 1, file: blob });
+    const sx = Math.max(0, Math.round((index * slotWidth) - (slotWidth * 0.08)));
+    const sw = Math.min(image.naturalWidth - sx, Math.round(slotWidth * 1.16));
+    for (const band of cropBands) {
+      const cropTop = Math.max(0, Math.round(image.naturalHeight * band.top));
+      const cropHeight = Math.max(18, Math.round(image.naturalHeight * band.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = sw;
+      canvas.height = Math.min(cropHeight, image.naturalHeight - cropTop);
+      const context = canvas.getContext('2d');
+      context.imageSmoothingEnabled = false;
+      context.drawImage(image, sx, cropTop, sw, canvas.height, 0, 0, sw, canvas.height);
+      const blob = await canvasToBlob(canvas);
+      if (blob) slots.push({ slotNumber: index + 1, band: band.label, file: blob });
+    }
   }
   return slots;
 }
