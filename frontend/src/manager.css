@@ -2489,3 +2489,517 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 760px) {
+  html {
+    font-size: 14px;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  .shell,
+  .shell.collapsed {
+    padding-left: 0;
+    padding-top: 54px;
+    padding-bottom: 76px;
+  }
+
+  .topbar {
+    height: 54px;
+    padding: 0 10px;
+  }
+
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+    margin-left: 6px;
+  }
+
+  .circle-button {
+    width: 30px;
+    height: 30px;
+    margin-right: 6px;
+  }
+
+  .profile-menu {
+    max-width: 44vw;
+    padding: 4px 8px 4px 5px;
+  }
+
+  .profile-menu b {
+    width: 22px;
+    height: 22px;
+  }
+
+  .profile-menu span,
+  .profile-menu i,
+  .logout-icon {
+    display: none;
+  }
+
+  .content {
+    width: 100%;
+    min-height: calc(100vh - 54px);
+    padding: 14px 10px 18px;
+    max-width: none;
+  }
+
+  .sidebar,
+  .collapsed .sidebar,
+  .shell:not(.collapsed) .sidebar {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 68px;
+    z-index: 20;
+    display: block;
+    border-top: 1px solid #dfe7f1;
+    border-right: 0;
+    box-shadow: 0 -10px 26px #10233d12;
+  }
+
+  .sidebar nav {
+    display: flex;
+    height: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 7px 8px 9px;
+    gap: 6px;
+    scroll-snap-type: x proximity;
+  }
+
+  .sidebar nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .menu-row,
+  .menu-row.active,
+  .menu-row:hover {
+    min-width: 62px;
+    flex: 0 0 62px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 15px;
+    background: transparent;
+    scroll-snap-align: start;
+  }
+
+  .menu-row .menu-item,
+  .shell:not(.collapsed) .menu-row .menu-item,
+  .menu-item,
+  .shell:not(.collapsed) .menu-item {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 3px;
+    padding: 4px 3px;
+    border: 0;
+    border-radius: 15px;
+    background: transparent;
+    font-size: .68rem;
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .menu-row .menu-item > span:last-child,
+  .shell:not(.collapsed) .menu-row .menu-item > span:last-child,
+  .menu-item > span:last-child,
+  .shell:not(.collapsed) .menu-item > span:last-child {
+    display: block;
+    max-width: 58px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .menu-icon {
+    width: 30px;
+    height: 30px;
+    font-size: .76rem;
+  }
+
+  .favorite-toggle,
+  .side-note {
+    display: none;
+  }
+
+  .menu-row.active,
+  .menu-row:hover,
+  .menu-item.active {
+    background: #eef5ff;
+  }
+
+  .page-title {
+    margin: 4px 0 14px;
+  }
+
+  .page-title.center {
+    margin: 10px 0 16px;
+    text-align: left;
+  }
+
+  .page-title h1 {
+    font-size: 1.35rem;
+  }
+
+  .page-title p {
+    font-size: .9rem;
+    line-height: 1.45;
+  }
+
+  .white-card {
+    margin-bottom: 13px;
+    padding: 15px 13px;
+    border-radius: 15px;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    gap: 10px;
+    flex-direction: column;
+  }
+
+  .section-heading h2,
+  .white-card h2 {
+    margin-bottom: 9px;
+    font-size: 1.08rem;
+  }
+
+  .quick-actions > div,
+  .favorite-links-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .quick-actions button,
+  .favorite-links button {
+    min-height: 44px;
+    width: 100%;
+    padding: 9px 8px;
+    border-radius: 12px;
+    font-size: .88rem;
+  }
+
+  .lobby-ranking-grid,
+  .dashboard-grid,
+  .metric-grid,
+  .formula-row,
+  .admin-grid,
+  .vault-grid,
+  .collection-summary-grid,
+  .collection-card-grid,
+  .item-request-form,
+  .item-request-card {
+    grid-template-columns: 1fr !important;
+  }
+
+  .lobby-ranking-card,
+  .ranking {
+    overflow: hidden;
+  }
+
+  .lobby-ranking-table,
+  .ranking table {
+    min-width: 0;
+    font-size: .84rem;
+  }
+
+  .lobby-ranking-table th,
+  .lobby-ranking-table td,
+  .ranking th,
+  .ranking td {
+    padding: 9px 5px;
+  }
+
+  .filters,
+  .participation-period-toolbar,
+  .boss-history-filters {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .filters input,
+  .filters select,
+  .filters button,
+  .participation-period-toolbar input,
+  .participation-period-toolbar select,
+  .participation-period-toolbar button {
+    width: 100%;
+  }
+
+  .boss-batch-card {
+    padding: 13px 10px;
+  }
+
+  .boss-batch-row {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+    padding: 13px;
+    border-radius: 16px;
+  }
+
+  .boss-batch-title {
+    font-size: 1.1rem;
+  }
+
+  .batch-heading-actions,
+  .batch-actions,
+  .boss-action-buttons,
+  .pinball-draft-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .batch-heading-actions button,
+  .batch-actions button,
+  .boss-action-buttons button,
+  .pinball-draft-actions button {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .batch-date-control,
+  .batch-file-picker,
+  .batch-time-input,
+  .batch-check,
+  .batch-manual-add,
+  .batch-manual-controls,
+  .boss-form label,
+  .boss-form input,
+  .boss-form select,
+  .boss-form textarea {
+    width: 100%;
+  }
+
+  .batch-manual-controls {
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+
+  .batch-drop-zone {
+    min-height: 74px;
+  }
+
+  .selected-photo-list,
+  .batch-counts,
+  .boss-draft-summary,
+  .draft-review-list,
+  .ocr-suggestion-buttons,
+  .name-suggestion-list,
+  .nickname-suggestions {
+    gap: 6px;
+  }
+
+  .batch-photo-groups {
+    gap: 12px;
+  }
+
+  .batch-photo-title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .batch-photo-preview {
+    max-height: 280px;
+    object-fit: contain;
+  }
+
+  .batch-position-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 10px 0;
+  }
+
+  .batch-position-title {
+    width: fit-content;
+  }
+
+  .draft-chip,
+  .ocr-review-item.compact.inline {
+    max-width: 100%;
+  }
+
+  .draft-chip input,
+  .ocr-manual-row input {
+    width: min(100%, 220px);
+  }
+
+  .ocr-manual-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .nickname-suggestions button {
+    padding: 7px 10px;
+  }
+
+  .boss-form,
+  .boss-roster-editor,
+  .boss-roster-edit-grid,
+  .boss-roster-groups,
+  .record-form,
+  .inline-form,
+  .detail-grid,
+  .admin-edit-form,
+  .admin-create-form,
+  .admin-reset-form,
+  .password-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .boss-names,
+  .boss-form .wide,
+  .batch-result,
+  .batch-ambiguous-list {
+    grid-column: auto;
+  }
+
+  .table-wrap,
+  .boss-table-scroll,
+  .collection-wide-wrap {
+    margin-inline: -6px;
+    padding-bottom: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table,
+  .boss-history-table,
+  .collection-wide-table {
+    min-width: 720px;
+    font-size: .84rem;
+  }
+
+  .collection-wide-table th,
+  .collection-wide-table td {
+    padding: 8px 7px;
+  }
+
+  .collection-member-name {
+    min-width: 150px;
+  }
+
+  .collection-main-card {
+    padding: 12px 9px;
+  }
+
+  .collection-state-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .collection-member-card {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .vault-form,
+  .vault-target-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-target-actions {
+    align-items: stretch;
+  }
+
+  .vault-target-actions button,
+  .vault-form button {
+    width: 100%;
+  }
+
+  .vault-target-list {
+    grid-template-columns: 1fr;
+    max-height: 260px;
+  }
+
+  .vault-confirm-card {
+    width: min(92vw, 440px);
+    padding: 18px;
+  }
+
+  .item-request-hero {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .item-request-tabs {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .profile-overview {
+    margin: 0;
+  }
+
+  .profile-name {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .outline-button {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 430px) {
+  html {
+    font-size: 13px;
+  }
+
+  .content {
+    padding-inline: 8px;
+  }
+
+  .white-card {
+    padding: 13px 10px;
+  }
+
+  .quick-actions > div,
+  .favorite-links-grid,
+  .batch-heading-actions,
+  .batch-actions,
+  .boss-action-buttons,
+  .pinball-draft-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-row,
+  .menu-row.active,
+  .menu-row:hover {
+    min-width: 58px;
+    flex-basis: 58px;
+  }
+
+  .menu-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .boss-batch-row {
+    padding: 11px 9px;
+  }
+
+  .batch-manual-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .draft-chip,
+  .clan-badge,
+  .review-count,
+  .nickname-suggestions button {
+    font-size: .82rem;
+  }
+}
