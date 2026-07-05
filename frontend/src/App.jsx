@@ -2086,6 +2086,20 @@ function Attendance({ member, setPage }) {
   })), [currentDraftNames, form.clanName, members]);
 
   const visibleRecords = records.slice(0, 100);
+  const NicknameSuggestionList = ({ value, onPick, className = '' }) => {
+    const suggestions = memberNameSuggestions(value);
+    if (!String(value || '').trim() || !suggestions.length) return null;
+    return (
+      <div className={`name-suggestion-list inline nickname-suggestions ${className}`.trim()}>
+        {suggestions.map((candidate) => (
+          <button type="button" key={candidate.memberId} onClick={() => onPick(candidate.characterName)}>
+            {candidate.characterName}
+            <small>{canonicalClanName(candidate.guildName || candidate.clanName)}</small>
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -2231,13 +2245,10 @@ function Attendance({ member, setPage }) {
                           />
                           <button type="button" className="primary-button no-margin" onClick={() => addBatchManualName(row.key)}>추가</button>
                         </div>
-                        {!!(batchManualAdd[row.key] || '').trim() && (
-                          <div className="name-suggestion-list inline">
-                            {memberNameSuggestions(batchManualAdd[row.key]).map((candidate) => (
-                              <button type="button" key={candidate.memberId} onClick={() => setBatchManualAdd((prev) => ({ ...prev, [row.key]: candidate.characterName }))}>{candidate.characterName}</button>
-                            ))}
-                          </div>
-                        )}
+                        <NicknameSuggestionList
+                          value={batchManualAdd[row.key]}
+                          onPick={(name) => setBatchManualAdd((prev) => ({ ...prev, [row.key]: name }))}
+                        />
                       </div>
                       <div className="batch-photo-groups">
                         {groupedBatchReview(row).map((fileGroup) => (
@@ -2262,11 +2273,7 @@ function Attendance({ member, setPage }) {
                                           {editing ? (
                                             <>
                                               <input list="member-name-suggestions" value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
-                                              <div className="name-suggestion-list">
-                                                {memberNameSuggestions(batchEdit.value).map((candidate) => (
-                                                  <button type="button" key={candidate.memberId} onClick={() => setBatchEdit({ ...batchEdit, value: candidate.characterName })}>{candidate.characterName}</button>
-                                                ))}
-                                              </div>
+                                              <NicknameSuggestionList value={batchEdit.value} onPick={(name) => setBatchEdit({ ...batchEdit, value: name })} />
                                               <button type="button" onClick={() => { updateBatchName(row.key, item.name, batchEdit.value); setBatchEdit(null); }}>적용</button>
                                               <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
                                             </>
@@ -2297,11 +2304,7 @@ function Attendance({ member, setPage }) {
                                             {editing ? (
                                               <>
                                                 <input list="member-name-suggestions" value={batchEdit.value} onChange={(event) => setBatchEdit({ ...batchEdit, value: event.target.value })} />
-                                                <div className="name-suggestion-list">
-                                                  {memberNameSuggestions(batchEdit.value).map((candidate) => (
-                                                    <button type="button" key={candidate.memberId} onClick={() => setBatchEdit({ ...batchEdit, value: candidate.characterName })}>{candidate.characterName}</button>
-                                                  ))}
-                                                </div>
+                                                <NicknameSuggestionList value={batchEdit.value} onPick={(name) => setBatchEdit({ ...batchEdit, value: name })} />
                                                 <button type="button" onClick={() => { resolveBatchAmbiguous(row.key, ambiguousKey, batchEdit.value); setBatchEdit(null); }}>수정해서 추가</button>
                                                 <button type="button" onClick={() => setBatchEdit(null)}>취소</button>
                                               </>
@@ -2389,7 +2392,8 @@ function Attendance({ member, setPage }) {
                     <span className={item.matched ? 'draft-chip matched' : 'draft-chip review'} key={item.name}>
                       {editing ? (
                         <>
-                          <input value={draftEdit.value} onChange={(e) => setDraftEdit({ ...draftEdit, value: e.target.value })} />
+                          <input list="member-name-suggestions" value={draftEdit.value} onChange={(e) => setDraftEdit({ ...draftEdit, value: e.target.value })} />
+                          <NicknameSuggestionList value={draftEdit.value} onPick={(name) => setDraftEdit({ ...draftEdit, value: name })} />
                           <button type="button" onClick={() => replaceDraftName(item.name, draftEdit.value)}>적용</button>
                           <button type="button" onClick={() => setDraftEdit(null)}>취소</button>
                         </>
@@ -2434,7 +2438,8 @@ function Attendance({ member, setPage }) {
                     <div className="ocr-manual-row">
                       {ocrEdit?.raw === item.raw ? (
                         <>
-                          <input value={ocrEdit.value} onChange={(e) => setOcrEdit({ ...ocrEdit, value: e.target.value })} placeholder="직접 입력" />
+                          <input list="member-name-suggestions" value={ocrEdit.value} onChange={(e) => setOcrEdit({ ...ocrEdit, value: e.target.value })} placeholder="직접 입력" />
+                          <NicknameSuggestionList value={ocrEdit.value} onPick={(name) => setOcrEdit({ ...ocrEdit, value: name })} />
                           <button type="button" onClick={() => addResolvedOcrName(item.raw, ocrEdit.value)}>수정해서 추가</button>
                           <button type="button" onClick={() => setOcrEdit(null)}>취소</button>
                         </>

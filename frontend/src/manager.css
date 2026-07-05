@@ -1626,6 +1626,39 @@
   box-shadow: none;
 }
 
+.nickname-suggestions {
+  width: 100%;
+  margin-top: 5px;
+}
+
+.nickname-suggestions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .78rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.nickname-suggestions button:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.nickname-suggestions small {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 800;
+}
+
 .draft-chip .name-suggestion-list {
   width: 100%;
   margin-top: 2px;
