@@ -871,7 +871,8 @@ async function createPartyNameSlotFiles(file, precise = true) {
     { top: 0.43, height: 0.28, label: 'name-center' },
     { top: 0.38, height: 0.46, label: 'name-level' },
   ] : [
-    { top: 0.34, height: 0.38, label: 'name-fast' },
+    { top: 0.32, height: 0.42, label: 'name-fast-wide' },
+    { top: 0.38, height: 0.34, label: 'name-fast-low' },
   ];
   for (let index = 0; index < slotCount; index += 1) {
     const sx = Math.max(0, Math.round((index * slotWidth) - (slotWidth * 0.08)));
@@ -957,6 +958,7 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
     });
     for (let index = 0; index < panels.length; index += 1) {
       const panel = panels[index];
+      const slotTexts = [];
       let text = await recognizeOcrVariantsWithWorker(panel.file, worker, (progressValue) => {
         const baseWeight = precise ? 0.55 : 1;
         const overall = Math.round(((index + ((progressValue / 100) * baseWeight)) / Math.max(1, panels.length)) * 100);
@@ -969,6 +971,7 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
         for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
           const slot = slotFiles[slotIndex];
           const slotText = await recognizeNameSlotWithWorker(slot.file, worker, precise);
+          slotTexts.push({ slotNumber: slot.slotNumber, text: slotText });
           text += `\n${slotText}`;
           const slotStart = precise ? 0.55 : 0.82;
           const slotWeight = precise ? 0.45 : 0.18;
@@ -976,16 +979,33 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
           onProgress?.(overall);
         }
       }
-      panelTexts.push({ panel, text });
+      panelTexts.push({ panel, text, slotTexts });
     }
     const firstPassReviews = panelTexts.map(({ text }) => buildOcrReview(text, members, '', options));
     dominantClan = inferDominantClanFromNames(firstPassReviews.flatMap((review) => review.exactNames), members);
-    panelTexts.forEach(({ panel, text }, index) => {
+    panelTexts.forEach(({ panel, text, slotTexts }, index) => {
       const review = dominantClan
         ? buildOcrReview(text, members, dominantClan, options)
         : firstPassReviews[index];
+      const panelNames = new Set(review.exactNames.map(normalize));
       names.push(...review.exactNames.map((name) => ({ name, positions: [panel.partyNumber] })));
+      const slotAmbiguous = [];
+      if (slotTexts?.length && panelNames.size < 5) {
+        slotTexts.forEach((slot) => {
+          const slotReview = buildOcrReview(slot.text, members, dominantClan || '', options);
+          slotReview.exactNames.forEach((name) => {
+            const key = normalize(name);
+            if (panelNames.has(key)) return;
+            panelNames.add(key);
+            names.push({ name, positions: [panel.partyNumber] });
+          });
+          if (!slotReview.exactNames.length && panelNames.size < 5) {
+            slotAmbiguous.push(...slotReview.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
+          }
+        });
+      }
       ambiguous.push(...review.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
+      ambiguous.push(...slotAmbiguous);
       appliedCorrections.push(...(review.appliedCorrections || []).map((item) => ({ ...item, positions: [panel.partyNumber] })));
     });
     const confirmedNameKeys = new Set(names.map((item) => normalize(item.name)));
@@ -1098,9 +1118,13 @@ function FavoriteLinks({ favorites, setPage, emptyText = '왼쪽 메뉴의 ☆�
 }
 
 function Shell({ member, page, setPage, onLogout, children, favorites = [], toggleFavorite }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 760 : false));
   const [theme, setTheme] = useState(() => localStorage.getItem('clanTheme') || 'light');
   const [favoriteOnly, setFavoriteOnly] = useState(() => localStorage.getItem('clanFavoriteOnlyMenu') === 'true');
+  const selectPage = (id) => {
+    setPage(id);
+    if (typeof window !== 'undefined' && window.innerWidth <= 760) setCollapsed(true);
+  };
   const baseVisibleMenu = menu
     .filter(([id]) => member.role === 'ADMIN' || !adminOnlyPages.has(id))
     .filter(([id]) => !favoriteOnly || favorites.includes(id));
@@ -1143,7 +1167,7 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
           const starred = favorites.includes(id);
           return (
             <div key={id} className={page === id ? 'menu-row active' : 'menu-row'}>
-              <button className="menu-item" onClick={() => setPage(id)}><span className="menu-icon">{icon}</span><span>{label}</span></button>
+              <button className="menu-item" onClick={() => selectPage(id)}><span className="menu-icon">{icon}</span><span>{label}</span></button>
               <button
                 type="button"
                 className={starred ? 'favorite-toggle active' : 'favorite-toggle'}
@@ -1155,7 +1179,7 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
             </div>
           );
         })}</nav>
-        <button type="button" className="side-note item-request-shortcut" onClick={() => setPage('item-request')}>
+        <button type="button" className="side-note item-request-shortcut" onClick={() => selectPage('item-request')}>
           <b>아이템 신청</b>
           <small>신청내역 확인 및 지급 처리</small>
           <span>→</span>
@@ -1521,7 +1545,7 @@ function Participation({ member, setPage }) {
           <div className="clan-ranking-block" key={clan}>
             <div className="section-heading"><h2>{clan}</h2><span className="result-count">{list.length}명</span></div>
             <div className="table-wrap">
-              <table className="data-table">
+              <table className="data-table participation-ranking-table">
                 <thead><tr><th>순위</th><th>닉네임</th><th>참석</th><th>참여율</th><th>기여율</th></tr></thead>
                 <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td>{m.count}회</td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.rate}%</td></tr>)}</tbody>
               </table>
