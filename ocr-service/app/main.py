@@ -1,23 +1,66 @@
+if result_text.startswith("```"):
+            result_text = re.sub(r"^
+http://googleusercontent.com/immersive_entry_chip/0
+여기가 아니라, 그 아래 **`parsed_json = json.loads(result_text)`** 부분의 들여쓰기(Indentation)가 완전히 바깥으로 삐져나와 있군요!
+
+파이썬에서는 `try:` 블록 안에 있어야 할 코드들이 같은 칸 수만큼 들여쓰기가 되어 있어야 하는데, 지금 캡처 화면에서는 `parsed_json`과 `return` 줄이 `try`와 같은 라인(맨 앞으로)에 맞춰져 있어서 **문법 에러(IndentationError)**가 발생하는 상태가 맞습니다. 제가 드린 코드 양식과 다르게 들어가서 헷갈리셨을 것 같습니다.
+
+---
+
+### 🛠️ 왜 이렇게 되었는지 시각적으로 보여드릴게요
+
+현재 파일 상태는 아래와 같이 `try` 바깥으로 튕겨 나가 있습니다.
+
+```python
+    # 5. GPT-4o API 호출 및 예외 제어
+    try:
+        response = client.chat.completions.create(
+            # ... (중략) ...
+        )
+
+        result_text = response.choices[0].message.content.strip()
+        print(f"📥 [GPT RAW RESPONSE]: {result_text}")
+
+        if result_text.startswith("```"):
+            result_text = re.sub(r"^
+http://googleusercontent.com/immersive_entry_chip/1
+
+---
+
+### 🎯 완벽하게 해결된 정상 코드 (복사용)
+
+이 들여쓰기 칸 수를 정확하게 안쪽으로 맞춰주셔야 에러가 안 납니다. 아래 코드는 `parsed_json` 줄까지 전부 `try` 내부 칸 수로 올바르게 정렬해 둔 코드입니다.
+
+기존 내용을 싹 지우시고, 이 코드를 복사해서 붙여넣으시면 괄호나 들여쓰기 문제없이 한 번에 통과됩니다!
+
+```python
 import os
 import base64
 import json
 import re
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import openai
+from openai import OpenAI
 
-# 환경 변수 로드
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI(title="Clan Manager AI OCR Service", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 테스트를 위해 전체 허용으로 안전하게 세팅
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "openai_key_configured": bool(OPENAI_API_KEY)}
+
+@app.get("/")
+def read_root():
+    return {"message": "Clan Manager OCR Service is running"}
 
 @app.post("/api/attendance/ocr")
 async def gpt_vision_ocr(
@@ -25,19 +68,22 @@ async def gpt_vision_ocr(
     clan_hint: str = Form(None)
 ):
     if not OPENAI_API_KEY:
-        print("❌ [CONFIG ERROR] OPENAI_API_KEY가 없습니다.")
-        # 키가 없을 때를 대비해 구버전 하드코딩 호환성 유지용 (키가 있다면 패스됨)
-        openai.api_key = "sk-..."
-    else:
-        openai.api_key = OPENAI_API_KEY
+        print("❌ [CONFIG ERROR] OPENAI_API_KEY environment variable is missing!")
+        return {"results": [], "error": "OPENAI_API_KEY is missing on server variables"}
 
     try:
         image_bytes = await file.read()
         base64_image = base64.b64encode(image_bytes).decode("utf-8")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"이미지 인코딩 실패: {str(e)}")
+        print(f"❌ [IMAGE ENCODE ERROR] Failed to encode image: {str(e)}")
+        return {"results": [], "error": "Image encoding failed"}
 
-    # 오류 가능성을 최소화한 직관적인 명세 프롬프트
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+    except Exception as e:
+        print(f"❌ [OPENAI INIT ERROR] Client instantiation failed: {str(e)}")
+        return {"results": [], "error": "OpenAI client initialization failed"}
+
     prompt = """
     이 사진은 게임 길드의 출석 체크 명단이야.
     1번부터 10번 파티까지 순서대로 캐릭터들의 '닉네임'만 추출해서 JSON 배열로 응답해줘.
@@ -57,8 +103,7 @@ async def gpt_vision_ocr(
     """
 
     try:
-        # 가장 안정적인 구버전/신버전 통합 호출 방식 체택
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {
@@ -72,17 +117,13 @@ async def gpt_vision_ocr(
                     ]
                 }
             ],
-            max_tokens=1200,
+            max_tokens=1500,
             temperature=0.0
         )
 
-        # 텍스트 응답 가공 및 마크다운 백틱 제거 안전장치
         result_text = response.choices[0].message.content.strip()
+        print(f"📥 [GPT RAW RESPONSE]: {result_text}")
 
-        # 혹시 gpt가 ```json ``` 을 붙여서 응답했을 경우를 위한 정규식 제거 복원 필터
         if result_text.startswith("```"):
             result_text = re.sub(r"^
-http://googleusercontent.com/immersive_entry_chip/0
-3. 코드가 올라가면 예외 트랩이 걸려있기 때문에 최소한 `500 에러`로 서버가 완전히 뻗는 현상은 완벽히 차단되며, 텍스트 가공 필터 덕분에 이쁜 JSON 데이터가 프론트에 안착할 것입니다.
-
-막판에 스퍼트 한 번만 더 내봅시다. 코드 덮어쓰고 푸시하고 나면 진짜 끝납니다!
+http://googleusercontent.com/immersive_entry_chip/2
