@@ -363,17 +363,21 @@ def clean_name_text(value: str) -> str:
 
 def process_slot_ocr(slot_img: np.ndarray, psm: int = 7) -> str:
     """OCR only the nickname area of a single character slot."""
-    h, w = slot_img.shape[:2]
-    if h == 0 or w == 0:
-        return ""
+    try:
+        h, w = slot_img.shape[:2]
+        if h == 0 or w == 0:
+            return ""
 
-    resized = cv2.resize(slot_img, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
-    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    config = f"--oem 1 --psm {psm} -c preserve_interword_spaces=1"
-    text = pytesseract.image_to_string(thresh, lang=OCR_LANG, config=config)
-    return clean_name_text(text)
+        resized = cv2.resize(slot_img, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+        _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        config = f"--oem 1 --psm {psm} -c preserve_interword_spaces=1"
+        text = pytesseract.image_to_string(thresh, lang=OCR_LANG, config=config)
+        return clean_name_text(text)
+    except Exception as e:
+        print(f"❌ [OCR ENGINE ERROR] Tesseract failed: {str(e)}")
+        return ""
 
 
 def is_noise_ocr_name(value: str) -> bool:
@@ -446,8 +450,8 @@ def detect_cyan_party_anchors(image: np.ndarray) -> list[tuple[int, int, int, in
     lower = np.array([75, 30, 30], dtype=np.uint8)
     upper = np.array([145, 255, 255], dtype=np.uint8)
     mask = cv2.inRange(hsv, lower, upper)
-    kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     height, width = image.shape[:2]
@@ -538,6 +542,7 @@ def derive_party_panels_from_anchors(image: np.ndarray) -> list[PartyPanel]:
             y2 = min(height, y1 + panel_height)
             if x2 - x1 < 8 or y2 - y1 < 8:
                 continue
+            print(f" Detected Panel Party {party}: {x1}, {y1} to {x2}, {y2}")
             panels.append(PartyPanel(
                 image=cropped[y1:y2, x1:x2],
                 party=party,
