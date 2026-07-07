@@ -7,6 +7,7 @@ import './notice.css';
 import './theme.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api';
+const OCR_API_BASE = import.meta.env.VITE_OCR_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8090' : '');
 const ROULETTE_URL = 'https://lazygyu.github.io/roulette/';
 
 const menu = [
@@ -164,6 +165,57 @@ function groupByClan(rows) {
     const bi = clanDisplayOrder.indexOf(b);
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi) || a.localeCompare(b, 'ko-KR');
   });
+}
+
+async function recognizePartyPanelsOnServer(file, members = [], options = {}) {
+  if (!OCR_API_BASE) return null;
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('clan_hint', options.clanHint || '');
+  formData.append('members_json', JSON.stringify(members.map((member) => ({
+    memberId: member.memberId,
+    characterName: member.characterName,
+    guildName: member.guildName || member.clanName || '',
+    clanName: member.clanName || member.guildName || '',
+  }))));
+
+  const response = await fetch(`${OCR_API_BASE.replace(/\/$/, '')}/api/attendance/ocr`, {
+    method: 'POST',
+    body: formData,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.detail || body.message || '서버 OCR 처리에 실패했습니다.');
+
+  const memberByName = new Map(members.map((member) => [normalize(member.characterName), member]));
+  const names = (body.confirmed || [])
+    .map((item) => ({
+      name: item.name,
+      positions: [Number(item.party || item.position || 99)].filter(Boolean),
+    }))
+    .filter((item) => item.name);
+  const ambiguous = (body.candidates || [])
+    .map((item) => ({
+      raw: item.raw,
+      positions: [Number(item.party || item.position || 99)].filter(Boolean),
+      suggestions: (item.suggestions || []).map((suggestion) => {
+        const matched = memberByName.get(normalize(suggestion.name)) || {
+          characterName: suggestion.name,
+          guildName: suggestion.clan || item.clan || '미분류',
+          clanName: suggestion.clan || item.clan || '미분류',
+        };
+        return { member: matched, score: Number(suggestion.score || 0) };
+      }),
+    }))
+    .filter((item) => item.raw && item.suggestions.length);
+  const dominantClan = body.debug?.clan_hint || inferDominantClanFromNames(names.map((item) => item.name), members);
+  return {
+    names,
+    ambiguous,
+    dominantClan,
+    appliedCorrections: [],
+    serverOcr: true,
+    debug: body.debug || {},
+  };
 }
 
 function extractOcrNames(text, registeredMembers = []) {
@@ -1996,15 +2048,31 @@ function Attendance({ member, setPage }) {
       for (let index = 0; index < row.files.length; index += 1) {
         const fileIndex = index + 1;
         const fileName = row.files[index]?.name || `사진 ${fileIndex}`;
-        const result = await recognizePartyPanels(row.files[index], members, (progressValue) => {
+        let result = null;
+        try {
+          updateBatchRow(key, { message: '서버 OCR로 사진 글자를 읽는 중입니다.' });
+          result = await recognizePartyPanelsOnServer(row.files[index], members, {
+            clanHint: form.clanName,
+            corrections: ocrCorrections,
+            filters: ocrFilters,
+          });
+          const overall = Math.round(((index + 1) / row.files.length) * 100);
+          updateBatchRow(key, { progress: overall });
+        } catch (serverErr) {
+          updateBatchRow(key, { message: `서버 OCR 실패, 기기 OCR로 전환합니다: ${serverErr.message}` });
+        }
+        if (!result) {
+          result = await recognizePartyPanels(row.files[index], members, (progressValue) => {
           const overall = Math.round(((index + (progressValue / 100)) / row.files.length) * 100);
           updateBatchRow(key, { progress: overall });
-        }, { precise: row.precise, corrections: ocrCorrections, filters: ocrFilters });
+          }, { precise: row.precise, corrections: ocrCorrections, filters: ocrFilters });
+        }
         fileReviews[index] = {
           ...fileReviews[index],
           dominantClan: result.dominantClan || '',
           recognizedCount: result.names.length,
           reviewCount: result.ambiguous.length,
+          ocrEngine: result.serverOcr ? 'server' : 'browser',
         };
         foundNames.push(...result.names.map((item) => ({
           ...item,

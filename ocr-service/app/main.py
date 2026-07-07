@@ -1,4 +1,5 @@
 import asyncio
+import json
 import difflib
 import os
 import re
@@ -154,14 +155,34 @@ def similarity(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, ak, bk).ratio()
 
 
-def match_clan_member(raw_name: str, clan_hint: str | None = None, limit: int = 5) -> dict[str, Any]:
+def parse_members_json(members_json: str | None) -> list[ClanMember]:
+    if not members_json:
+        return FAKE_CLAN_MEMBERS
+    try:
+        rows = json.loads(members_json)
+    except json.JSONDecodeError:
+        return FAKE_CLAN_MEMBERS
+    source_rows = rows if isinstance(rows, list) else []
+    members: list[ClanMember] = []
+    for row in source_rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("characterName") or row.get("name") or "").strip()
+        clan = str(row.get("guildName") or row.get("clanName") or row.get("clan") or "미분류").strip()
+        if name:
+            members.append(ClanMember(name=name, clan=clan or "미분류"))
+    return members or FAKE_CLAN_MEMBERS
+
+
+def match_clan_member(raw_name: str, clan_hint: str | None = None, limit: int = 5, members: list[ClanMember] | None = None) -> dict[str, Any]:
     """문자열 유사도 + 클랜 가중치 기반 매칭.
 
     Lv. 앵커 위에서 글자 형체가 나온 슬롯은 점수가 낮아도 best 1명을 후보로 보장한다.
     """
     clan_hint = (clan_hint or "").strip()
+    member_rows = members or FAKE_CLAN_MEMBERS
     ranked = []
-    for member in FAKE_CLAN_MEMBERS:
+    for member in member_rows:
         base_score = similarity(raw_name, member.name)
         boosted_score = base_score + (CLAN_BOOST if clan_hint and member.clan == clan_hint else 0)
         ranked.append({
@@ -335,7 +356,8 @@ def extract_raw_names_from_boxes(boxes: list[OcrBox], image_shape: tuple[int, in
     return list(deduped.values())
 
 
-def analyze_image(image_bytes: bytes, clan_hint: str | None) -> dict[str, Any]:
+def analyze_image(image_bytes: bytes, clan_hint: str | None, members_json: str | None = None) -> dict[str, Any]:
+    members = parse_members_json(members_json)
     processed = preprocess_image(image_bytes)
     boxes = run_tesseract_boxes(processed)
     raw_names = extract_raw_names_from_boxes(boxes, processed.shape)
@@ -343,7 +365,7 @@ def analyze_image(image_bytes: bytes, clan_hint: str | None) -> dict[str, Any]:
     confirmed = []
     candidates = []
     for raw in raw_names:
-        matched = match_clan_member(raw.text, clan_hint=clan_hint)
+        matched = match_clan_member(raw.text, clan_hint=clan_hint, members=members)
         best = matched["best"]
         if matched["confirmed"] and best:
             confirmed.append({
@@ -377,6 +399,7 @@ def analyze_image(image_bytes: bytes, clan_hint: str | None) -> dict[str, Any]:
             "raw_names": len(raw_names),
             "ocr_boxes": len(boxes),
             "clan_hint": clan_hint or "",
+            "member_source_count": len(members),
         },
     }
 
@@ -390,6 +413,7 @@ def health() -> dict[str, str]:
 async def attendance_ocr(
     file: UploadFile = File(...),
     clan_hint: str | None = Form(default=None),
+    members_json: str | None = Form(default=None),
 ) -> dict[str, Any]:
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="이미지 파일만 업로드할 수 있습니다.")
@@ -400,7 +424,7 @@ async def attendance_ocr(
 
     loop = asyncio.get_running_loop()
     try:
-        return await loop.run_in_executor(executor, analyze_image, image_bytes, clan_hint)
+        return await loop.run_in_executor(executor, analyze_image, image_bytes, clan_hint, members_json)
     except pytesseract.TesseractNotFoundError as exc:
         raise HTTPException(
             status_code=500,
