@@ -368,7 +368,8 @@ def process_slot_ocr(slot_img: np.ndarray, psm: int = 7) -> str:
         if h == 0 or w == 0:
             return ""
 
-        resized = cv2.resize(slot_img, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+        name_zone = slot_img[0:int(h * 0.55), 0:w]
+        resized = cv2.resize(name_zone, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
         _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
