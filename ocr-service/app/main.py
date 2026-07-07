@@ -113,6 +113,17 @@ class RawName:
     party: int | None
 
 
+@dataclass
+class SlotCrop:
+    image: np.ndarray
+    party: int
+    slot: int
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
 def normalize_text(value: str) -> str:
     value = unicodedata.normalize("NFKC", value or "")
     value = re.sub(r"\s+", "", value)
@@ -306,6 +317,171 @@ def run_tesseract_boxes_variants(images: list[np.ndarray]) -> list[OcrBox]:
     return list(merged.values())
 
 
+def run_tesseract_text(image: np.ndarray, psm: int = 7) -> str:
+    pil_image = Image.fromarray(image)
+    config = f"--oem 1 --psm {psm} -c preserve_interword_spaces=1"
+    raw = pytesseract.image_to_string(pil_image, lang=OCR_LANG, config=config)
+    return clean_name_text(raw)
+
+
+def clean_name_text(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value or "")
+    value = re.sub(r"(?i)L\s*[vV]\s*\.?\s*1[0-1][0-9].*", "", value)
+    value = re.sub(r"\b1[0-1][0-9]\b.*", "", value)
+    value = value.replace("\n", " ").replace("\r", " ")
+    value = value.replace("|", "I").replace("!", "I")
+    value = re.sub(r"[^\w가-힣]+", "", value, flags=re.UNICODE)
+    value = re.sub(r"^[0-9]+", "", value)
+    value = re.sub(r"[0-9]+$", "", value)
+    return normalize_text(value)
+
+
+def make_slot_ocr_variants(slot_image: np.ndarray) -> list[np.ndarray]:
+    if slot_image.size == 0:
+        return []
+    scaled = cv2.resize(slot_image, None, fx=5.0, fy=5.0, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+    denoised = cv2.fastNlMeansDenoising(gray, None, h=5, templateWindowSize=7, searchWindowSize=21)
+    blur = cv2.GaussianBlur(denoised, (0, 0), 1.0)
+    sharpened = cv2.addWeighted(denoised, 2.0, blur, -1.0, 0)
+    contrast = cv2.convertScaleAbs(sharpened, alpha=1.8, beta=20)
+    binary = cv2.adaptiveThreshold(
+        contrast,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        5,
+    )
+    inverted = cv2.bitwise_not(binary)
+    return [contrast, binary, inverted]
+
+
+def slot_has_possible_name(slot_image: np.ndarray) -> bool:
+    if slot_image.size == 0:
+        return False
+    gray = cv2.cvtColor(slot_image, cv2.COLOR_BGR2GRAY)
+    bright_ratio = float(np.mean(gray > 105))
+    mid_ratio = float(np.mean((gray > 45) & (gray <= 105)))
+    return bright_ratio > 0.01 or mid_ratio > 0.08
+
+
+def split_party_slots(image: np.ndarray) -> list[SlotCrop]:
+    """Split the roster into 10 party panels and 5 name slots per panel.
+
+    The UI screenshot format is stable: odd parties are left column, even
+    parties are right column, and each party has five horizontal slots.
+    We crop only the nickname band inside each slot so level text and icons
+    do not dominate OCR.
+    """
+    cropped = crop_roster_content(image)
+    height, width = cropped.shape[:2]
+    panel_width = width / 2
+    panel_height = height / 5
+    slots: list[SlotCrop] = []
+
+    for row in range(5):
+        for column in range(2):
+            party = row * 2 + 1 + column
+            panel_x = int(round(column * panel_width))
+            panel_y = int(round(row * panel_height))
+            next_panel_x = int(round((column + 1) * panel_width))
+            next_panel_y = int(round((row + 1) * panel_height))
+            panel = cropped[panel_y:next_panel_y, panel_x:next_panel_x]
+            if panel.size == 0:
+                continue
+
+            p_height, p_width = panel.shape[:2]
+            for slot_index in range(5):
+                slot_x1 = int(round(slot_index * p_width / 5))
+                slot_x2 = int(round((slot_index + 1) * p_width / 5))
+                # Nickname band. Wide enough to catch tall Korean glyphs, but
+                # mostly above the Lv line.
+                name_y1 = int(round(p_height * 0.42))
+                name_y2 = int(round(p_height * 0.72))
+                pad_x = max(1, int(round(p_width * 0.01)))
+                x1 = max(0, slot_x1 - pad_x)
+                x2 = min(p_width, slot_x2 + pad_x)
+                slot_image = panel[name_y1:name_y2, x1:x2]
+                if not slot_has_possible_name(slot_image):
+                    continue
+                slots.append(SlotCrop(
+                    image=slot_image,
+                    party=party,
+                    slot=slot_index + 1,
+                    x1=panel_x + x1,
+                    y1=panel_y + name_y1,
+                    x2=panel_x + x2,
+                    y2=panel_y + name_y2,
+                ))
+    return slots
+
+
+def best_text_for_slot(slot: SlotCrop, members: list[ClanMember], clan_hint: str | None) -> str:
+    texts: list[str] = []
+    for variant in make_slot_ocr_variants(slot.image):
+        for psm in (7, 8):
+            text = run_tesseract_text(variant, psm=psm)
+            if text and len(text) >= 2:
+                texts.append(text)
+
+    unique_texts = []
+    seen = set()
+    for text in texts:
+        key = normalize_for_similarity(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique_texts.append(text)
+    if not unique_texts:
+        return ""
+
+    def rank_text(text: str) -> tuple[float, int]:
+        matched = match_clan_member(text, clan_hint=clan_hint, members=members)
+        best = matched.get("best") or {}
+        score = float(best.get("score") or 0)
+        # Prefer short nickname-like text over a long merged garbage string.
+        length_penalty = max(0, len(text) - 14) * 0.035
+        return (score - length_penalty, -abs(len(text) - 5))
+
+    return max(unique_texts, key=rank_text)
+
+
+def extract_raw_names_from_slots(image_bytes: bytes, members: list[ClanMember], clan_hint: str | None) -> list[RawName]:
+    image_array = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError("?대?吏 ?뚯씪???쎌쓣 ???놁뒿?덈떎.")
+
+    raw_names: list[RawName] = []
+    for slot in split_party_slots(image):
+        raw = best_text_for_slot(slot, members, clan_hint)
+        if not raw:
+            continue
+        raw_names.append(RawName(
+            text=raw,
+            x1=slot.x1,
+            y1=slot.y1,
+            x2=slot.x2,
+            y2=slot.y2,
+            level="",
+            slot=slot.slot,
+            party=slot.party,
+        ))
+
+    deduped: dict[tuple[int | None, int | None], RawName] = {}
+    for item in raw_names:
+        current = deduped.get((item.party, item.slot))
+        if current is None:
+            deduped[(item.party, item.slot)] = item
+            continue
+        current_score = (match_clan_member(current.text, clan_hint=clan_hint, members=members).get("best") or {}).get("score") or 0
+        next_score = (match_clan_member(item.text, clan_hint=clan_hint, members=members).get("best") or {}).get("score") or 0
+        if next_score > current_score:
+            deduped[(item.party, item.slot)] = item
+    return list(deduped.values())
+
+
 def is_level_box(box: OcrBox) -> bool:
     text = normalize_text(box.text)
     level_match = re.match(r"^(Lv|LV|Iv|L[vV])?1[0-1][0-9]$", text, re.IGNORECASE)
@@ -409,14 +585,31 @@ def extract_raw_names_from_boxes(boxes: list[OcrBox], image_shape: tuple[int, in
 
 def analyze_image(image_bytes: bytes, clan_hint: str | None, members_json: str | None = None) -> dict[str, Any]:
     members = parse_members_json(members_json)
-    processed_variants = preprocess_image(image_bytes)
-    boxes = run_tesseract_boxes_variants(processed_variants)
-    raw_names = extract_raw_names_from_boxes(boxes, processed_variants[0].shape)
+    raw_names = extract_raw_names_from_slots(image_bytes, members, clan_hint)
+    processed_variants = []
+    boxes: list[OcrBox] = []
+    if len(raw_names) < 3:
+        processed_variants = preprocess_image(image_bytes)
+        boxes = run_tesseract_boxes_variants(processed_variants)
+        raw_names.extend(extract_raw_names_from_boxes(boxes, processed_variants[0].shape))
+
+    raw_by_position: dict[tuple[int | None, int | None], RawName] = {}
+    for raw in raw_names:
+        key = (raw.party, raw.slot)
+        current = raw_by_position.get(key)
+        if current is None:
+            raw_by_position[key] = raw
+            continue
+        current_score = (match_clan_member(current.text, clan_hint=clan_hint, members=members).get("best") or {}).get("score") or 0
+        next_score = (match_clan_member(raw.text, clan_hint=clan_hint, members=members).get("best") or {}).get("score") or 0
+        if next_score > current_score:
+            raw_by_position[key] = raw
+    raw_names = list(raw_by_position.values())
 
     confirmed = []
     candidates = []
     for raw in raw_names:
-        matched = match_clan_member(raw.text, clan_hint=clan_hint, members=members)
+        matched = match_clan_member(raw.text, clan_hint=clan_hint, limit=3, members=members)
         best = matched["best"]
         if matched["confirmed"] and best:
             confirmed.append({
@@ -449,6 +642,7 @@ def analyze_image(image_bytes: bytes, clan_hint: str | None, members_json: str |
             "anchors": len([box for box in boxes if is_level_box(box)]),
             "raw_names": len(raw_names),
             "ocr_boxes": len(boxes),
+            "slot_scan": True,
             "clan_hint": clan_hint or "",
             "member_source_count": len(members),
         },
