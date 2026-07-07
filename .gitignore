@@ -46,3 +46,7 @@ frontend/dist/
 ### Local Logs ###
 server.log
 server-error.log
+
+### Python OCR Service ###
+__pycache__/
+*.py[cod]
