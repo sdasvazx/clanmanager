@@ -907,9 +907,7 @@ async function createNameSlotOcrVariants(file, precise = true) {
   if (!precise) return baseVariants.filter(Boolean);
   return [
     ...baseVariants,
-    await canvasToBlob(makeCanvas(4, 'contrast', 108)),
-    await canvasToBlob(makeCanvas(4.6, 'threshold', 102)),
-    await canvasToBlob(makeCanvas(5.4, 'contrast', 100)),
+    await canvasToBlob(makeCanvas(4.4, 'threshold', 102)),
   ].filter(Boolean);
 }
 
@@ -929,7 +927,7 @@ async function recognizeWordBoxesWithWorker(file, worker, precise = false) {
   const variants = await createOcrVariants(file, precise);
   const words = [];
   const texts = [];
-  const limit = precise ? Math.min(3, variants.length) : Math.min(2, variants.length);
+  const limit = Math.min(2, variants.length);
   await worker.setParameters({
     preserve_interword_spaces: '1',
     user_defined_dpi: precise ? '420' : '360',
@@ -946,7 +944,7 @@ async function recognizeWordBoxesWithWorker(file, worker, precise = false) {
 async function recognizeNameSlotWithWorker(file, worker, precise = true) {
   const variants = await createNameSlotOcrVariants(file, precise);
   const texts = [];
-  const pageSegModes = precise ? ['7', '6'] : ['7'];
+  const pageSegModes = ['7'];
   for (const pageSegMode of pageSegModes) {
     await worker.setParameters({
       preserve_interword_spaces: '1',
@@ -1027,10 +1025,8 @@ async function createPartyNameSlotFiles(file, precise = true) {
   const slotCount = 5;
   const slotWidth = image.naturalWidth / slotCount;
   const cropBands = precise ? [
-    { top: 0.30, height: 0.38, label: 'name-high' },
-    { top: 0.34, height: 0.34, label: 'name-wide' },
+    { top: 0.33, height: 0.36, label: 'name-wide' },
     { top: 0.39, height: 0.30, label: 'name-mid' },
-    { top: 0.43, height: 0.28, label: 'name-center' },
     { top: 0.38, height: 0.46, label: 'name-level' },
   ] : [
     { top: 0.32, height: 0.42, label: 'name-fast-wide' },
@@ -1133,6 +1129,17 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
         const wordBoxResult = await recognizeWordBoxesWithWorker(panel.file, worker, precise);
         levelWords = wordBoxResult.words;
         text += `\n${wordBoxResult.text}`;
+      }
+      const earlyTextReview = precise ? buildOcrReview(text, members, '', options) : quickReview;
+      const earlyLevelReview = levelWords?.length
+        ? buildLevelAnchorReview(levelWords, members, '', options)
+        : { exactNames: [] };
+      const earlyNameKeys = new Set([
+        ...(earlyTextReview?.exactNames || []),
+        ...(earlyLevelReview.exactNames || []),
+      ].map(normalize));
+      const needsPreciseSlotScan = precise && earlyNameKeys.size < 5;
+      if (needsPreciseSlotScan || needsAdaptiveSlotScan) {
         const slotFiles = await createPartyNameSlotFiles(panel.file, precise);
         for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
           const slot = slotFiles[slotIndex];
