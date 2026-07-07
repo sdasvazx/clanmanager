@@ -442,22 +442,45 @@ function findPrefixOmittedMember(rawName, members, clanName = '') {
   return matches.length === 1 ? matches[0].characterName : '';
 }
 
-function findSimilarMembers(rawName, members, clanName, limit = 3) {
+function rankSimilarMembers(rawName, members, clanName = '', options = {}) {
+  const {
+    limit = 3,
+    minScore = 0.66,
+    guaranteeOne = false,
+    clanBoost = 0.08,
+    preferClan = true,
+  } = options;
   const targetClan = String(clanName ?? '').trim() ? canonicalClanName(clanName) : '';
   const specialName = findSpecialDangMember(rawName, members, clanName);
   const prefixOmittedName = findPrefixOmittedMember(rawName, members, clanName);
-  return members
-    .filter((member) => !targetClan || canonicalClanName(member.guildName || member.clanName) === targetClan)
+  const ranked = members
     .map((member) => ({
       member,
-      score: Math.max(
+      score: Math.min(1, Math.max(
         similarityScore(rawName, member.characterName),
         specialName === member.characterName ? 0.98 : 0,
         prefixOmittedName === member.characterName ? 0.96 : 0,
-      ),
+      ) + (targetClan && canonicalClanName(member.guildName || member.clanName) === targetClan ? clanBoost : 0)),
     }))
-    .filter(({ score }) => score >= 0.66)
-    .sort((a, b) => b.score - a.score || a.member.characterName.localeCompare(b.member.characterName, 'ko-KR'))
+    .sort((a, b) => {
+      const clanDelta = targetClan && preferClan
+        ? Number(canonicalClanName(b.member.guildName || b.member.clanName) === targetClan) - Number(canonicalClanName(a.member.guildName || a.member.clanName) === targetClan)
+        : 0;
+      return clanDelta || b.score - a.score || a.member.characterName.localeCompare(b.member.characterName, 'ko-KR');
+    });
+  const filtered = ranked.filter(({ score }) => score >= minScore);
+  return (filtered.length || !guaranteeOne ? filtered : ranked.slice(0, 1)).slice(0, limit);
+}
+
+function findSimilarMembers(rawName, members, clanName, limit = 3) {
+  return rankSimilarMembers(rawName, members, clanName, {
+    limit,
+    minScore: 0.66,
+    guaranteeOne: false,
+    clanBoost: 0,
+    preferClan: Boolean(clanName),
+  })
+    .filter(({ member }) => !clanName || canonicalClanName(member.guildName || member.clanName) === canonicalClanName(clanName))
     .slice(0, limit);
 }
 
@@ -678,6 +701,127 @@ function buildOcrReview(text, members, clanName, options = {}) {
     .slice(0, 1);
   return { exactNames: [...new Set([...exactNames, ...confident])], ambiguous, appliedCorrections };
 }
+
+const wordText = (word) => String(word?.text ?? '').trim();
+const wordBox = (word) => word?.bbox || word?.box || word?.boundingBox || null;
+const boxWidth = (box) => Math.max(1, Number(box?.x1 ?? 0) - Number(box?.x0 ?? 0));
+const boxHeight = (box) => Math.max(1, Number(box?.y1 ?? 0) - Number(box?.y0 ?? 0));
+const boxCenterX = (box) => (Number(box?.x0 ?? 0) + Number(box?.x1 ?? 0)) / 2;
+const boxCenterY = (box) => (Number(box?.y0 ?? 0) + Number(box?.y1 ?? 0)) / 2;
+const mergeBoxes = (boxes) => boxes.reduce((acc, box) => ({
+  x0: Math.min(acc.x0, Number(box.x0)),
+  y0: Math.min(acc.y0, Number(box.y0)),
+  x1: Math.max(acc.x1, Number(box.x1)),
+  y1: Math.max(acc.y1, Number(box.y1)),
+}), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+
+function normalizeOcrWords(words = []) {
+  return (words || [])
+    .map((word) => ({ text: wordText(word), bbox: wordBox(word), confidence: Number(word?.confidence ?? word?.conf ?? 0) }))
+    .filter((word) => word.text && word.bbox && Number.isFinite(Number(word.bbox.x0)) && Number.isFinite(Number(word.bbox.y0)));
+}
+
+function findLevelAnchors(words = []) {
+  const normalizedWords = normalizeOcrWords(words);
+  const anchors = [];
+  normalizedWords.forEach((word, index) => {
+    const text = word.text.replace(/\s+/g, '');
+    if (/^Lv\.?\d{1,3}$/i.test(text) || /^LV\.?\d{1,3}$/i.test(text)) {
+      anchors.push({ bbox: word.bbox, words: [word] });
+      return;
+    }
+    if (/^\d{2,3}$/.test(text)) {
+      const previous = normalizedWords[index - 1];
+      const sameLine = previous && Math.abs(boxCenterY(previous.bbox) - boxCenterY(word.bbox)) < Math.max(boxHeight(word.bbox), boxHeight(previous.bbox)) * 0.9;
+      const close = previous && Number(word.bbox.x0) - Number(previous.bbox.x1) < boxWidth(word.bbox) * 1.6;
+      if (sameLine && close && /^Lv\.?$/i.test(previous.text.replace(/\s+/g, ''))) {
+        anchors.push({ bbox: mergeBoxes([previous.bbox, word.bbox]), words: [previous, word] });
+      }
+    }
+  });
+  const unique = new Map();
+  anchors.forEach((anchor) => {
+    const key = `${Math.round(boxCenterX(anchor.bbox) / 8)}:${Math.round(boxCenterY(anchor.bbox) / 8)}`;
+    const current = unique.get(key);
+    if (!current || boxWidth(anchor.bbox) > boxWidth(current.bbox)) unique.set(key, anchor);
+  });
+  return [...unique.values()].sort((a, b) => boxCenterY(a.bbox) - boxCenterY(b.bbox) || boxCenterX(a.bbox) - boxCenterX(b.bbox));
+}
+
+function extractNicknameAboveLevel(anchor, words = []) {
+  const normalizedWords = normalizeOcrWords(words);
+  const anchorBox = anchor.bbox;
+  const anchorCx = boxCenterX(anchorBox);
+  const anchorWidth = boxWidth(anchorBox);
+  const anchorHeight = boxHeight(anchorBox);
+  const yMin = Number(anchorBox.y0) - Math.max(anchorHeight * 3.8, 26);
+  const yMax = Number(anchorBox.y0) - Math.max(2, anchorHeight * 0.12);
+  const xAllowance = Math.max(anchorWidth * 2.45, 46);
+  const candidates = normalizedWords
+    .filter((word) => !anchor.words?.some((anchorWord) => anchorWord.text === word.text && anchorWord.bbox === word.bbox))
+    .filter((word) => {
+      const text = cleanOcrNicknameToken(word.text);
+      if (!text) return false;
+      const cy = boxCenterY(word.bbox);
+      const cx = boxCenterX(word.bbox);
+      return cy >= yMin && cy <= yMax && Math.abs(cx - anchorCx) <= xAllowance;
+    })
+    .sort((a, b) => Number(a.bbox.y0) - Number(b.bbox.y0) || Number(a.bbox.x0) - Number(b.bbox.x0));
+  if (!candidates.length) return '';
+  const mainY = boxCenterY(candidates[candidates.length - 1].bbox);
+  const sameLine = candidates
+    .filter((word) => Math.abs(boxCenterY(word.bbox) - mainY) <= Math.max(10, anchorHeight * 0.85))
+    .sort((a, b) => Number(a.bbox.x0) - Number(b.bbox.x0));
+  const merged = sameLine.map((word) => cleanOcrNicknameToken(word.text)).filter(Boolean).join('');
+  return cleanOcrNicknameToken(merged) || cleanOcrNicknameToken(sameLine.at(-1)?.text || '');
+}
+
+function buildLevelAnchorReview(words, members, clanName = '', options = {}) {
+  const filters = options.filters || [];
+  const corrections = options.corrections || {};
+  const exactNames = [];
+  const ambiguous = [];
+  const appliedCorrections = [];
+  const seenAnchors = new Set();
+  findLevelAnchors(words).forEach((anchor, index) => {
+    const rawName = extractNicknameAboveLevel(anchor, words);
+    if (!rawName || isOcrFilteredName(rawName, filters)) return;
+    const anchorKey = `${Math.round(boxCenterX(anchor.bbox))}:${Math.round(boxCenterY(anchor.bbox))}:${normalize(rawName)}`;
+    if (seenAnchors.has(anchorKey)) return;
+    seenAnchors.add(anchorKey);
+    const corrected = findAutoCorrectedMember(rawName, members, clanName, corrections);
+    if (corrected && !isOcrFilteredName(corrected, filters)) {
+      exactNames.push(corrected);
+      if (normalize(corrected) !== normalize(rawName)) appliedCorrections.push({ wrong: rawName, right: corrected });
+      return;
+    }
+    const suggestions = rankSimilarMembers(rawName, members, clanName, {
+      limit: 3,
+      minScore: 0.48,
+      guaranteeOne: true,
+      clanBoost: 0.12,
+      preferClan: Boolean(clanName),
+    });
+    const [best, second] = suggestions;
+    if (best && best.score >= 0.9 && (!second || best.score - second.score >= 0.1)) {
+      exactNames.push(best.member.characterName);
+      return;
+    }
+    if (best) {
+      ambiguous.push({
+        raw: rawName,
+        suggestions,
+        anchorIndex: index,
+      });
+    }
+  });
+  return {
+    exactNames: [...new Set(exactNames)],
+    ambiguous,
+    appliedCorrections,
+  };
+}
+
 function namesFromText(value) {
   return [...new Set(String(value ?? '').split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean))];
 }
@@ -779,6 +923,24 @@ async function recognizeOcrVariantsWithWorker(file, worker, onProgress, precise 
   }
   onProgress?.(100);
   return texts.join('\n');
+}
+
+async function recognizeWordBoxesWithWorker(file, worker, precise = false) {
+  const variants = await createOcrVariants(file, precise);
+  const words = [];
+  const texts = [];
+  const limit = precise ? Math.min(3, variants.length) : Math.min(2, variants.length);
+  await worker.setParameters({
+    preserve_interword_spaces: '1',
+    user_defined_dpi: precise ? '420' : '360',
+    tessedit_pageseg_mode: '6',
+  });
+  for (let index = 0; index < limit; index += 1) {
+    const { data } = await worker.recognize(variants[index]);
+    texts.push(data.text || '');
+    if (Array.isArray(data.words)) words.push(...data.words);
+  }
+  return { text: texts.join('\n'), words: normalizeOcrWords(words) };
 }
 
 async function recognizeNameSlotWithWorker(file, worker, precise = true) {
@@ -959,6 +1121,7 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
     for (let index = 0; index < panels.length; index += 1) {
       const panel = panels[index];
       const slotTexts = [];
+      let levelWords = [];
       let text = await recognizeOcrVariantsWithWorker(panel.file, worker, (progressValue) => {
         const baseWeight = precise ? 0.55 : 1;
         const overall = Math.round(((index + ((progressValue / 100) * baseWeight)) / Math.max(1, panels.length)) * 100);
@@ -967,6 +1130,9 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
       const quickReview = !precise ? buildOcrReview(text, members, '', options) : null;
       const needsAdaptiveSlotScan = !precise && quickReview.exactNames.length < 5;
       if (precise || needsAdaptiveSlotScan) {
+        const wordBoxResult = await recognizeWordBoxesWithWorker(panel.file, worker, precise);
+        levelWords = wordBoxResult.words;
+        text += `\n${wordBoxResult.text}`;
         const slotFiles = await createPartyNameSlotFiles(panel.file, precise);
         for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
           const slot = slotFiles[slotIndex];
@@ -979,16 +1145,25 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
           onProgress?.(overall);
         }
       }
-      panelTexts.push({ panel, text, slotTexts });
+      panelTexts.push({ panel, text, slotTexts, levelWords });
     }
     const firstPassReviews = panelTexts.map(({ text }) => buildOcrReview(text, members, '', options));
     dominantClan = inferDominantClanFromNames(firstPassReviews.flatMap((review) => review.exactNames), members);
-    panelTexts.forEach(({ panel, text, slotTexts }, index) => {
+    panelTexts.forEach(({ panel, text, slotTexts, levelWords }, index) => {
       const review = dominantClan
         ? buildOcrReview(text, members, dominantClan, options)
         : firstPassReviews[index];
+      const levelReview = levelWords?.length
+        ? buildLevelAnchorReview(levelWords, members, dominantClan || '', options)
+        : { exactNames: [], ambiguous: [], appliedCorrections: [] };
       const panelNames = new Set(review.exactNames.map(normalize));
       names.push(...review.exactNames.map((name) => ({ name, positions: [panel.partyNumber] })));
+      levelReview.exactNames.forEach((name) => {
+        const key = normalize(name);
+        if (panelNames.has(key)) return;
+        panelNames.add(key);
+        names.push({ name, positions: [panel.partyNumber] });
+      });
       const slotAmbiguous = [];
       if (slotTexts?.length && panelNames.size < 5) {
         slotTexts.forEach((slot) => {
@@ -1005,8 +1180,10 @@ async function recognizePartyPanels(file, members, onProgress, options = {}) {
         });
       }
       ambiguous.push(...review.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
+      ambiguous.push(...levelReview.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
       ambiguous.push(...slotAmbiguous);
       appliedCorrections.push(...(review.appliedCorrections || []).map((item) => ({ ...item, positions: [panel.partyNumber] })));
+      appliedCorrections.push(...(levelReview.appliedCorrections || []).map((item) => ({ ...item, positions: [panel.partyNumber] })));
     });
     const confirmedNameKeys = new Set(names.map((item) => normalize(item.name)));
     const bestAmbiguousByMember = new Map();
