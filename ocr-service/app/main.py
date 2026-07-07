@@ -443,8 +443,8 @@ def slot_has_possible_name(slot_image: np.ndarray) -> bool:
 def detect_cyan_party_anchors(image: np.ndarray) -> list[tuple[int, int, int, int]]:
     """Find the cyan/blue party number plates with OpenCV contours."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lower = np.array([82, 45, 45], dtype=np.uint8)
-    upper = np.array([112, 255, 255], dtype=np.uint8)
+    lower = np.array([75, 30, 30], dtype=np.uint8)
+    upper = np.array([145, 255, 255], dtype=np.uint8)
     mask = cv2.inRange(hsv, lower, upper)
     kernel = np.ones((3, 3), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
@@ -463,7 +463,7 @@ def detect_cyan_party_anchors(image: np.ndarray) -> list[tuple[int, int, int, in
             continue
         if area > image_area * 0.008:
             continue
-        if w < 4 or h < 4:
+        if not (10 < w < 80 and 10 < h < 80):
             continue
         if not (0.45 <= ratio <= 1.65):
             continue
