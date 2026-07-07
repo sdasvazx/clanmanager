@@ -24,7 +24,8 @@ if TESSERACT_CMD:
 
 OCR_LANG = os.getenv("OCR_LANG", "kor+eng")
 MAX_WORKERS = int(os.getenv("OCR_WORKERS", "2"))
-CONFIRMED_SCORE = float(os.getenv("OCR_CONFIRMED_SCORE", "0.86"))
+CONFIRMED_SCORE = float(os.getenv("OCR_CONFIRMED_SCORE", "0.65"))
+MIN_CANDIDATE_SCORE = float(os.getenv("OCR_MIN_CANDIDATE_SCORE", "0.50"))
 CLAN_BOOST = float(os.getenv("OCR_CLAN_BOOST", "0.15"))
 
 executor = ProcessPoolExecutor(max_workers=MAX_WORKERS)
@@ -124,6 +125,16 @@ class SlotCrop:
     y2: int
 
 
+@dataclass
+class PartyPanel:
+    image: np.ndarray
+    party: int
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
 def normalize_text(value: str) -> str:
     value = unicodedata.normalize("NFKC", value or "")
     value = re.sub(r"\s+", "", value)
@@ -195,14 +206,21 @@ def match_clan_member(raw_name: str, clan_hint: str | None = None, limit: int = 
     ranked = []
     for member in member_rows:
         base_score = similarity(raw_name, member.name)
-        boosted_score = base_score + (CLAN_BOOST if clan_hint and member.clan == clan_hint else 0)
+        is_hint_clan = bool(clan_hint and member.clan == clan_hint)
+        boosted_score = base_score + (CLAN_BOOST if is_hint_clan else 0)
         ranked.append({
             "name": member.name,
             "clan": member.clan,
             "score": round(min(boosted_score, 1.15), 4),
             "base_score": round(base_score, 4),
+            "hint_clan": is_hint_clan,
         })
-    ranked.sort(key=lambda row: (row["score"], row["base_score"], row["name"]), reverse=True)
+    ranked.sort(key=lambda row: (row["hint_clan"], row["score"], row["base_score"], row["name"]), reverse=True)
+    if clan_hint:
+        clan_ranked = [row for row in ranked if row["hint_clan"]]
+        if clan_ranked and clan_ranked[0]["score"] >= MIN_CANDIDATE_SCORE:
+            ranked = clan_ranked
+    ranked = [row for row in ranked if row["score"] >= MIN_CANDIDATE_SCORE]
     best = ranked[0] if ranked else None
     return {
         "raw": raw_name,
@@ -336,6 +354,23 @@ def clean_name_text(value: str) -> str:
     return normalize_text(value)
 
 
+def is_noise_ocr_name(value: str) -> bool:
+    text = normalize_text(value)
+    if not text:
+        return True
+    if len(text) <= 1:
+        return True
+    has_korean = bool(re.search(r"[가-힣]", text))
+    if len(text) <= 2 and not has_korean:
+        return True
+    if re.fullmatch(r"[A-Za-z0-9]{1,3}", text) and not has_korean:
+        return True
+    digits = sum(ch.isdigit() for ch in text)
+    if digits and digits >= max(2, len(text) * 0.45):
+        return True
+    return False
+
+
 def make_slot_ocr_variants(slot_image: np.ndarray) -> list[np.ndarray]:
     if slot_image.size == 0:
         return []
@@ -366,54 +401,143 @@ def slot_has_possible_name(slot_image: np.ndarray) -> bool:
     return bright_ratio > 0.01 or mid_ratio > 0.08
 
 
-def split_party_slots(image: np.ndarray) -> list[SlotCrop]:
-    """Split the roster into 10 party panels and 5 name slots per panel.
+def detect_cyan_party_anchors(image: np.ndarray) -> list[tuple[int, int, int, int]]:
+    """Find the cyan/blue party number plates with OpenCV contours."""
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    lower = np.array([82, 45, 45], dtype=np.uint8)
+    upper = np.array([112, 255, 255], dtype=np.uint8)
+    mask = cv2.inRange(hsv, lower, upper)
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    The UI screenshot format is stable: odd parties are left column, even
-    parties are right column, and each party has five horizontal slots.
-    We crop only the nickname band inside each slot so level text and icons
-    do not dominate OCR.
-    """
+    height, width = image.shape[:2]
+    image_area = height * width
+    anchors: list[tuple[int, int, int, int]] = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        area = cv2.contourArea(contour)
+        box_area = max(1, w * h)
+        ratio = w / max(1, h)
+        fill = area / box_area
+        if area < max(12, image_area * 0.000006):
+            continue
+        if area > image_area * 0.008:
+            continue
+        if w < 4 or h < 4:
+            continue
+        if not (0.45 <= ratio <= 1.65):
+            continue
+        if fill < 0.28:
+            continue
+        anchors.append((x, y, x + w, y + h))
+
+    anchors.sort(key=lambda box: (box[1], box[0]))
+    deduped: list[tuple[int, int, int, int]] = []
+    for box in anchors:
+        x1, y1, x2, y2 = box
+        if any(abs(x1 - px1) <= max(8, (x2 - x1)) and abs(y1 - py1) <= max(8, (y2 - y1)) for px1, py1, px2, py2 in deduped):
+            continue
+        deduped.append(box)
+    return deduped[:10]
+
+
+def cluster_anchor_rows(anchors: list[tuple[int, int, int, int]]) -> list[list[tuple[int, int, int, int]]]:
+    if not anchors:
+        return []
+    median_height = float(np.median([y2 - y1 for _, y1, _, y2 in anchors]))
+    threshold = max(8.0, median_height * 2.2)
+    rows: list[list[tuple[int, int, int, int]]] = []
+    for anchor in sorted(anchors, key=lambda box: (box[1], box[0])):
+        cy = (anchor[1] + anchor[3]) / 2
+        target = None
+        for row in rows:
+            row_cy = float(np.mean([(box[1] + box[3]) / 2 for box in row]))
+            if abs(cy - row_cy) <= threshold:
+                target = row
+                break
+        if target is None:
+            rows.append([anchor])
+        else:
+            target.append(anchor)
+    return [sorted(row, key=lambda box: box[0]) for row in rows]
+
+
+def derive_party_panels_from_anchors(image: np.ndarray) -> list[PartyPanel]:
     cropped = crop_roster_content(image)
+    anchors = detect_cyan_party_anchors(cropped)
+    rows = cluster_anchor_rows(anchors)
+    rows = sorted(rows, key=lambda row: min(box[1] for box in row))[:5]
+    if not rows:
+        return []
+
     height, width = cropped.shape[:2]
-    panel_width = width / 2
-    panel_height = height / 5
+    left_xs = [row[0][0] for row in rows if row]
+    right_xs = [row[1][0] for row in rows if len(row) > 1]
+    if right_xs:
+        left_x = int(round(float(np.median(left_xs))))
+        right_x = int(round(float(np.median(right_xs))))
+        panel_width = max(1, right_x - left_x)
+    else:
+        left_x = int(round(float(np.median(left_xs))))
+        panel_width = max(1, width - left_x)
+        right_x = left_x + panel_width
+
+    row_tops = [min(box[1] for box in row) for row in rows]
+    row_gaps = [b - a for a, b in zip(row_tops, row_tops[1:]) if b > a]
+    panel_height = int(round(float(np.median(row_gaps)))) if row_gaps else max(1, height - row_tops[0])
+    panel_height = max(1, panel_height)
+
+    panels: list[PartyPanel] = []
+    for row_index, row in enumerate(rows):
+        top = int(min(box[1] for box in row))
+        for col_index, _anchor in enumerate(row[:2]):
+            party = row_index * 2 + 1 + col_index
+            x1 = left_x if col_index == 0 else right_x
+            x2 = min(width, x1 + panel_width)
+            y1 = max(0, top)
+            y2 = min(height, y1 + panel_height)
+            if x2 - x1 < 8 or y2 - y1 < 8:
+                continue
+            panels.append(PartyPanel(
+                image=cropped[y1:y2, x1:x2],
+                party=party,
+                x1=x1,
+                y1=y1,
+                x2=x2,
+                y2=y2,
+            ))
+    return panels
+
+
+def split_party_slots(image: np.ndarray) -> list[SlotCrop]:
+    """Split by cyan party-number anchors, then by five character slots."""
+    panels = derive_party_panels_from_anchors(image)
     slots: list[SlotCrop] = []
 
-    for row in range(5):
-        for column in range(2):
-            party = row * 2 + 1 + column
-            panel_x = int(round(column * panel_width))
-            panel_y = int(round(row * panel_height))
-            next_panel_x = int(round((column + 1) * panel_width))
-            next_panel_y = int(round((row + 1) * panel_height))
-            panel = cropped[panel_y:next_panel_y, panel_x:next_panel_x]
-            if panel.size == 0:
+    for party_panel in panels:
+        panel = party_panel.image
+        p_height, p_width = panel.shape[:2]
+        for slot_index in range(5):
+            slot_x1 = int(round(slot_index * p_width / 5))
+            slot_x2 = int(round((slot_index + 1) * p_width / 5))
+            name_y1 = int(round(p_height * 0.34))
+            name_y2 = int(round(p_height * 0.68))
+            pad_x = max(1, int(round(p_width * 0.012)))
+            x1 = max(0, slot_x1 - pad_x)
+            x2 = min(p_width, slot_x2 + pad_x)
+            slot_image = panel[name_y1:name_y2, x1:x2]
+            if not slot_has_possible_name(slot_image):
                 continue
-
-            p_height, p_width = panel.shape[:2]
-            for slot_index in range(5):
-                slot_x1 = int(round(slot_index * p_width / 5))
-                slot_x2 = int(round((slot_index + 1) * p_width / 5))
-                # Nickname band. Wide enough to catch tall Korean glyphs, but
-                # mostly above the Lv line.
-                name_y1 = int(round(p_height * 0.42))
-                name_y2 = int(round(p_height * 0.72))
-                pad_x = max(1, int(round(p_width * 0.01)))
-                x1 = max(0, slot_x1 - pad_x)
-                x2 = min(p_width, slot_x2 + pad_x)
-                slot_image = panel[name_y1:name_y2, x1:x2]
-                if not slot_has_possible_name(slot_image):
-                    continue
-                slots.append(SlotCrop(
-                    image=slot_image,
-                    party=party,
-                    slot=slot_index + 1,
-                    x1=panel_x + x1,
-                    y1=panel_y + name_y1,
-                    x2=panel_x + x2,
-                    y2=panel_y + name_y2,
-                ))
+            slots.append(SlotCrop(
+                image=slot_image,
+                party=party_panel.party,
+                slot=slot_index + 1,
+                x1=party_panel.x1 + x1,
+                y1=party_panel.y1 + name_y1,
+                x2=party_panel.x1 + x2,
+                y2=party_panel.y1 + name_y2,
+            ))
     return slots
 
 
@@ -422,7 +546,7 @@ def best_text_for_slot(slot: SlotCrop, members: list[ClanMember], clan_hint: str
     for variant in make_slot_ocr_variants(slot.image):
         for psm in (7, 8):
             text = run_tesseract_text(variant, psm=psm)
-            if text and len(text) >= 2:
+            if text and not is_noise_ocr_name(text):
                 texts.append(text)
 
     unique_texts = []
@@ -444,7 +568,12 @@ def best_text_for_slot(slot: SlotCrop, members: list[ClanMember], clan_hint: str
         length_penalty = max(0, len(text) - 14) * 0.035
         return (score - length_penalty, -abs(len(text) - 5))
 
-    return max(unique_texts, key=rank_text)
+    best_text = max(unique_texts, key=rank_text)
+    matched = match_clan_member(best_text, clan_hint=clan_hint, members=members)
+    best = matched.get("best") or {}
+    if float(best.get("score") or 0) < MIN_CANDIDATE_SCORE:
+        return ""
+    return best_text
 
 
 def extract_raw_names_from_slots(image_bytes: bytes, members: list[ClanMember], clan_hint: str | None) -> list[RawName]:
