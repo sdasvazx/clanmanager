@@ -218,6 +218,18 @@ async function recognizePartyPanelsOnServer(file, members = [], options = {}) {
   };
 }
 
+function isWeakServerOcrResult(result) {
+  if (!result?.serverOcr) return false;
+  const confirmedCount = result.names?.length || 0;
+  const reviewCount = result.ambiguous?.length || 0;
+  const rawNameCount = Number(result.debug?.raw_names || 0);
+  const anchorCount = Number(result.debug?.anchors || 0);
+  if (confirmedCount >= 8) return false;
+  if (confirmedCount + reviewCount < 5) return true;
+  if (anchorCount >= 8 && rawNameCount < 5) return true;
+  return confirmedCount < 3;
+}
+
 function extractOcrNames(text, registeredMembers = []) {
   const ocrKey = normalizeForOcrMatch;
   const memberByNormalized = new Map(registeredMembers.flatMap((m) => [...new Set([normalize(m.characterName), ocrKey(m.characterName)])].map((key) => [key, m.characterName])));
@@ -2058,6 +2070,10 @@ function Attendance({ member, setPage }) {
           });
           const overall = Math.round(((index + 1) / row.files.length) * 100);
           updateBatchRow(key, { progress: overall });
+          if (isWeakServerOcrResult(result)) {
+            updateBatchRow(key, { message: '서버 OCR 결과가 적어 기기 OCR로 다시 확인합니다.' });
+            result = null;
+          }
         } catch (serverErr) {
           updateBatchRow(key, { message: `서버 OCR 실패, 기기 OCR로 전환합니다: ${serverErr.message}` });
         }

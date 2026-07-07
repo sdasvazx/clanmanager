@@ -201,16 +201,48 @@ def match_clan_member(raw_name: str, clan_hint: str | None = None, limit: int = 
     }
 
 
-def preprocess_image(image_bytes: bytes) -> np.ndarray:
+def crop_roster_content(image: np.ndarray) -> np.ndarray:
+    """Trim wide dark/white margins before OCR.
+
+    Chat apps often add padding around the roster screenshot. Tesseract then
+    spends most of its attention on empty space and the party grid inference is
+    skewed.  This keeps the visible roster rectangle while falling back to the
+    original image if no safe crop is found.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    mask = gray > 18
+    rows = np.where(mask.any(axis=1))[0]
+    cols = np.where(mask.any(axis=0))[0]
+    if rows.size == 0 or cols.size == 0:
+        return image
+
+    y1, y2 = int(rows[0]), int(rows[-1])
+    x1, x2 = int(cols[0]), int(cols[-1])
+    height, width = image.shape[:2]
+    pad_y = max(4, int((y2 - y1 + 1) * 0.025))
+    pad_x = max(4, int((x2 - x1 + 1) * 0.025))
+    y1 = max(0, y1 - pad_y)
+    y2 = min(height - 1, y2 + pad_y)
+    x1 = max(0, x1 - pad_x)
+    x2 = min(width - 1, x2 + pad_x)
+
+    cropped = image[y1:y2 + 1, x1:x2 + 1]
+    if cropped.shape[0] < height * 0.25 or cropped.shape[1] < width * 0.25:
+        return image
+    return cropped
+
+
+def preprocess_image(image_bytes: bytes) -> list[np.ndarray]:
     image_array = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError("이미지 파일을 읽을 수 없습니다.")
 
-    scaled = cv2.resize(image, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+    image = crop_roster_content(image)
+    scaled = cv2.resize(image, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
 
-    denoised = cv2.fastNlMeansDenoising(gray, None, h=8, templateWindowSize=7, searchWindowSize=21)
+    denoised = cv2.fastNlMeansDenoising(gray, None, h=7, templateWindowSize=7, searchWindowSize=21)
     blur = cv2.GaussianBlur(denoised, (0, 0), 1.2)
     sharpened = cv2.addWeighted(denoised, 1.75, blur, -0.75, 0)
 
@@ -224,7 +256,10 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
         7,
     )
     kernel = np.ones((1, 1), np.uint8)
-    return cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    inverted = cv2.bitwise_not(binary)
+    contrast = cv2.convertScaleAbs(sharpened, alpha=1.6, beta=18)
+    return [binary, inverted, contrast]
 
 
 def run_tesseract_boxes(image: np.ndarray) -> list[OcrBox]:
@@ -253,6 +288,22 @@ def run_tesseract_boxes(image: np.ndarray) -> list[OcrBox]:
         h = int(data["height"][index])
         boxes.append(OcrBox(text=text, x1=x, y1=y, x2=x + w, y2=y + h, conf=conf))
     return boxes
+
+
+def run_tesseract_boxes_variants(images: list[np.ndarray]) -> list[OcrBox]:
+    """Run OCR on a few cheap visual variants and keep the best boxes.
+
+    This is still one server request, but it protects against cases where
+    Tesseract only likes inverted or contrast-boosted Discord screenshots.
+    """
+    merged: dict[tuple[str, int, int], OcrBox] = {}
+    for image in images:
+        for box in run_tesseract_boxes(image):
+            key = (box.text, round(box.x1 / 12), round(box.y1 / 12))
+            current = merged.get(key)
+            if current is None or box.conf > current.conf:
+                merged[key] = box
+    return list(merged.values())
 
 
 def is_level_box(box: OcrBox) -> bool:
@@ -358,9 +409,9 @@ def extract_raw_names_from_boxes(boxes: list[OcrBox], image_shape: tuple[int, in
 
 def analyze_image(image_bytes: bytes, clan_hint: str | None, members_json: str | None = None) -> dict[str, Any]:
     members = parse_members_json(members_json)
-    processed = preprocess_image(image_bytes)
-    boxes = run_tesseract_boxes(processed)
-    raw_names = extract_raw_names_from_boxes(boxes, processed.shape)
+    processed_variants = preprocess_image(image_bytes)
+    boxes = run_tesseract_boxes_variants(processed_variants)
+    raw_names = extract_raw_names_from_boxes(boxes, processed_variants[0].shape)
 
     confirmed = []
     candidates = []
