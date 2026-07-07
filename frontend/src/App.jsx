@@ -187,6 +187,23 @@ async function recognizePartyPanelsOnServer(file, members = [], options = {}) {
   if (!response.ok) throw new Error(body.detail || body.message || '서버 OCR 처리에 실패했습니다.');
 
   const memberByName = new Map(members.map((member) => [normalize(member.characterName), member]));
+  if (Array.isArray(body.results)) {
+    const names = body.results
+      .flatMap((partyResult) => (partyResult.nicknames || []).map((name) => ({
+        name,
+        positions: [Number(partyResult.party || 99)].filter(Boolean),
+      })))
+      .filter((item) => item.name);
+    const dominantClan = inferDominantClanFromNames(names.map((item) => item.name), members) || options.clanHint || '';
+    return {
+      names,
+      ambiguous: [],
+      dominantClan,
+      appliedCorrections: [],
+      serverOcr: true,
+      debug: { provider: 'openai-vision', raw: body },
+    };
+  }
   const names = (body.confirmed || [])
     .map((item) => ({
       name: item.name,
