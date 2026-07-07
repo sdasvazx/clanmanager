@@ -142,6 +142,13 @@ def normalize_text(value: str) -> str:
     return re.sub(r"[^0-9A-Za-z가-힣]", "", value)
 
 
+def normalize_text(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value or "")
+    value = re.sub(r"\s+", "", value)
+    value = value.replace("|", "I").replace("!", "I")
+    return re.sub(r"[^0-9A-Za-z\uac00-\ud7a3]", "", value)
+
+
 def normalize_for_similarity(value: str) -> str:
     text = normalize_text(value).lower()
     replacements = {
@@ -354,6 +361,21 @@ def clean_name_text(value: str) -> str:
     return normalize_text(value)
 
 
+def process_slot_ocr(slot_img: np.ndarray, psm: int = 7) -> str:
+    """OCR only the nickname area of a single character slot."""
+    h, w = slot_img.shape[:2]
+    if h == 0 or w == 0:
+        return ""
+
+    resized = cv2.resize(slot_img, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    config = f"--oem 1 --psm {psm} -c preserve_interword_spaces=1"
+    text = pytesseract.image_to_string(thresh, lang=OCR_LANG, config=config)
+    return clean_name_text(text)
+
+
 def is_noise_ocr_name(value: str) -> bool:
     text = normalize_text(value)
     if not text:
@@ -361,6 +383,23 @@ def is_noise_ocr_name(value: str) -> bool:
     if len(text) <= 1:
         return True
     has_korean = bool(re.search(r"[가-힣]", text))
+    if len(text) <= 2 and not has_korean:
+        return True
+    if re.fullmatch(r"[A-Za-z0-9]{1,3}", text) and not has_korean:
+        return True
+    digits = sum(ch.isdigit() for ch in text)
+    if digits and digits >= max(2, len(text) * 0.45):
+        return True
+    return False
+
+
+def is_noise_ocr_name(value: str) -> bool:
+    text = normalize_text(value)
+    if not text:
+        return True
+    if len(text) <= 1:
+        return True
+    has_korean = bool(re.search(r"[\uac00-\ud7a3]", text))
     if len(text) <= 2 and not has_korean:
         return True
     if re.fullmatch(r"[A-Za-z0-9]{1,3}", text) and not has_korean:
@@ -510,9 +549,14 @@ def derive_party_panels_from_anchors(image: np.ndarray) -> list[PartyPanel]:
     return panels
 
 
+def find_party_panels_by_anchors(image: np.ndarray) -> list[PartyPanel]:
+    """Public cyan-anchor panel detector used by the attendance OCR pipeline."""
+    return derive_party_panels_from_anchors(image)
+
+
 def split_party_slots(image: np.ndarray) -> list[SlotCrop]:
     """Split by cyan party-number anchors, then by five character slots."""
-    panels = derive_party_panels_from_anchors(image)
+    panels = find_party_panels_by_anchors(image)
     slots: list[SlotCrop] = []
 
     for party_panel in panels:
@@ -543,6 +587,10 @@ def split_party_slots(image: np.ndarray) -> list[SlotCrop]:
 
 def best_text_for_slot(slot: SlotCrop, members: list[ClanMember], clan_hint: str | None) -> str:
     texts: list[str] = []
+    for psm in (7, 8):
+        text = process_slot_ocr(slot.image, psm=psm)
+        if text and not is_noise_ocr_name(text):
+            texts.append(text)
     for variant in make_slot_ocr_variants(slot.image):
         for psm in (7, 8):
             text = run_tesseract_text(variant, psm=psm)
