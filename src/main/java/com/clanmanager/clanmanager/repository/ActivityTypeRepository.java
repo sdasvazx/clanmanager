@@ -13,4 +13,8 @@ public interface ActivityTypeRepository extends JpaRepository<ActivityType, Long
     Optional<ActivityType> findByTypeName(String typeName);
 
     List<ActivityType> findByActiveTrueOrderByActivityTypeIdAsc();
+
+    List<ActivityType> findByActiveTrueOrderByDisplayOrderAscActivityTypeIdAsc();
+
+    List<ActivityType> findAllByOrderByDisplayOrderAscActivityTypeIdAsc();
 }

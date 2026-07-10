@@ -258,23 +258,31 @@ public class BossParticipationController {
         if (compact.contains("\uB9C8\uC288\uBBF8\uB4DC") || compact.contains("\uB9C8\uC288")) {
             return activityTypeRepository.findByTypeName("\uB9C8\uC288\uBBF8\uB4DC");
         }
+        if (compact.contains("소수쟁")) {
+            return activityTypeRepository.findByTypeName("소수쟁");
+        }
         if (compact.contains("\uD074\uB79C\uC784\uBB34") || compact.contains("\uC784\uBB34")) {
             return activityTypeRepository.findByTypeName("\uD074\uB79C\uC784\uBB34");
         }
         if (compact.contains("\uC218\uD638")) {
-            return activityTypeRepository.findByTypeName("\uC218\uD638");
+            return activityTypeRepository.findByTypeName("클랜수호")
+                    .or(() -> activityTypeRepository.findByTypeName("\uC218\uD638"));
         }
         if (compact.contains("\uC7C1\uD0C8")) {
-            return activityTypeRepository.findByTypeName("\uC7C1\uD0C8\uC804");
+            return activityTypeRepository.findByTypeName("전초전")
+                    .or(() -> activityTypeRepository.findByTypeName("\uC7C1\uD0C8\uC804"));
         }
         if (compact.contains("13")) {
-            return activityTypeRepository.findByTypeName("13\uC2DC \uBCF4\uC2A4");
+            return activityTypeRepository.findByTypeName("13시 (2성)")
+                    .or(() -> activityTypeRepository.findByTypeName("13\uC2DC \uBCF4\uC2A4"));
         }
         if (compact.contains("17")) {
-            return activityTypeRepository.findByTypeName("17\uC2DC \uBCF4\uC2A4");
+            return activityTypeRepository.findByTypeName("17시 (1성)")
+                    .or(() -> activityTypeRepository.findByTypeName("17\uC2DC \uBCF4\uC2A4"));
         }
         if (compact.contains("21")) {
-            return activityTypeRepository.findByTypeName("21\uC2DC \uBCF4\uC2A4");
+            return activityTypeRepository.findByTypeName("21시 (2성)")
+                    .or(() -> activityTypeRepository.findByTypeName("21\uC2DC \uBCF4\uC2A4"));
         }
         return Optional.empty();
     }

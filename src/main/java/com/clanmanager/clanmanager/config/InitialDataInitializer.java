@@ -9,6 +9,7 @@ import com.clanmanager.clanmanager.repository.ActivityScheduleRepository;
 import com.clanmanager.clanmanager.repository.ActivityTypeRepository;
 import com.clanmanager.clanmanager.repository.ClanVaultRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
+import com.clanmanager.clanmanager.service.ActivitySettingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -23,31 +24,28 @@ import java.util.List;
 @RequiredArgsConstructor
 public class InitialDataInitializer implements ApplicationRunner {
 
-    private final ActivityTypeRepository activityTypeRepository;
     private final ActivityScheduleRepository activityScheduleRepository;
+    private final ActivityTypeRepository activityTypeRepository;
     private final ClanVaultRepository clanVaultRepository;
     private final MemberRepository memberRepository;
+    private final ActivitySettingService activitySettingService;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        ActivityType boss13 = createType("13\uC2DC \uBCF4\uC2A4", ActivityCategory.BOSS);
-        ActivityType boss17 = createType("17\uC2DC \uBCF4\uC2A4", ActivityCategory.BOSS);
-        ActivityType boss21 = createType("21\uC2DC \uBCF4\uC2A4", ActivityCategory.BOSS);
-        ActivityType enoch = createType("\uC5D0\uB178\uD06C", ActivityCategory.BOSS);
-        ActivityType mashmid = createType("\uB9C8\uC288\uBBF8\uB4DC", ActivityCategory.BOSS);
-        ActivityType elite = createType("\uC815\uC608\uB358\uC804\uBCF4\uC2A4", ActivityCategory.ELITE_DUNGEON_BOSS);
-        createType("\uD074\uB79C\uC784\uBB34", ActivityCategory.CLAN_MISSION);
-        createType("\uC218\uD638", ActivityCategory.GUARDIAN);
-        createType("\uC7C1\uD0C8\uC804", ActivityCategory.CONQUEST);
+        activitySettingService.ensureDefaultSettings();
+
+        ActivityType boss13 = findType("13시 (2성)");
+        ActivityType boss17 = findType("17시 (1성)");
+        ActivityType boss21 = findType("21시 (2성)");
+        ActivityType enoch = findType("에노크");
+        ActivityType mashmid = findType("마슈미드");
 
         createDailySchedule(boss13, LocalTime.of(13, 0));
         createDailySchedule(boss17, LocalTime.of(17, 0));
         createDailySchedule(boss21, LocalTime.of(21, 0));
         createSchedule(enoch, DayOfWeek.SATURDAY, LocalTime.of(22, 0));
         createSchedule(mashmid, DayOfWeek.SATURDAY, LocalTime.of(22, 0));
-        createSchedule(elite, DayOfWeek.WEDNESDAY, LocalTime.of(21, 30));
-        createSchedule(elite, DayOfWeek.FRIDAY, LocalTime.of(21, 30));
 
         deactivateObsoleteTimedTypes();
         deactivateInvalidSchedules();
@@ -55,10 +53,9 @@ public class InitialDataInitializer implements ApplicationRunner {
         promoteFirstMemberToAdminIfNeeded();
     }
 
-    private ActivityType createType(String typeName, ActivityCategory category) {
+    private ActivityType findType(String typeName) {
         return activityTypeRepository.findByTypeName(typeName)
-                .orElseGet(() -> activityTypeRepository.save(ActivityType.builder()
-                        .typeName(typeName).category(category).score(1).active(true).build()));
+                .orElseThrow(() -> new IllegalStateException("기본 활동을 찾을 수 없습니다: " + typeName));
     }
 
     private void createDailySchedule(ActivityType type, LocalTime time) {

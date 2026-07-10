@@ -25,12 +25,13 @@ const menu = [
   ['admin', '관', '관리자 설정'],
 ];
 
-const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball', 'spec-history']);
+const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball', 'spec-history', 'activity-settings']);
 
 const adminCards = [
-  ['✓', '출석체크/보스설정', 'mint', 'attendance'],
+  ['✓', '출석체크', 'mint', 'attendance'],
+  ['♕', '출석보스 설정', 'red', 'activity-settings'],
   ['♙', '클랜원/전투력 관리', 'blue', 'member-admin'],
-  ['⚙', '가중치 설정', 'orange', 'participation'],
+  ['⚙', '가중치 설정', 'orange', 'activity-settings'],
   ['✿', '기타 설정', 'indigo', 'admin'],
   ['▣', '스펙/장비 수정기록', 'amber', 'spec-history'],
   ['▥', '참여율 선택조회', 'cyan', 'participation'],
@@ -41,8 +42,9 @@ const adminCards = [
 const favoriteStorageKey = (member) => `clanmanager:favorites:${member?.memberId || 'guest'}`;
 const pageMetaList = [
   ...menu.map(([id, icon, label]) => ({ id, icon, label })),
-  { id: 'attendance', icon: '✓', label: '출석체크/보스설정' },
+  { id: 'attendance', icon: '✓', label: '출석체크' },
   { id: 'participation', icon: '가', label: '참여율/가중치 설정' },
+  { id: 'activity-settings', icon: '보', label: '출석보스 설정' },
   { id: 'member-admin', icon: '관', label: '클랜원/전투력 관리' },
   { id: 'pinball', icon: '핀', label: '핀볼' },
   { id: 'spec-history', icon: '스', label: '스펙/장비 기록' },
@@ -1224,8 +1226,15 @@ function Participation({ member, setPage }) {
     ...row,
     count: row.attendanceCount ?? row.count ?? 0,
     rate: row.participationRate ?? row.rate ?? 0,
+    contributionRate: row.contributionRate ?? row.rate ?? 0,
+    baseParticipationScore: row.baseParticipationScore ?? 0,
+    absencePenaltyScore: row.absencePenaltyScore ?? 0,
+    minorityBonusScore: row.minorityBonusScore ?? 0,
+    finalParticipationScore: row.finalParticipationScore ?? 0,
+    activityCounts: row.activityCounts || {},
     topCount: row.topAttendanceCount ?? participationSummary?.topAttendanceCount ?? 0,
   })), [participationSummary]);
+  const activityColumns = participationSummary?.activityColumns || [];
 
   const groups = groupByClan(rows);
   const searchedMember = useMemo(() => {
@@ -1374,9 +1383,9 @@ function Participation({ member, setPage }) {
           <div className="clan-ranking-block" key={clan}>
             <div className="section-heading"><h2>{clan}</h2><span className="result-count">{list.length}명</span></div>
             <div className="table-wrap">
-              <table className="data-table participation-ranking-table">
-                <thead><tr><th>순위</th><th>닉네임</th><th>참석</th><th>참여율</th><th>기여율</th><th>상세</th></tr></thead>
-                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td>{m.count}회</td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.rate}%</td><td><button type="button" className="mini-button" onClick={() => openParticipationDetail(m)}>상세정보</button></td></tr>)}</tbody>
+              <table className="data-table participation-ranking-table wide">
+                <thead><tr><th>순위</th><th>닉네임</th><th>클랜</th><th>클래스</th><th>레벨</th><th>참여횟수</th>{activityColumns.map((activity) => <th key={activity.activityTypeId}>{activity.activityName}</th>)}<th>기본점수</th><th>미참여 페널티</th><th>소수쟁 가산점</th><th>최종점수</th><th>참여율</th><th>기여율</th><th>상세</th></tr></thead>
+                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td><span className="mini-clan-pill">{m.guildName || '-'}</span></td><td>{m.characterClass || '-'}</td><td>{m.level ?? '-'}</td><td>{m.count}회</td>{activityColumns.map((activity) => <td key={activity.activityTypeId} className="blue-text">{m.activityCounts?.[activity.activityTypeId] || 0}회</td>)}<td>{m.baseParticipationScore}점</td><td className="red-text">-{m.absencePenaltyScore}점</td><td>{m.minorityBonusScore}점</td><td><b>{m.finalParticipationScore}점</b></td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.contributionRate}%</td><td><button type="button" className="mini-button" onClick={() => openParticipationDetail(m)}>상세정보</button></td></tr>)}</tbody>
               </table>
             </div>
           </div>
@@ -3535,6 +3544,186 @@ function MemberAdminPage({ member, setPage, onMemberUpdate }) {
   return <><AdminBackButton setPage={setPage} /><Admin member={member} setPage={setPage} onMemberUpdate={onMemberUpdate} memberOnly /></>;
 }
 
+function ActivitySettingsPage({ member, setPage }) {
+  const emptyRow = () => ({
+    activityTypeId: null,
+    activityName: '',
+    participationScore: 1,
+    penaltyEnabled: false,
+    absencePenaltyScore: 0,
+    displayOrder: 1,
+    active: true,
+  });
+  const normalizeRows = (rows) => (Array.isArray(rows) ? rows : []).map((row, index) => ({
+    activityTypeId: row.activityTypeId ?? null,
+    activityName: row.activityName ?? row.typeName ?? '',
+    participationScore: Number(row.participationScore ?? row.score ?? 0),
+    penaltyEnabled: !!row.penaltyEnabled,
+    absencePenaltyScore: Number(row.absencePenaltyScore ?? 0),
+    displayOrder: Number(row.displayOrder ?? index + 1),
+    active: row.active !== false,
+  })).sort((a, b) => a.displayOrder - b.displayOrder);
+  const [rows, setRows] = useState([]);
+  const [original, setOriginal] = useState('[]');
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const dirty = JSON.stringify(rows) !== original;
+
+  const load = () => request('/activities/settings')
+    .then((data) => {
+      const normalized = normalizeRows(data);
+      setRows(normalized);
+      setOriginal(JSON.stringify(normalized));
+    })
+    .catch((err) => setMessage(err.message));
+
+  useEffect(() => { load(); }, []);
+
+  const orderedRows = rows.map((row, index) => ({ ...row, displayOrder: index + 1 }));
+  const updateRow = (index, patch) => {
+    setRows((prev) => prev.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
+  };
+  const moveRow = (index, direction) => {
+    setRows((prev) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  };
+  const addRow = () => setRows((prev) => [...prev, { ...emptyRow(), displayOrder: prev.length + 1 }]);
+  const removeRow = (index) => setRows((prev) => prev.map((row, rowIndex) => (rowIndex === index ? { ...row, active: false } : row)));
+  const restoreRow = (index) => setRows((prev) => prev.map((row, rowIndex) => (rowIndex === index ? { ...row, active: true } : row)));
+
+  const validate = () => {
+    const activeRows = orderedRows.filter((row) => row.active);
+    const names = new Set();
+    for (const row of activeRows) {
+      const name = row.activityName.trim();
+      if (!name) return '빈 활동명은 저장할 수 없습니다.';
+      const key = name.toLowerCase();
+      if (names.has(key)) return `중복 활동명은 저장할 수 없습니다: ${name}`;
+      names.add(key);
+      if (Number(row.participationScore) < 0 || Number(row.absencePenaltyScore) < 0) return '점수는 음수로 저장할 수 없습니다.';
+    }
+    if (!activeRows.length) return '활동은 1개 이상 필요합니다.';
+    return '';
+  };
+
+  const save = async () => {
+    const error = validate();
+    if (error) {
+      setMessage(error);
+      return;
+    }
+    setSaving(true);
+    setMessage('');
+    try {
+      const saved = await request('/activities/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          adminMemberId: member.memberId,
+          activities: orderedRows.map((row) => ({
+            ...row,
+            activityName: row.activityName.trim(),
+            participationScore: Number(row.participationScore || 0),
+            absencePenaltyScore: Number(row.absencePenaltyScore || 0),
+          })),
+        }),
+      });
+      const normalized = normalizeRows(saved);
+      setRows(normalized);
+      setOriginal(JSON.stringify(normalized));
+      setMessage('출석보스 설정을 저장했습니다. 참여율 조회 화면에 바로 반영됩니다.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const goBack = () => {
+    if (dirty && !window.confirm('저장하지 않은 변경사항이 있습니다. 관리자 설정으로 돌아갈까요?')) return;
+    setPage('admin');
+  };
+
+  const importCsv = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const lines = String(reader.result || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const parsed = lines.map((line, index) => {
+        const [activityName, participationScore = '1', penaltyEnabled = 'false', absencePenaltyScore = '0'] = line.split(',').map((part) => part.trim());
+        return {
+          ...emptyRow(),
+          activityName,
+          participationScore: Number(participationScore || 0),
+          penaltyEnabled: ['true', '1', 'y', 'yes', 'on', '적용'].includes((penaltyEnabled || '').toLowerCase()),
+          absencePenaltyScore: Number(absencePenaltyScore || 0),
+          displayOrder: index + 1,
+          active: true,
+        };
+      }).filter((row) => row.activityName && row.activityName !== '보스/콘텐츠명');
+      if (parsed.length) setRows(parsed);
+      else setMessage('CSV에서 불러올 활동을 찾지 못했습니다.');
+    };
+    reader.readAsText(file, 'utf-8');
+  };
+
+  return (
+    <>
+      <div className="activity-settings-shell">
+        <div className="activity-settings-header">
+          <button type="button" className="round-back-button" onClick={goBack}>←</button>
+          <div>
+            <h1>출석보스 설정</h1>
+            <p>참여율과 참여점수 계산에 사용되는 활동 항목을 관리합니다.</p>
+          </div>
+          <div className="activity-settings-actions">
+            <label className="green-button csv-button">CSV 불러오기<input type="file" accept=".csv,text/csv" onChange={importCsv} /></label>
+            <button type="button" className="green-button" disabled={saving} onClick={save}>{saving ? '저장 중...' : '저장'}</button>
+          </div>
+        </div>
+
+        <section className="white-card activity-settings-card">
+          <div className="info-banner">
+            <b>참여점수/미참여 페널티를 일정별로 설정합니다.</b>
+            <span>페널티 토글을 켜면 해당 활동 미참여 시 입력한 점수만큼 참여점수에서 차감됩니다.</span>
+          </div>
+          <div className="activity-setting-table">
+            <div className="activity-setting-head">
+              <span>순서</span><span>보스/콘텐츠명</span><span>참여점수</span><span>페널티 적용 여부</span><span>미참여 페널티 점수</span><span>삭제</span>
+            </div>
+            {orderedRows.map((row, index) => (
+              <div key={`${row.activityTypeId || 'new'}-${index}`} className={row.active ? 'activity-setting-row' : 'activity-setting-row inactive'}>
+                <div className="order-cell">
+                  <span className="order-badge">≡ {index + 1}</span>
+                  <button type="button" onClick={() => moveRow(index, -1)} disabled={index === 0}>↑</button>
+                  <button type="button" onClick={() => moveRow(index, 1)} disabled={index === rows.length - 1}>↓</button>
+                </div>
+                <input value={row.activityName} onChange={(e) => updateRow(index, { activityName: e.target.value })} placeholder="보스/콘텐츠명" disabled={!row.active} />
+                <input type="number" min="0" value={row.participationScore} onChange={(e) => updateRow(index, { participationScore: e.target.value })} disabled={!row.active} />
+                <label className="switch-label">
+                  <input type="checkbox" checked={!!row.penaltyEnabled} onChange={(e) => updateRow(index, { penaltyEnabled: e.target.checked })} disabled={!row.active} />
+                  <span>{row.penaltyEnabled ? 'ON' : 'OFF'}</span>
+                </label>
+                <input type="number" min="0" value={row.absencePenaltyScore} onChange={(e) => updateRow(index, { absencePenaltyScore: e.target.value })} disabled={!row.active || !row.penaltyEnabled} />
+                {row.active ? <button type="button" className="danger-mini" onClick={() => removeRow(index)}>×</button> : <button type="button" className="mini-button" onClick={() => restoreRow(index)}>복구</button>}
+              </div>
+            ))}
+          </div>
+          <button type="button" className="outline-button no-margin" onClick={addRow}>+ 새 활동 행 추가</button>
+          <p className="subtle">활동명 문자열이 아니라 저장된 활동 ID 기준으로 계산합니다. 삭제한 활동은 비활성 처리되어 기존 출석 데이터는 유지됩니다.</p>
+          {message && <p className="vault-message">{message}</p>}
+        </section>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const [member, setMember] = useState(() => JSON.parse(sessionStorage.getItem('clanMember') || 'null'));
   const [page, setPage] = useState('lobby');
@@ -3567,6 +3756,7 @@ export default function App() {
     : page === 'collection' ? <CollectionPage member={member} />
     : page === 'item-request' ? <ItemRequestPage member={member} />
     : page === 'spec-history' ? <SpecHistoryPage setPage={setPage} />
+    : page === 'activity-settings' ? <ActivitySettingsPage member={member} setPage={setPage} />
     : page === 'roster' ? <RosterScanAdmin setPage={setPage} />
     : page === 'pinball' ? <PinballPage setPage={setPage} />
     : page === 'mypage' ? <MyPage member={member} setPage={setPage} favoritePages={visibleFavoritePages} />

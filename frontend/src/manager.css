@@ -287,6 +287,178 @@
   color: #64748b;
 }
 
+.activity-settings-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.activity-settings-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, .08);
+}
+
+.activity-settings-header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.activity-settings-header p {
+  margin: 5px 0 0;
+  color: #64748b;
+}
+
+.round-back-button {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #eef4fb;
+  color: #475569;
+  font-size: 1.1rem;
+}
+
+.activity-settings-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.green-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: #16a34a;
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.green-button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.csv-button input {
+  display: none;
+}
+
+.activity-settings-card {
+  display: grid;
+  gap: 16px;
+}
+
+.activity-setting-table {
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+}
+
+.activity-setting-head,
+.activity-setting-row {
+  display: grid;
+  grid-template-columns: 130px minmax(220px, 1fr) 140px 170px 170px 80px;
+  gap: 10px;
+  align-items: center;
+  min-width: 920px;
+  padding: 10px 14px;
+}
+
+.activity-setting-head {
+  background: #f1f5f9;
+  color: #475569;
+  font-size: .86rem;
+  font-weight: 900;
+}
+
+.activity-setting-row {
+  border-top: 1px solid #e8eef6;
+  background: #fff;
+}
+
+.activity-setting-row.inactive {
+  background: #f8fafc;
+  opacity: .62;
+}
+
+.activity-setting-row input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd8e8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.order-cell {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.order-badge {
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: #eef4fb;
+  color: #334155;
+  font-size: .82rem;
+  font-weight: 900;
+}
+
+.order-cell button,
+.danger-mini {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #edf4ff;
+  color: #2563eb;
+  font-weight: 900;
+}
+
+.danger-mini {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.switch-label {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-weight: 900;
+}
+
+.switch-label input {
+  width: auto;
+  accent-color: #fb7185;
+}
+
+.mini-clan-pill {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #2563eb;
+  font-size: .78rem;
+  font-weight: 900;
+}
+
+.participation-ranking-table.wide {
+  min-width: 1180px;
+}
+
 .ranking-footnote {
   margin: 13px 0 0;
   color: #64748b;
