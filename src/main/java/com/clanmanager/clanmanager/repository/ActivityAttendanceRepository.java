@@ -7,6 +7,7 @@ import com.clanmanager.clanmanager.entity.Member;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -34,4 +35,24 @@ public interface ActivityAttendanceRepository extends JpaRepository<ActivityAtte
             order by count(a) desc
             """)
     List<Long> findAttendanceCountsByMember(Pageable pageable);
+
+    @Query("""
+            select a.member.memberId as memberId, count(a) as attendanceCount
+            from ActivityAttendance a
+            where a.status = com.clanmanager.clanmanager.entity.AttendanceStatus.ATTENDED
+            and a.member.active = true
+            and (:startDate is null or a.attendanceDate >= :startDate)
+            and (:endDate is null or a.attendanceDate < :endDate)
+            group by a.member.memberId
+            """)
+    List<MemberAttendanceCountProjection> findAttendanceCountsByPeriod(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
+
+    interface MemberAttendanceCountProjection {
+        Long getMemberId();
+
+        Long getAttendanceCount();
+    }
 }

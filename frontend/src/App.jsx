@@ -1494,39 +1494,28 @@ function NoticePanel({ member, notices, onReload }) {
 function Lobby({ member, setPage, favoritePages = [] }) {
   const [notices, setNotices] = useState([]);
   const [members, setMembers] = useState([]);
-  const [attendances, setAttendances] = useState([]);
+  const [participationSummary, setParticipationSummary] = useState(null);
   const [message, setMessage] = useState('');
   const load = async () => {
-    const [noticeResult, memberResult, attendanceResult] = await Promise.allSettled([
+    const [noticeResult, memberResult, participationResult] = await Promise.allSettled([
       request('/notices'),
       request('/members'),
-      request('/attendances'),
+      request('/participation'),
     ]);
 
     if (noticeResult.status === 'fulfilled') setNotices(Array.isArray(noticeResult.value) ? noticeResult.value : []);
     if (memberResult.status === 'fulfilled') setMembers(Array.isArray(memberResult.value) ? memberResult.value : []);
-    if (attendanceResult.status === 'fulfilled') setAttendances(Array.isArray(attendanceResult.value) ? attendanceResult.value : []);
+    if (participationResult.status === 'fulfilled') setParticipationSummary(participationResult.value || null);
 
     const failed = [
       noticeResult.status === 'rejected' ? '공지' : null,
       memberResult.status === 'rejected' ? '클랜원' : null,
-      attendanceResult.status === 'rejected' ? '참여기록' : null,
+      participationResult.status === 'rejected' ? '참여율' : null,
     ].filter(Boolean);
     setMessage(failed.length ? `${failed.join(', ')} 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.` : '');
   };
   useEffect(() => { load(); }, []);
-  const participationRows = useMemo(() => {
-    const counts = new Map();
-    attendances.filter((row) => row.status === 'ATTENDED').forEach((row) => {
-      const memberId = toMemberId(row);
-      if (memberId !== null) counts.set(memberId, (counts.get(memberId) || 0) + 1);
-    });
-    const top = Math.max(0, ...members.map((m) => counts.get(toMemberId(m)) || 0));
-    return members.map((m) => {
-      const count = counts.get(toMemberId(m)) || 0;
-      return { ...m, attendanceCount: count, participationRate: top ? Math.round((count / top) * 1000) / 10 : 0 };
-    }).sort((a, b) => b.attendanceCount - a.attendanceCount || (b.combatPower || 0) - (a.combatPower || 0));
-  }, [members, attendances]);
+  const participationRows = useMemo(() => participationSummary?.rows || [], [participationSummary]);
   const quickActions = [
     ['participation', '참여율 조회'],
     ['payment', '분배 조회'],
@@ -1552,7 +1541,7 @@ function Lobby({ member, setPage, favoritePages = [] }) {
           ))}
         </div>
       </section>
-      <ParticipationRanking rows={participationRows} totalCount={members.length} />
+      <ParticipationRanking rows={participationRows} totalCount={participationSummary?.totalMemberCount ?? members.length} />
     </>
   );
 }
@@ -1645,7 +1634,7 @@ function Metric({ label, value, caption, tone }) { return <div className={`metri
 
 function Participation({ member, setPage }) {
   const [members, setMembers] = useState([]);
-  const [attendances, setAttendances] = useState([]);
+  const [participationSummary, setParticipationSummary] = useState(null);
   const [periodIndex, setPeriodIndex] = useState(getCurrentParticipationPeriodIndex());
   const [periodNames, setPeriodNames] = useState({});
   const [editingPeriodName, setEditingPeriodName] = useState('');
@@ -1655,9 +1644,8 @@ function Participation({ member, setPage }) {
   const [memberBossHistoryLoading, setMemberBossHistoryLoading] = useState(false);
 
   useEffect(() => {
-    Promise.allSettled([request('/members'), request('/attendances'), request('/participation-periods')]).then(([memberResult, attendanceResult, periodResult]) => {
+    Promise.allSettled([request('/members'), request('/participation-periods')]).then(([memberResult, periodResult]) => {
       if (memberResult.status === 'fulfilled') setMembers(Array.isArray(memberResult.value) ? memberResult.value : []);
-      if (attendanceResult.status === 'fulfilled') setAttendances(Array.isArray(attendanceResult.value) ? attendanceResult.value : []);
       if (periodResult.status === 'fulfilled' && Array.isArray(periodResult.value)) {
         setPeriodNames(Object.fromEntries(periodResult.value.map((period) => [period.periodIndex, period.periodName])));
       }
@@ -1673,24 +1661,18 @@ function Participation({ member, setPage }) {
     return Array.from({ length: maxIndex + 1 }, (_, index) => getParticipationPeriod(index));
   }, [periodIndex]);
 
-  const filteredAttendances = useMemo(() => attendances.filter((row) => {
-    if (row.status !== 'ATTENDED') return false;
-    const attendanceDate = row.attendanceDate;
-    return attendanceDate >= period.start && attendanceDate < period.end;
-  }), [attendances, period.start, period.end]);
+  useEffect(() => {
+    request(`/participation?startDate=${period.start}&endDate=${period.end}`)
+      .then((summary) => setParticipationSummary(summary || null))
+      .catch(() => setParticipationSummary(null));
+  }, [period.start, period.end]);
 
-  const rows = useMemo(() => {
-    const counts = new Map();
-    filteredAttendances.forEach((row) => {
-      const memberId = toMemberId(row);
-      if (memberId !== null) counts.set(memberId, (counts.get(memberId) || 0) + 1);
-    });
-    const top = Math.max(0, ...members.map((m) => counts.get(toMemberId(m)) || 0));
-    return members.map((m) => {
-      const count = counts.get(toMemberId(m)) || 0;
-      return { ...m, count, rate: top ? Math.round((count / top) * 1000) / 10 : 0, topCount: top };
-    }).sort((a, b) => b.count - a.count || (b.combatPower || 0) - (a.combatPower || 0));
-  }, [members, filteredAttendances]);
+  const rows = useMemo(() => (participationSummary?.rows || []).map((row) => ({
+    ...row,
+    count: row.attendanceCount ?? row.count ?? 0,
+    rate: row.participationRate ?? row.rate ?? 0,
+    topCount: row.topAttendanceCount ?? participationSummary?.topAttendanceCount ?? 0,
+  })), [participationSummary]);
 
   const groups = groupByClan(rows);
   const searchedMember = useMemo(() => {
@@ -2782,7 +2764,10 @@ function Attendance({ member, setPage }) {
                   <td>{record.bossDate}</td>
                   <td><TimeBadge value={record.cutTime} /></td>
                   <td><TimeBadge value={record.submittedAt} dateTime /></td>
-                  <td>{record.bossName}</td>
+                  <td>
+                    {record.bossName}
+                    {record.warningMessage && <small className="inline-warning">{record.warningMessage}</small>}
+                  </td>
                   <td><ClanCountBadges record={record} onSelectClan={(clan) => openRoster(record, clan)} /></td>
                   <td><b>{record.score}</b></td>
                   <td><div className="boss-action-buttons"><button className="roster-button" onClick={() => openRoster(record)}>명단보기</button><button className="roster-button roulette-button" onClick={() => copyRouletteNames(record)}>핀볼복사</button></div></td>
@@ -3022,7 +3007,7 @@ function LegacyAttendance({ member }) {
   const [activities, setActivities] = useState([]);
   const [form, setForm] = useState({ attendanceDate: today(), memberId: '', activityTypeId: '', status: 'ATTENDED' });
   const [message, setMessage] = useState('');
-  const load = () => Promise.all([request('/attendances'), request('/members'), request('/activities')]).then(([a, m, t]) => { setRows(a); setMembers(m); setActivities(t); }).catch((err) => setMessage(err.message));
+  const load = () => Promise.all([request('/attendances?limit=300'), request('/members'), request('/activities')]).then(([a, m, t]) => { setRows(a); setMembers(m); setActivities(t); }).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
   const save = async (event) => {
     event.preventDefault();

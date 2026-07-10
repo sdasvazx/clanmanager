@@ -3,6 +3,7 @@ package com.clanmanager.clanmanager.controller;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -25,6 +26,16 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("message", resolveDataIntegrityMessage(exception)));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException exception) {
+        String message = exception.getBindingResult().getFieldErrors()
+                .stream()
+                .findFirst()
+                .map(error -> error.getDefaultMessage() == null ? "입력값을 확인해 주세요." : error.getDefaultMessage())
+                .orElse("입력값을 확인해 주세요.");
+        return ResponseEntity.badRequest().body(Map.of("message", message));
     }
 
     private String resolveDataIntegrityMessage(DataIntegrityViolationException exception) {

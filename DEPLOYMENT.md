@@ -24,6 +24,7 @@ DB_USERNAME=${MYSQLUSER}
 DB_PASSWORD=${MYSQLPASSWORD}
 CORS_ALLOWED_ORIGINS=https://your-frontend-domain.vercel.app,http://localhost:5173
 JPA_SHOW_SQL=false
+JPA_DDL_AUTO=update
 ```
 
 Railway의 MySQL 변수 이름은 프로젝트 생성 방식에 따라 다를 수 있으니, MySQL 서비스의 Variables 탭에서 실제 이름을 확인하세요.

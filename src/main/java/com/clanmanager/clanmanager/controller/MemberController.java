@@ -1,18 +1,20 @@
 package com.clanmanager.clanmanager.controller;
 
 import com.clanmanager.clanmanager.dto.MemberInfoResponseDto;
-import com.clanmanager.clanmanager.entity.AttendanceStatus;
 import com.clanmanager.clanmanager.entity.Member;
 import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.entity.MemberSpecHistory;
-import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.repository.MemberSpecHistoryRepository;
 import com.clanmanager.clanmanager.security.PasswordSupport;
+import com.clanmanager.clanmanager.service.ParticipationService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,16 +35,13 @@ import java.util.Objects;
 public class MemberController {
 
     private final MemberRepository memberRepository;
-    private final ActivityAttendanceRepository attendanceRepository;
     private final MemberSpecHistoryRepository memberSpecHistoryRepository;
+    private final ParticipationService participationService;
 
     @GetMapping("/{memberId}/my-info")
     public MemberInfoResponseDto getMyInfo(@PathVariable Long memberId) {
         Member member = findMember(memberId);
-        long myCount = attendanceRepository.countByMemberAndStatus(member, AttendanceStatus.ATTENDED);
-        long topCount = attendanceRepository.findAttendanceCountsByMember(PageRequest.of(0, 1))
-                .stream().findFirst().orElse(0L);
-        double participationRate = topCount == 0 ? 0.0 : ((double) myCount / topCount) * 100.0;
+        var participation = participationService.getMemberParticipation(memberId, null, null);
 
         return MemberInfoResponseDto.builder()
                 .memberId(member.getMemberId())
@@ -51,9 +50,9 @@ public class MemberController {
                 .guildName(member.getGuildName())
                 .characterClass(member.getCharacterClass())
                 .level(member.getLevel())
-                .myAttendanceCount(myCount)
-                .topAttendanceCount(topCount)
-                .participationRate(Math.round(participationRate * 10) / 10.0)
+                .myAttendanceCount(participation.getAttendanceCount())
+                .topAttendanceCount(participation.getTopAttendanceCount())
+                .participationRate(participation.getParticipationRate())
                 .build();
     }
 
@@ -92,7 +91,7 @@ public class MemberController {
     @PostMapping
     public Member createMember(
             @RequestParam Long adminMemberId,
-            @RequestBody CreateMemberRequest request
+            @Valid @RequestBody CreateMemberRequest request
     ) {
         Member admin = findMember(adminMemberId);
         if (admin.getRole() != MemberRole.ADMIN) {
@@ -145,7 +144,7 @@ public class MemberController {
     public Member updateProfile(
             @PathVariable Long memberId,
             @RequestParam Long adminMemberId,
-            @RequestBody MemberProfileRequest request
+            @Valid @RequestBody MemberProfileRequest request
     ) {
         Member admin = findMember(adminMemberId);
         if (admin.getRole() != MemberRole.ADMIN) {
@@ -193,7 +192,7 @@ public class MemberController {
     }
 
     @PostMapping("/bulk-import")
-    public Map<String, Object> bulkImportMembers(@RequestBody MemberBulkImportRequest request) {
+    public Map<String, Object> bulkImportMembers(@Valid @RequestBody MemberBulkImportRequest request) {
         Member admin = findMember(request.getAdminMemberId());
         if (admin.getRole() != MemberRole.ADMIN) {
             throw new SecurityException("운영자만 클랜원 명단을 일괄 등록할 수 있습니다.");
@@ -252,7 +251,7 @@ public class MemberController {
     @PatchMapping("/{memberId}/password")
     public Map<String, Object> changePassword(
             @PathVariable Long memberId,
-            @RequestBody PasswordChangeRequest request
+            @Valid @RequestBody PasswordChangeRequest request
     ) {
         Member member = findMember(memberId);
         if (request.getCurrentPassword() == null || !PasswordSupport.matches(request.getCurrentPassword(), member.getPassword())) {
@@ -271,7 +270,7 @@ public class MemberController {
     public Map<String, Object> resetPassword(
             @PathVariable Long memberId,
             @RequestParam Long adminMemberId,
-            @RequestBody(required = false) PasswordResetRequest request
+            @Valid @RequestBody(required = false) PasswordResetRequest request
     ) {
         Member admin = findMember(adminMemberId);
         if (admin.getRole() != MemberRole.ADMIN) {
@@ -421,12 +420,18 @@ public class MemberController {
     @Getter
     @Setter
     public static class MemberProfileRequest {
+        @NotBlank(message = "캐릭터 이름을 입력해 주세요.")
+        @Size(max = 50, message = "캐릭터 이름은 50자 이하여야 합니다.")
         private String characterName;
         private Integer combatPower;
+        @Size(max = 30, message = "클랜명은 30자 이하여야 합니다.")
         private String guildName;
+        @Size(max = 50, message = "클래스는 50자 이하여야 합니다.")
         private String characterClass;
         private Integer level;
+        @Size(max = 30, message = "직급은 30자 이하여야 합니다.")
         private String rank;
+        @Size(max = 30, message = "상태는 30자 이하여야 합니다.")
         private String status;
         private Boolean active;
     }
@@ -434,13 +439,20 @@ public class MemberController {
     @Getter
     @Setter
     public static class CreateMemberRequest {
+        @NotBlank(message = "캐릭터 이름을 입력해 주세요.")
+        @Size(max = 50, message = "캐릭터 이름은 50자 이하여야 합니다.")
         private String characterName;
+        @Size(max = 100, message = "초기 비밀번호는 100자 이하여야 합니다.")
         private String initialPassword;
         private Integer combatPower;
+        @Size(max = 30, message = "클랜명은 30자 이하여야 합니다.")
         private String guildName;
+        @Size(max = 50, message = "클래스는 50자 이하여야 합니다.")
         private String characterClass;
         private Integer level;
+        @Size(max = 30, message = "직급은 30자 이하여야 합니다.")
         private String rank;
+        @Size(max = 30, message = "상태는 30자 이하여야 합니다.")
         private String status;
         private Boolean active;
     }
@@ -448,20 +460,27 @@ public class MemberController {
     @Getter
     @Setter
     public static class MemberBulkImportRequest {
+        @NotNull(message = "운영자 정보를 확인할 수 없습니다.")
         private Long adminMemberId;
-        private List<BulkMemberRequest> members;
+        private List<@Valid BulkMemberRequest> members;
     }
 
     @Getter
     @Setter
     public static class BulkMemberRequest {
+        @Size(max = 50, message = "캐릭터 이름은 50자 이하여야 합니다.")
         private String characterName;
+        @Size(max = 100, message = "초기 비밀번호는 100자 이하여야 합니다.")
         private String initialPassword;
         private Integer combatPower;
+        @Size(max = 30, message = "클랜명은 30자 이하여야 합니다.")
         private String guildName;
+        @Size(max = 50, message = "클래스는 50자 이하여야 합니다.")
         private String characterClass;
         private Integer level;
+        @Size(max = 30, message = "직급은 30자 이하여야 합니다.")
         private String rank;
+        @Size(max = 30, message = "상태는 30자 이하여야 합니다.")
         private String status;
         private Boolean active;
         private Boolean admin;
@@ -470,13 +489,17 @@ public class MemberController {
     @Getter
     @Setter
     public static class PasswordChangeRequest {
+        @NotBlank(message = "현재 비밀번호를 입력해 주세요.")
         private String currentPassword;
+        @NotBlank(message = "새 비밀번호를 입력해 주세요.")
+        @Size(max = 100, message = "새 비밀번호는 100자 이하여야 합니다.")
         private String newPassword;
     }
 
     @Getter
     @Setter
     public static class PasswordResetRequest {
+        @Size(min = 4, max = 100, message = "새 비밀번호는 4자 이상 100자 이하여야 합니다.")
         private String newPassword;
     }
 
