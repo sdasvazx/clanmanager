@@ -25,11 +25,24 @@ public class BossParticipationResponseDto {
     private String createdByName;
     private long totalCount;
     private Map<String, Long> clanCounts;
+    private boolean activityTypeMatched;
+    private String activityTypeName;
+    private String warningMessage;
 
     public static BossParticipationResponseDto from(
             BossParticipationRecord record,
             long totalCount,
             Map<String, Long> clanCounts
+    ) {
+        return from(record, totalCount, clanCounts, true, null);
+    }
+
+    public static BossParticipationResponseDto from(
+            BossParticipationRecord record,
+            long totalCount,
+            Map<String, Long> clanCounts,
+            boolean activityTypeMatched,
+            String activityTypeName
     ) {
         return BossParticipationResponseDto.builder()
                 .recordId(record.getRecordId())
@@ -42,6 +55,9 @@ public class BossParticipationResponseDto {
                 .createdByName(record.getCreatedBy() == null ? null : record.getCreatedBy().getCharacterName())
                 .totalCount(totalCount)
                 .clanCounts(clanCounts)
+                .activityTypeMatched(activityTypeMatched)
+                .activityTypeName(activityTypeName)
+                .warningMessage(activityTypeMatched ? null : "보스명이 활동 종류와 매칭되지 않아 참여율에는 반영되지 않았습니다.")
                 .build();
     }
 }

@@ -17,7 +17,14 @@ import com.clanmanager.clanmanager.repository.BossParticipationRecordRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -190,7 +197,14 @@ public class BossParticipationController {
                         LinkedHashMap::new,
                         Collectors.counting()
                 ));
-        return BossParticipationResponseDto.from(record, members.size(), clanCounts);
+        ActivityType activityType = resolveActivityType(record.getBossName());
+        return BossParticipationResponseDto.from(
+                record,
+                members.size(),
+                clanCounts,
+                activityType != null,
+                activityType == null ? null : activityType.getTypeName()
+        );
     }
 
     private NormalizedEntry normalizeEntry(BossParticipationRequestDto.MemberEntry entry) {
@@ -221,34 +235,46 @@ public class BossParticipationController {
 
     private ActivityType resolveActivityType(String bossName) {
         String name = clean(bossName);
-        if (name.contains("13")) {
-            return activityTypeRepository.findByTypeName("13시 보스").orElse(null);
+        if (name.isBlank()) {
+            return null;
         }
-        if (name.contains("17")) {
-            return activityTypeRepository.findByTypeName("17시 보스").orElse(null);
+
+        return activityTypeRepository.findByTypeName(name)
+                .or(() -> findActivityTypeByKeyword(name))
+                .orElse(null);
+    }
+
+    private java.util.Optional<ActivityType> findActivityTypeByKeyword(String bossName) {
+        String compact = bossName.replaceAll("\\s+", "").toLowerCase();
+
+        if (compact.contains("정예")) {
+            return activityTypeRepository.findByTypeName("정예던전보스");
         }
-        if (name.contains("21")) {
-            return activityTypeRepository.findByTypeName("21시 보스").orElse(null);
+        if (compact.contains("에노크")) {
+            return activityTypeRepository.findByTypeName("에노크");
         }
-        if (name.contains("에노크")) {
-            return activityTypeRepository.findByTypeName("에노크").orElse(null);
+        if (compact.contains("마슈미드") || compact.contains("마슈")) {
+            return activityTypeRepository.findByTypeName("마슈미드");
         }
-        if (name.contains("마슈미드")) {
-            return activityTypeRepository.findByTypeName("마슈미드").orElse(null);
+        if (compact.contains("클랜임무") || compact.contains("임무")) {
+            return activityTypeRepository.findByTypeName("클랜임무");
         }
-        if (name.contains("정예")) {
-            return activityTypeRepository.findByTypeName("정예던전보스").orElse(null);
+        if (compact.contains("수호")) {
+            return activityTypeRepository.findByTypeName("수호");
         }
-        if (name.contains("클랜임무")) {
-            return activityTypeRepository.findByTypeName("클랜임무").orElse(null);
+        if (compact.contains("쟁탈")) {
+            return activityTypeRepository.findByTypeName("쟁탈전");
         }
-        if (name.contains("수호")) {
-            return activityTypeRepository.findByTypeName("수호").orElse(null);
+        if (compact.contains("13")) {
+            return activityTypeRepository.findByTypeName("13시 보스");
         }
-        if (name.contains("쟁탈")) {
-            return activityTypeRepository.findByTypeName("쟁탈전").orElse(null);
+        if (compact.contains("17")) {
+            return activityTypeRepository.findByTypeName("17시 보스");
         }
-        return activityTypeRepository.findByTypeName(name).orElse(null);
+        if (compact.contains("21")) {
+            return activityTypeRepository.findByTypeName("21시 보스");
+        }
+        return java.util.Optional.empty();
     }
 
     public record MemberBossParticipationDto(

@@ -21,6 +21,8 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
 
     Optional<Member> findFirstByOrderByMemberIdAsc();
 
+    Optional<Member> findFirstByActiveTrueOrderByMemberIdAsc();
+
     List<Member> findByCharacterNameContaining(String keyword);
 
     List<Member> findByActiveTrueOrderByMemberIdAsc();

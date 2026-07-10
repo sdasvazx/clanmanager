@@ -10,6 +10,8 @@ import java.util.List;
 public class VaultSummaryResponseDto {
 
     private Long balanceDiamonds;
+    private Long reservedDiamonds;
+    private Long availableDiamonds;
     private long depositCount;
     private long distributionCount;
     private List<VaultTransactionResponseDto> recentTransactions;

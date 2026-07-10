@@ -4,13 +4,20 @@ import com.clanmanager.clanmanager.entity.ActivityAttendance;
 import com.clanmanager.clanmanager.entity.ActivityType;
 import com.clanmanager.clanmanager.entity.AttendanceStatus;
 import com.clanmanager.clanmanager.entity.Member;
+import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.ActivityTypeRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -28,18 +35,19 @@ public class AttendanceController {
 
     @PostMapping
     public Map<String, Object> recordAttendance(@RequestBody AttendanceRequest request) {
+        requireAdmin(request.getAdminMemberId());
 
         Member member = memberRepository.findById(request.getMemberId())
-                .orElseThrow(() -> new RuntimeException("회원을 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
 
         ActivityType activityType = activityTypeRepository.findById(request.getActivityTypeId())
-                .orElseThrow(() -> new RuntimeException("활동을 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("활동을 찾을 수 없습니다."));
 
         ActivityAttendance attendance = ActivityAttendance.builder()
                 .member(member)
                 .activityType(activityType)
-                .attendanceDate(request.getAttendanceDate())
-                .status(request.getStatus())
+                .attendanceDate(request.getAttendanceDate() == null ? LocalDate.now() : request.getAttendanceDate())
+                .status(request.getStatus() == null ? AttendanceStatus.ATTENDED : request.getStatus())
                 .build();
 
         ActivityAttendance saved = attendanceRepository.save(attendance);
@@ -51,8 +59,20 @@ public class AttendanceController {
     }
 
     @GetMapping
-    public List<Map<String, Object>> getAllAttendances() {
-        return attendanceRepository.findAll().stream()
+    public List<Map<String, Object>> getAllAttendances(
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) Integer limit
+    ) {
+        List<ActivityAttendance> attendances;
+        if (startDate != null && endDate != null) {
+            attendances = attendanceRepository.findByAttendanceDateBetweenOrderByAttendanceDateDescRecordedAtDesc(startDate, endDate);
+        } else {
+            attendances = attendanceRepository.findAll();
+        }
+
+        return attendances.stream()
+                .limit(normalizeLimit(limit))
                 .map(this::toResponse)
                 .toList();
     }
@@ -100,9 +120,28 @@ public class AttendanceController {
         return response;
     }
 
+    private void requireAdmin(Long adminMemberId) {
+        if (adminMemberId == null) {
+            throw new IllegalArgumentException("운영자 확인 정보가 필요합니다.");
+        }
+        Member admin = memberRepository.findById(adminMemberId)
+                .orElseThrow(() -> new IllegalArgumentException("운영자 확인 정보가 필요합니다."));
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 출석을 직접 등록할 수 있습니다.");
+        }
+    }
+
+    private long normalizeLimit(Integer limit) {
+        if (limit == null || limit <= 0) {
+            return Long.MAX_VALUE;
+        }
+        return Math.min(limit, 2000);
+    }
+
     @Getter
     @Setter
     public static class AttendanceRequest {
+        private Long adminMemberId;
         private Long memberId;
         private Long activityTypeId;
         private LocalDate attendanceDate;

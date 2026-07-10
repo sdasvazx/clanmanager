@@ -104,7 +104,7 @@ public class InitialDataInitializer implements ApplicationRunner {
 
     private void promoteFirstMemberToAdminIfNeeded() {
         if (!memberRepository.existsByRole(MemberRole.ADMIN)) {
-            memberRepository.findFirstByOrderByMemberIdAsc().ifPresent(member -> {
+            memberRepository.findFirstByActiveTrueOrderByMemberIdAsc().ifPresent(member -> {
                 member.setRole(MemberRole.ADMIN);
                 memberRepository.save(member);
             });

@@ -22,8 +22,19 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<Map<String, String>> handleDuplicate(DataIntegrityViolationException exception) {
+    public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(Map.of("message", "이미 같은 날짜의 활동 참석 기록이 존재합니다."));
+                .body(Map.of("message", resolveDataIntegrityMessage(exception)));
+    }
+
+    private String resolveDataIntegrityMessage(DataIntegrityViolationException exception) {
+        String message = String.valueOf(exception.getMostSpecificCause().getMessage()).toLowerCase();
+        if (message.contains("uk_member_activity_date")) {
+            return "이미 같은 날짜의 활동 참석 기록이 존재합니다.";
+        }
+        if (message.contains("character_name") || message.contains("member")) {
+            return "이미 등록된 클랜원 정보가 있거나 입력값이 올바르지 않습니다.";
+        }
+        return "이미 존재하는 데이터이거나 저장할 수 없는 값입니다. 입력 내용을 확인해 주세요.";
     }
 }

@@ -113,7 +113,7 @@ public class ManagementRecordController {
 
     @PatchMapping("/item-requests/{requestId}")
     public ItemRequestDto processItemRequest(@PathVariable Long requestId, @RequestBody ItemRequestProcessRequest request) {
-        Member actor = validateMember(request.getActorMemberId());
+        Member actor = validateAdmin(request.getActorMemberId());
         ItemRequest itemRequest = itemRequestRepository.findById(requestId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 아이템 신청입니다."));
 
@@ -164,7 +164,7 @@ public class ManagementRecordController {
 
     @PostMapping("/collection-items")
     public CollectionItemDto createCollectionItem(@RequestBody CollectionItemRequest request) {
-        Member actor = validateMember(request.getActorMemberId());
+        Member actor = validateAdmin(request.getActorMemberId());
         String itemName = cleanRequired(request.getItemName(), "항목명을 입력해 주세요.");
         if (collectionItemRepository.existsByItemName(itemName)) {
             throw new IllegalArgumentException("이미 등록된 컬렉템 항목입니다.");
@@ -217,7 +217,7 @@ public class ManagementRecordController {
 
     @DeleteMapping("/collection-items/{itemId}")
     public Map<String, Object> deleteCollectionItem(@PathVariable Long itemId, @RequestParam Long actorMemberId) {
-        Member actor = validateMember(actorMemberId);
+        Member actor = validateAdmin(actorMemberId);
         CollectionItem item = collectionItemRepository.findById(itemId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 컬렉템 항목입니다."));
         item.setActive(false);
@@ -289,12 +289,16 @@ public class ManagementRecordController {
         return Map.of("message", "컬렉템 기록 삭제 완료", "recordId", recordId);
     }
 
-    private void validateAdmin(Long adminMemberId) {
+    private Member validateAdmin(Long adminMemberId) {
+        if (adminMemberId == null) {
+            throw new IllegalArgumentException("운영자 확인 정보가 필요합니다.");
+        }
         Member admin = memberRepository.findById(adminMemberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 클랜원입니다."));
         if (admin.getRole() != MemberRole.ADMIN) {
             throw new SecurityException("운영자만 관리 기록을 변경할 수 있습니다.");
         }
+        return admin;
     }
 
     private Member validateMember(Long memberId) {

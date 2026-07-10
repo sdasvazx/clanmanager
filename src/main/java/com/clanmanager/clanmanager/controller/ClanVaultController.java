@@ -39,9 +39,12 @@ public class ClanVaultController {
     @GetMapping
     public VaultSummaryResponseDto getSummary() {
         ClanVault vault = getOrCreateVault();
+        long reservedDiamonds = getReservedDistributionDiamonds();
 
         return VaultSummaryResponseDto.builder()
                 .balanceDiamonds(vault.getBalanceDiamonds())
+                .reservedDiamonds(reservedDiamonds)
+                .availableDiamonds(getAvailableDiamonds(vault, reservedDiamonds))
                 .depositCount(transactionRepository.countByType(VaultTransactionType.DEPOSIT))
                 .distributionCount(transactionRepository.countByType(VaultTransactionType.DISTRIBUTION))
                 .recentTransactions(findRecentTransactions())
@@ -76,10 +79,11 @@ public class ClanVaultController {
     public VaultTransactionResponseDto distribute(@RequestBody VaultTransactionRequestDto request) {
         requireAdmin(request.getCreatedByMemberId());
         long amount = requirePositiveAmount(request.getAmountDiamonds());
-        Member targetMember = findRequiredMember(request.getTargetMemberId(), "분배 받을 클랜원을 선택해 주세요.");
+        Member targetMember = findRequiredMember(request.getTargetMemberId(), "분배받을 클랜원을 선택해 주세요.");
         ClanVault vault = getOrCreateVault();
-        if (vault.getBalanceDiamonds() < amount) {
-            throw new IllegalArgumentException("클랜 금고 잔액이 부족합니다.");
+        long availableDiamonds = getAvailableDiamonds(vault);
+        if (availableDiamonds < amount) {
+            throw new IllegalArgumentException("클랜금고 가용 잔액이 부족합니다. 미수령 분배금까지 제외한 가용 잔액: " + availableDiamonds);
         }
         return saveTransaction(VaultTransactionType.DISTRIBUTION, amount, vault, targetMember, request);
     }
@@ -105,7 +109,7 @@ public class ClanVaultController {
         ClanVault vault = getOrCreateVault();
         long amount = requirePositiveAmount(transaction.getAmountDiamonds());
         if (vault.getBalanceDiamonds() < amount) {
-            throw new IllegalArgumentException("클랜 금고 잔액이 부족합니다.");
+            throw new IllegalArgumentException("클랜금고 잔액이 부족합니다.");
         }
         vault.setBalanceDiamonds(vault.getBalanceDiamonds() - amount);
         vaultRepository.save(vault);
@@ -122,8 +126,9 @@ public class ClanVaultController {
         requireAdmin(request.getCreatedByMemberId());
         long amount = requirePositiveAmount(request.getAmountDiamonds());
         ClanVault vault = getOrCreateVault();
-        if (vault.getBalanceDiamonds() < amount) {
-            throw new IllegalArgumentException("클랜 금고 잔액이 부족합니다.");
+        long availableDiamonds = getAvailableDiamonds(vault);
+        if (availableDiamonds < amount) {
+            throw new IllegalArgumentException("클랜금고 가용 잔액이 부족합니다. 미수령 분배금까지 제외한 가용 잔액: " + availableDiamonds);
         }
         vault.setBalanceDiamonds(vault.getBalanceDiamonds() - amount);
         vaultRepository.save(vault);
@@ -138,6 +143,10 @@ public class ClanVaultController {
             throw new IllegalArgumentException("금고 잔액은 0 이상으로 입력해 주세요.");
         }
         ClanVault vault = getOrCreateVault();
+        long reservedDiamonds = getReservedDistributionDiamonds();
+        if (request.getBalanceDiamonds() < reservedDiamonds) {
+            throw new IllegalArgumentException("새 잔액은 미수령 분배금(" + reservedDiamonds + ")보다 작을 수 없습니다.");
+        }
         long changedAmount = Math.abs(request.getBalanceDiamonds() - vault.getBalanceDiamonds());
         vault.setBalanceDiamonds(request.getBalanceDiamonds());
         vaultRepository.save(vault);
@@ -156,6 +165,18 @@ public class ClanVaultController {
                         .vaultId(VAULT_ID)
                         .balanceDiamonds(0L)
                         .build()));
+    }
+
+    private long getReservedDistributionDiamonds() {
+        return transactionRepository.sumPendingDistributionAmount();
+    }
+
+    private long getAvailableDiamonds(ClanVault vault) {
+        return getAvailableDiamonds(vault, getReservedDistributionDiamonds());
+    }
+
+    private long getAvailableDiamonds(ClanVault vault, long reservedDiamonds) {
+        return Math.max(0L, vault.getBalanceDiamonds() - reservedDiamonds);
     }
 
     private VaultTransactionResponseDto saveTransaction(

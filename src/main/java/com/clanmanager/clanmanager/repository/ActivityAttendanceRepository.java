@@ -17,6 +17,8 @@ public interface ActivityAttendanceRepository extends JpaRepository<ActivityAtte
 
     List<ActivityAttendance> findByAttendanceDate(LocalDate attendanceDate);
 
+    List<ActivityAttendance> findByAttendanceDateBetweenOrderByAttendanceDateDescRecordedAtDesc(LocalDate startDate, LocalDate endDate);
+
     boolean existsByMemberAndActivityTypeAndAttendanceDate(Member member, com.clanmanager.clanmanager.entity.ActivityType activityType, LocalDate attendanceDate);
 
     void deleteByMemberAndActivityTypeAndAttendanceDate(Member member, ActivityType activityType, LocalDate attendanceDate);

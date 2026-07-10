@@ -3028,7 +3028,7 @@ function LegacyAttendance({ member }) {
     event.preventDefault();
     setMessage('');
     try {
-      await request('/attendances', { method: 'POST', body: JSON.stringify({ ...form, memberId: Number(form.memberId), activityTypeId: Number(form.activityTypeId) }) });
+      await request('/attendances', { method: 'POST', body: JSON.stringify({ ...form, adminMemberId: member.memberId, memberId: Number(form.memberId), activityTypeId: Number(form.activityTypeId) }) });
       setForm({ ...form, memberId: '' });
       await load();
       setMessage('출석 기록을 저장했습니다.');
