@@ -32,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -78,16 +79,16 @@ public class BossParticipationController {
     public BossParticipationResponseDto createRecord(@RequestBody BossParticipationRequestDto request) {
         Member admin = findMember(request.getCreatedByMemberId());
         if (admin.getRole() != MemberRole.ADMIN) {
-            throw new SecurityException("운영자만 보스 참여내역을 등록할 수 있습니다.");
+            throw new SecurityException("\uC6B4\uC601\uC790\uB9CC \uBCF4\uC2A4 \uCC38\uC5EC\uB0B4\uC5ED\uC744 \uB4F1\uB85D\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
         }
 
         if (request.getMembers() == null || request.getMembers().isEmpty()) {
-            throw new IllegalArgumentException("참여 명단을 1명 이상 입력해 주세요.");
+            throw new IllegalArgumentException("\uCC38\uC5EC \uBA85\uB2E8\uC744 1\uBA85 \uC774\uC0C1 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
         }
 
         String bossName = clean(request.getBossName());
         if (bossName.isBlank()) {
-            throw new IllegalArgumentException("보스명을 입력해 주세요.");
+            throw new IllegalArgumentException("\uBCF4\uC2A4\uBA85\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
         }
 
         BossParticipationRecord record = recordRepository.save(BossParticipationRecord.builder()
@@ -113,11 +114,11 @@ public class BossParticipationController {
     ) {
         Member admin = findMember(adminMemberId);
         if (admin.getRole() != MemberRole.ADMIN) {
-            throw new SecurityException("운영자만 보스 참여명단을 수정할 수 있습니다.");
+            throw new SecurityException("\uC6B4\uC601\uC790\uB9CC \uBCF4\uC2A4 \uCC38\uC5EC\uBA85\uB2E8\uC744 \uC218\uC815\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
         }
 
         if (request.getMembers() == null || request.getMembers().isEmpty()) {
-            throw new IllegalArgumentException("참여 명단을 1명 이상 입력해 주세요.");
+            throw new IllegalArgumentException("\uCC38\uC5EC \uBA85\uB2E8\uC744 1\uBA85 \uC774\uC0C1 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
         }
 
         BossParticipationRecord record = findRecord(recordId);
@@ -216,17 +217,17 @@ public class BossParticipationController {
             return null;
         }
         String clanName = clean(entry.getClanName());
-        return new NormalizedEntry(characterName, clanName.isBlank() ? "미분류" : clanName);
+        return new NormalizedEntry(characterName, clanName.isBlank() ? "\uBBF8\uBD84\uB958" : clanName);
     }
 
     private BossParticipationRecord findRecord(Long recordId) {
         return recordRepository.findById(recordId)
-                .orElseThrow(() -> new IllegalArgumentException("보스 참여내역을 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("\uBCF4\uC2A4 \uCC38\uC5EC\uB0B4\uC5ED\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."));
     }
 
     private Member findMember(Long memberId) {
         return memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("회원 정보를 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("\uD68C\uC6D0 \uC815\uBCF4\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."));
     }
 
     private String clean(String value) {
@@ -244,43 +245,43 @@ public class BossParticipationController {
                 .orElse(null);
     }
 
-    private java.util.Optional<ActivityType> findActivityTypeByKeyword(String bossName) {
+    private Optional<ActivityType> findActivityTypeByKeyword(String bossName) {
         String compact = bossName.replaceAll("\\s+", "").toLowerCase();
 
-        if (compact.contains("정예")) {
-            return activityTypeRepository.findByTypeName("정예던전보스");
+        if (compact.contains("\uC815\uC608")) {
+            return activityTypeRepository.findByTypeName("\uC815\uC608\uB358\uC804\uBCF4\uC2A4");
         }
-        if (compact.contains("에노크")) {
-            return activityTypeRepository.findByTypeName("에노크");
+        if (compact.contains("\uC5D0\uB178\uD06C")) {
+            return activityTypeRepository.findByTypeName("\uC5D0\uB178\uD06C");
         }
-        if (compact.contains("마슈미드") || compact.contains("마슈")) {
-            return activityTypeRepository.findByTypeName("마슈미드");
+        if (compact.contains("\uB9C8\uC288\uBBF8\uB4DC") || compact.contains("\uB9C8\uC288")) {
+            return activityTypeRepository.findByTypeName("\uB9C8\uC288\uBBF8\uB4DC");
         }
-        if (compact.contains("클랜임무") || compact.contains("임무")) {
-            return activityTypeRepository.findByTypeName("클랜임무");
+        if (compact.contains("\uD074\uB79C\uC784\uBB34") || compact.contains("\uC784\uBB34")) {
+            return activityTypeRepository.findByTypeName("\uD074\uB79C\uC784\uBB34");
         }
-        if (compact.contains("수호")) {
-            return activityTypeRepository.findByTypeName("수호");
+        if (compact.contains("\uC218\uD638")) {
+            return activityTypeRepository.findByTypeName("\uC218\uD638");
         }
-        if (compact.contains("쟁탈")) {
-            return activityTypeRepository.findByTypeName("쟁탈전");
+        if (compact.contains("\uC7C1\uD0C8")) {
+            return activityTypeRepository.findByTypeName("\uC7C1\uD0C8\uC804");
         }
         if (compact.contains("13")) {
-            return activityTypeRepository.findByTypeName("13시 보스");
+            return activityTypeRepository.findByTypeName("13\uC2DC \uBCF4\uC2A4");
         }
         if (compact.contains("17")) {
-            return activityTypeRepository.findByTypeName("17시 보스");
+            return activityTypeRepository.findByTypeName("17\uC2DC \uBCF4\uC2A4");
         }
         if (compact.contains("21")) {
-            return activityTypeRepository.findByTypeName("21시 보스");
+            return activityTypeRepository.findByTypeName("21\uC2DC \uBCF4\uC2A4");
         }
-        return java.util.Optional.empty();
+        return Optional.empty();
     }
 
     public record MemberBossParticipationDto(
             Long recordId,
-            java.time.LocalDate bossDate,
-            java.time.LocalTime cutTime,
+            LocalDate bossDate,
+            LocalTime cutTime,
             String bossName,
             Integer score,
             String clanName,

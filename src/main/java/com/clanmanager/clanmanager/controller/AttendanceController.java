@@ -11,6 +11,7 @@ import com.clanmanager.clanmanager.repository.MemberRepository;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -68,7 +69,7 @@ public class AttendanceController {
         if (startDate != null && endDate != null) {
             attendances = attendanceRepository.findByAttendanceDateBetweenOrderByAttendanceDateDescRecordedAtDesc(startDate, endDate);
         } else {
-            attendances = attendanceRepository.findAll();
+            attendances = attendanceRepository.findAllByOrderByAttendanceDateDescRecordedAtDesc(PageRequest.of(0, normalizeLimit(limit)));
         }
 
         return attendances.stream()
@@ -131,9 +132,9 @@ public class AttendanceController {
         }
     }
 
-    private long normalizeLimit(Integer limit) {
+    private int normalizeLimit(Integer limit) {
         if (limit == null || limit <= 0) {
-            return Long.MAX_VALUE;
+            return 500;
         }
         return Math.min(limit, 2000);
     }
