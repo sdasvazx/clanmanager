@@ -8,6 +8,7 @@ import com.clanmanager.clanmanager.entity.MemberSpecHistory;
 import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.repository.MemberSpecHistoryRepository;
+import com.clanmanager.clanmanager.security.PasswordSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -112,7 +113,7 @@ public class MemberController {
 
         return memberRepository.save(Member.builder()
                 .characterName(characterName)
-                .password(initialPassword)
+                .password(PasswordSupport.encode(initialPassword))
                 .combatPower(request.getCombatPower() == null ? 0 : request.getCombatPower())
                 .guildName(blankToNull(request.getGuildName()))
                 .characterClass(blankToNull(request.getCharacterClass()))
@@ -214,7 +215,7 @@ public class MemberController {
             if (isNew) {
                 member = Member.builder()
                         .characterName(characterName)
-                        .password(row.getInitialPassword() == null || row.getInitialPassword().isBlank() ? "112200" : row.getInitialPassword())
+                        .password(PasswordSupport.encode(row.getInitialPassword() == null || row.getInitialPassword().isBlank() ? "112200" : row.getInitialPassword()))
                         .active(true)
                         .build();
             }
@@ -254,14 +255,14 @@ public class MemberController {
             @RequestBody PasswordChangeRequest request
     ) {
         Member member = findMember(memberId);
-        if (request.getCurrentPassword() == null || !member.getPassword().equals(request.getCurrentPassword())) {
+        if (request.getCurrentPassword() == null || !PasswordSupport.matches(request.getCurrentPassword(), member.getPassword())) {
             throw new IllegalArgumentException("현재 비밀번호가 일치하지 않습니다.");
         }
         if (request.getNewPassword() == null || request.getNewPassword().trim().length() < 4) {
             throw new IllegalArgumentException("새 비밀번호는 4자리 이상으로 입력해 주세요.");
         }
 
-        member.setPassword(request.getNewPassword());
+        member.setPassword(PasswordSupport.encode(request.getNewPassword()));
         memberRepository.save(member);
         return Map.of("message", "비밀번호 변경 완료", "memberId", member.getMemberId());
     }
@@ -286,7 +287,7 @@ public class MemberController {
         }
 
         Member member = findMember(memberId);
-        member.setPassword(nextPassword.trim());
+        member.setPassword(PasswordSupport.encode(nextPassword.trim()));
         memberRepository.save(member);
 
         return Map.of(

@@ -1,199 +1,178 @@
-import os
 import base64
 import json
-import re
-import urllib.request
-import urllib.error
+import os
 
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from openai import OpenAI
 
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OCR_API_KEY = os.getenv("OCR_API_KEY") or os.getenv("OCR_SERVICE_API_KEY")
 
-app = FastAPI(title="Clan Manager AI OCR Service", version="1.0.0")
+app = FastAPI(title="Clan Manager AI OCR Service", version="1.1.0")
+
+allowed_origins = [
+    origin.strip()
+    for origin in (
+        os.getenv("ALLOWED_ORIGINS")
+        or os.getenv("CORS_ORIGINS")
+        or os.getenv("CORS_ALLOWED_ORIGINS")
+        or "http://localhost:5173,http://localhost:3000,https://clanmanager-gray.vercel.app"
+    ).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins or ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+SYSTEM_PROMPT = """
+당신은 게임 파티 명단 스크린샷에서 캐릭터 닉네임만 추출하는 OCR 전문가입니다.
+
+규칙:
+1. 이미지를 1번 파티부터 10번 파티까지 순서대로 확인합니다.
+2. 각 파티는 최대 5명입니다.
+3. 캐릭터 닉네임만 추출합니다.
+4. 빈 슬롯, + 버튼, 파티 번호, 왕관, 무기/직업 아이콘은 무시합니다.
+5. Lv. 107 같은 레벨 텍스트와 숫자는 절대 포함하지 않습니다.
+6. 한글 닉네임은 보이는 그대로 보존합니다.
+7. 영어 닉네임은 대소문자를 보이는 그대로 보존합니다. 예: MiuMiuMin, Skia, WANTED
+8. 보이지 않는 인원은 만들지 않습니다.
+9. 설명, 마크다운, 코드블록 없이 JSON 객체만 반환합니다.
+
+반드시 아래 형식으로만 응답하세요:
+{
+  "results": [
+    { "party": 1, "nicknames": ["Name1", "Name2"] },
+    { "party": 2, "nicknames": ["Name3"] }
+  ]
+}
+""".strip()
+
+
+def verify_ocr_key(x_ocr_api_key: str | None) -> None:
+    if OCR_API_KEY and x_ocr_api_key != OCR_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid OCR API key.")
+
+
+def build_user_prompt(clan_hint: str | None) -> str:
+    hint = f'\n기준 클랜 힌트: "{clan_hint}"' if clan_hint else ""
+    return f"""
+이 게임 파티 명단 스크린샷을 읽고 파티별 닉네임 목록만 JSON으로 반환하세요.
+레벨, 아이콘, 빈칸, + 버튼은 제외하세요.
+{hint}
+""".strip()
+
+
+def normalize_payload(payload: dict) -> dict:
+    raw_results = payload.get("results")
+    if not isinstance(raw_results, list):
+        raise HTTPException(status_code=502, detail="AI response did not contain a results array.")
+
+    results: list[dict] = []
+    for row in raw_results:
+        if not isinstance(row, dict):
+            continue
+        try:
+            party = int(row.get("party"))
+        except (TypeError, ValueError):
+            continue
+        if party < 1 or party > 10:
+            continue
+
+        nicknames = row.get("nicknames")
+        if not isinstance(nicknames, list):
+            continue
+
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for nickname in nicknames:
+            if not isinstance(nickname, str):
+                continue
+            name = nickname.strip()
+            if not name or name.lower().startswith("lv"):
+                continue
+            key = name.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(name)
+
+        results.append({"party": party, "nicknames": cleaned})
+
+    results.sort(key=lambda item: item["party"])
+    return {"results": results}
+
+
 @app.get("/")
-def read_root():
+def read_root() -> dict:
     return {"message": "Clan Manager OCR Service is running"}
 
 
 @app.get("/health")
-def health_check():
+def health_check() -> dict:
     return {
         "status": "ok",
-        "openai_key_configured": bool(OPENAI_API_KEY)
+        "openai_key_configured": bool(OPENAI_API_KEY),
+        "ocr_api_key_required": bool(OCR_API_KEY),
     }
 
 
 @app.post("/api/attendance/ocr")
 async def gpt_vision_ocr(
     file: UploadFile = File(...),
-    clan_hint: str = Form(None)
-):
+    clan_hint: str | None = Form(None),
+    x_ocr_api_key: str | None = Header(None, alias="X-OCR-API-Key"),
+) -> dict:
+    verify_ocr_key(x_ocr_api_key)
+
     if not OPENAI_API_KEY:
-        print("❌ [CONFIG ERROR] OPENAI_API_KEY is missing")
-        return {
-            "results": [],
-            "error": "OPENAI_API_KEY is missing on server variables"
-        }
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured.")
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded image file is empty.")
+
+    content_type = file.content_type or "image/jpeg"
+    base64_image = base64.b64encode(image_bytes).decode("utf-8")
+    image_url = f"data:{content_type};base64,{base64_image}"
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
     try:
-        image_bytes = await file.read()
-
-        if not image_bytes:
-            return {
-                "results": [],
-                "error": "Uploaded image file is empty"
-            }
-
-        base64_image = base64.b64encode(image_bytes).decode("utf-8")
-
-    except Exception as e:
-        print(f"❌ [IMAGE ENCODE ERROR]: {str(e)}")
-        return {
-            "results": [],
-            "error": "Image encoding failed"
-        }
-
-    prompt = """
-이 사진은 게임 길드의 출석 체크 명단이야.
-
-1번부터 10번 파티까지 순서대로 캐릭터들의 '닉네임'만 추출해서 JSON으로 응답해줘.
-
-[필수 규칙]
-1. '+' 표시가 있는 빈 칸은 완전히 무시하고 제외해.
-2. 'Lv.107' 같은 레벨 숫자는 절대 포함하지 마.
-3. 무기 아이콘, 직업 아이콘, 장비 아이콘은 절대 포함하지 마.
-4. 오직 캐릭터 닉네임만 추출해.
-5. 닉네임을 임의로 수정하거나 추측하지 마.
-6. 잘 안 보이는 닉네임은 가능한 범위에서 그대로 읽어.
-7. 설명문, 마크다운, ```json 코드블록은 절대 붙이지 마.
-8. 반드시 순수 JSON만 반환해.
-
-[출력 포맷]
-{
-  "results": [
-    {
-      "party": 1,
-      "nicknames": ["닉네임1", "닉네임2", "닉네임3"]
-    },
-    {
-      "party": 2,
-      "nicknames": ["닉네임1", "닉네임2"]
-    }
-  ]
-}
-"""
-
-    if clan_hint:
-        prompt += f"\n\n[참고 클랜명 또는 힌트]\n{clan_hint}\n"
-
-    url = "https://api.openai.com/v1/chat/completions"
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {OPENAI_API_KEY}"
-    }
-
-    payload = {
-        "model": "gpt-4o",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    }
-                ]
-            }
-        ],
-        "max_tokens": 1500,
-        "temperature": 0
-    }
-
-    try:
-        req = urllib.request.Request(
-            url=url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST"
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            temperature=0.0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": build_user_prompt(clan_hint)},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                },
+            ],
         )
+    except Exception as exc:
+        print(f"❌ [OPENAI VISION ERROR] {str(exc)}")
+        raise HTTPException(status_code=502, detail=f"OpenAI Vision request failed: {str(exc)}") from exc
 
-        with urllib.request.urlopen(req, timeout=60) as res:
-            response_body = res.read().decode("utf-8")
-            response_data = json.loads(response_body)
+    content = completion.choices[0].message.content
+    if not content:
+        raise HTTPException(status_code=502, detail="OpenAI Vision returned an empty response.")
 
-        result_text = response_data["choices"][0]["message"]["content"].strip()
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError as exc:
+        print(f"❌ [OPENAI JSON ERROR] {content}")
+        raise HTTPException(status_code=502, detail="OpenAI Vision returned invalid JSON.") from exc
 
-        print(f"📥 [GPT RAW RESPONSE]: {result_text}")
-
-        if result_text.startswith("```"):
-            result_text = re.sub(r"^```(?:json)?\s*", "", result_text)
-            result_text = re.sub(r"\s*```$", "", result_text)
-
-        parsed = json.loads(result_text)
-
-        results = parsed.get("results", [])
-
-        if not isinstance(results, list):
-            return {
-                "results": [],
-                "error": "Invalid results format from GPT"
-            }
-
-        return {
-            "results": results
-        }
-
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8")
-        print(f"❌ [OPENAI HTTP ERROR]: {error_body}")
-
-        return {
-            "results": [],
-            "error": "OpenAI API request failed",
-            "detail": error_body
-        }
-
-    except urllib.error.URLError as e:
-        print(f"❌ [OPENAI URL ERROR]: {str(e)}")
-
-        return {
-            "results": [],
-            "error": "OpenAI API connection failed",
-            "detail": str(e)
-        }
-
-    except json.JSONDecodeError as e:
-        print(f"❌ [JSON PARSE ERROR]: {str(e)}")
-
-        return {
-            "results": [],
-            "error": "GPT response JSON parsing failed"
-        }
-
-    except Exception as e:
-        print(f"❌ [SERVER ERROR]: {str(e)}")
-
-        return {
-            "results": [],
-            "error": "Unexpected server error",
-            "detail": str(e)
-        }
+    return normalize_payload(payload)

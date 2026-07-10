@@ -5,6 +5,7 @@ import com.clanmanager.clanmanager.dto.RegisterRequestDto;
 import com.clanmanager.clanmanager.entity.Member;
 import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.repository.MemberRepository;
+import com.clanmanager.clanmanager.security.PasswordSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,7 +29,7 @@ public class AuthController {
 
         Member savedMember = memberRepository.save(Member.builder()
                 .characterName(request.getCharacterName())
-                .password(request.getPassword())
+                .password(PasswordSupport.encode(request.getPassword()))
                 .combatPower(request.getCombatPower())
                 .role(memberRepository.count() == 0 ? MemberRole.ADMIN : MemberRole.MEMBER)
                 .active(true)
@@ -47,8 +48,13 @@ public class AuthController {
         Member member = memberRepository.findByCharacterName(request.getCharacterName())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 캐릭터입니다."));
 
-        if (!member.getPassword().equals(request.getPassword())) {
+        if (!PasswordSupport.matches(request.getPassword(), member.getPassword())) {
             throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
+        }
+
+        if (!PasswordSupport.isEncoded(member.getPassword())) {
+            member.setPassword(PasswordSupport.encode(request.getPassword()));
+            memberRepository.save(member);
         }
 
         return Map.of(

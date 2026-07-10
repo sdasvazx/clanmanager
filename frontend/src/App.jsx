@@ -8,6 +8,7 @@ import './theme.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api';
 const OCR_API_BASE = import.meta.env.VITE_OCR_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8090' : '');
+const OCR_API_KEY = import.meta.env.VITE_OCR_API_KEY ?? '';
 const ROULETTE_URL = 'https://lazygyu.github.io/roulette/';
 
 const menu = [
@@ -181,6 +182,7 @@ async function recognizePartyPanelsOnServer(file, members = [], options = {}) {
 
   const response = await fetch(`${OCR_API_BASE.replace(/\/$/, '')}/api/attendance/ocr`, {
     method: 'POST',
+    headers: OCR_API_KEY ? { 'X-OCR-API-Key': OCR_API_KEY } : undefined,
     body: formData,
   });
   const body = await response.json().catch(() => ({}));
