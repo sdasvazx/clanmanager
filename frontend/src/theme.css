@@ -131,14 +131,70 @@
 
 [data-theme="dark"] .ranking th,
 [data-theme="dark"] .ranking td,
+[data-theme="dark"] .lobby-ranking-table th,
+[data-theme="dark"] .lobby-ranking-table td,
 [data-theme="dark"] .data-table th,
 [data-theme="dark"] .data-table td {
   border-color: #293a51;
 }
 
 [data-theme="dark"] .ranking th,
+[data-theme="dark"] .lobby-ranking-table th,
 [data-theme="dark"] .data-table th {
   color: #9fb0c6;
+}
+
+[data-theme="dark"] .lobby-ranking-table td {
+  color: #e5edf7;
+}
+
+[data-theme="dark"] .lobby-ranking-table tr:hover {
+  background: #1d2a3e;
+}
+
+[data-theme="dark"] .my-collection-alert {
+  background: #2a1720;
+  border-color: #7f1d1d;
+}
+
+[data-theme="dark"] .my-collection-alert b,
+[data-theme="dark"] .my-collection-chip-list span,
+[data-theme="dark"] .collection-status-cell.incomplete {
+  color: #fecaca;
+}
+
+[data-theme="dark"] .my-collection-chip-list span,
+[data-theme="dark"] .collection-status-cell.incomplete {
+  background: #3f1d25;
+  border-color: #7f1d1d;
+}
+
+[data-theme="dark"] .collection-status-cell.complete {
+  background: #15803d;
+  border-color: #15803d;
+  color: #ecfdf5;
+}
+
+[data-theme="dark"] .participation-detail-modal {
+  background: #162235;
+  color: #e5edf7;
+}
+
+[data-theme="dark"] .participation-score-card,
+[data-theme="dark"] .participation-score-card span,
+[data-theme="dark"] .participation-detail-panel {
+  background: #111827;
+  border-color: #293a51;
+}
+
+[data-theme="dark"] .participation-score-card > strong,
+[data-theme="dark"] .participation-detail-panel h3 {
+  color: #e5edf7;
+}
+
+[data-theme="dark"] .boss-stat-list > div,
+[data-theme="dark"] .detail-history-list > div {
+  border-color: #293a51;
 }
 
 [data-theme="dark"] .ranking tbody tr:nth-child(even),

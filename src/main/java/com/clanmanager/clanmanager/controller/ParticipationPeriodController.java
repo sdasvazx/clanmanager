@@ -5,6 +5,9 @@ import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.entity.ParticipationPeriod;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.repository.ParticipationPeriodRepository;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -32,7 +35,7 @@ public class ParticipationPeriodController {
     public ParticipationPeriodResponse savePeriod(
             @PathVariable Integer periodIndex,
             @RequestParam Long adminMemberId,
-            @RequestBody ParticipationPeriodRequest request
+            @Valid @RequestBody ParticipationPeriodRequest request
     ) {
         Member admin = memberRepository.findById(adminMemberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
@@ -63,6 +66,9 @@ public class ParticipationPeriodController {
     public static class ParticipationPeriodRequest {
         private LocalDate startDate;
         private LocalDate endDate;
+
+        @NotBlank(message = "기간 이름을 입력해 주세요.")
+        @Size(max = 50, message = "기간 이름은 50자 이하로 입력해 주세요.")
         private String periodName;
     }
 

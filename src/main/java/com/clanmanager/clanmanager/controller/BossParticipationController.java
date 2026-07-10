@@ -15,6 +15,7 @@ import com.clanmanager.clanmanager.repository.ActivityTypeRepository;
 import com.clanmanager.clanmanager.repository.BossParticipationMemberRepository;
 import com.clanmanager.clanmanager.repository.BossParticipationRecordRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -76,7 +77,7 @@ public class BossParticipationController {
 
     @PostMapping
     @Transactional
-    public BossParticipationResponseDto createRecord(@RequestBody BossParticipationRequestDto request) {
+    public BossParticipationResponseDto createRecord(@Valid @RequestBody BossParticipationRequestDto request) {
         Member admin = findMember(request.getCreatedByMemberId());
         if (admin.getRole() != MemberRole.ADMIN) {
             throw new SecurityException("\uC6B4\uC601\uC790\uB9CC \uBCF4\uC2A4 \uCC38\uC5EC\uB0B4\uC5ED\uC744 \uB4F1\uB85D\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
@@ -110,7 +111,7 @@ public class BossParticipationController {
     public List<BossParticipationMemberDto> updateRecordMembers(
             @PathVariable Long recordId,
             @RequestParam Long adminMemberId,
-            @RequestBody BossParticipationRequestDto request
+            @Valid @RequestBody BossParticipationRequestDto request
     ) {
         Member admin = findMember(adminMemberId);
         if (admin.getRole() != MemberRole.ADMIN) {

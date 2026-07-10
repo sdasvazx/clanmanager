@@ -2,6 +2,11 @@ package com.clanmanager.clanmanager.controller;
 
 import com.clanmanager.clanmanager.entity.*;
 import com.clanmanager.clanmanager.repository.*;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -49,7 +54,7 @@ public class ManagementRecordController {
     }
 
     @PostMapping("/inventory")
-    public InventoryItem createInventory(@RequestBody InventoryRequest request) {
+    public InventoryItem createInventory(@Valid @RequestBody InventoryRequest request) {
         validateAdmin(request.getAdminMemberId());
         return inventoryItemRepository.save(InventoryItem.builder()
                 .itemName(request.getItemName())
@@ -72,7 +77,7 @@ public class ManagementRecordController {
     }
 
     @PostMapping("/bids")
-    public ItemBid createBid(@RequestBody BidRequest request) {
+    public ItemBid createBid(@Valid @RequestBody BidRequest request) {
         validateAdmin(request.getAdminMemberId());
         return itemBidRepository.save(ItemBid.builder()
                 .itemName(request.getItemName())
@@ -98,7 +103,7 @@ public class ManagementRecordController {
     }
 
     @PostMapping("/item-requests")
-    public ItemRequestDto createItemRequest(@RequestBody ItemRequestCreateRequest request) {
+    public ItemRequestDto createItemRequest(@Valid @RequestBody ItemRequestCreateRequest request) {
         Member requester = validateMember(request.getRequesterMemberId());
         String itemName = cleanRequired(request.getItemName(), "신청할 아이템명을 입력해 주세요.");
         ItemRequest saved = itemRequestRepository.save(ItemRequest.builder()
@@ -112,7 +117,7 @@ public class ManagementRecordController {
     }
 
     @PatchMapping("/item-requests/{requestId}")
-    public ItemRequestDto processItemRequest(@PathVariable Long requestId, @RequestBody ItemRequestProcessRequest request) {
+    public ItemRequestDto processItemRequest(@PathVariable Long requestId, @Valid @RequestBody ItemRequestProcessRequest request) {
         Member actor = validateAdmin(request.getActorMemberId());
         ItemRequest itemRequest = itemRequestRepository.findById(requestId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 아이템 신청입니다."));
@@ -163,7 +168,7 @@ public class ManagementRecordController {
     }
 
     @PostMapping("/collection-items")
-    public CollectionItemDto createCollectionItem(@RequestBody CollectionItemRequest request) {
+    public CollectionItemDto createCollectionItem(@Valid @RequestBody CollectionItemRequest request) {
         Member actor = validateAdmin(request.getActorMemberId());
         String itemName = cleanRequired(request.getItemName(), "항목명을 입력해 주세요.");
         if (collectionItemRepository.existsByItemName(itemName)) {
@@ -188,8 +193,8 @@ public class ManagementRecordController {
     }
 
     @PatchMapping("/collection-items/{itemId}")
-    public CollectionItemDto updateCollectionItem(@PathVariable Long itemId, @RequestBody CollectionItemRequest request) {
-        Member actor = validateMember(request.getActorMemberId());
+    public CollectionItemDto updateCollectionItem(@PathVariable Long itemId, @Valid @RequestBody CollectionItemRequest request) {
+        Member actor = validateAdmin(request.getActorMemberId());
         CollectionItem item = collectionItemRepository.findById(itemId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 컬렉템 항목입니다."));
         String oldName = item.getItemName();
@@ -237,10 +242,13 @@ public class ManagementRecordController {
     }
 
     @PatchMapping("/collection-statuses")
-    public CollectionStatusDto updateCollectionStatus(@RequestBody CollectionStatusRequest request) {
+    public CollectionStatusDto updateCollectionStatus(@Valid @RequestBody CollectionStatusRequest request) {
         Member actor = validateMember(request.getActorMemberId());
         Member target = memberRepository.findById(request.getMemberId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 클랜원입니다."));
+        if (!actor.getMemberId().equals(target.getMemberId()) && actor.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("본인 컬렉템 상태만 수정할 수 있습니다.");
+        }
         CollectionItem item = collectionItemRepository.findById(request.getItemId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 컬렉템 항목입니다."));
         String nextState = cleanRequired(request.getState(), "상태를 선택해 주세요.");
@@ -272,7 +280,7 @@ public class ManagementRecordController {
     }
 
     @PostMapping("/collections")
-    public CollectionRecord createCollection(@RequestBody CollectionRequest request) {
+    public CollectionRecord createCollection(@Valid @RequestBody CollectionRequest request) {
         validateAdmin(request.getAdminMemberId());
         return collectionRecordRepository.save(CollectionRecord.builder()
                 .characterName(request.getCharacterName())
@@ -339,63 +347,122 @@ public class ManagementRecordController {
     @Getter
     @Setter
     public static class InventoryRequest {
+        @NotBlank(message = "아이템명을 입력해 주세요.")
+        @Size(max = 100, message = "아이템명은 100자 이하로 입력해 주세요.")
         private String itemName;
+
+        @Min(value = 0, message = "수량은 0 이상으로 입력해 주세요.")
         private Integer quantity;
+
+        @Size(max = 100, message = "위치는 100자 이하로 입력해 주세요.")
         private String location;
+
+        @Size(max = 500, message = "메모는 500자 이하로 입력해 주세요.")
         private String memo;
+
+        @NotNull(message = "운영자 정보가 필요합니다.")
         private Long adminMemberId;
     }
 
     @Getter
     @Setter
     public static class BidRequest {
+        @NotBlank(message = "아이템명을 입력해 주세요.")
+        @Size(max = 100, message = "아이템명은 100자 이하로 입력해 주세요.")
         private String itemName;
+
+        @NotBlank(message = "입찰자 이름을 입력해 주세요.")
+        @Size(max = 50, message = "입찰자 이름은 50자 이하로 입력해 주세요.")
         private String bidder;
+
+        @Min(value = 0, message = "입찰 다이아는 0 이상으로 입력해 주세요.")
         private Long bidDiamonds;
+
+        @Size(max = 500, message = "메모는 500자 이하로 입력해 주세요.")
         private String memo;
+
+        @NotNull(message = "운영자 정보가 필요합니다.")
         private Long adminMemberId;
     }
 
     @Getter
     @Setter
     public static class ItemRequestCreateRequest {
+        @NotNull(message = "신청자 정보가 필요합니다.")
         private Long requesterMemberId;
+
+        @NotBlank(message = "신청 아이템명을 입력해 주세요.")
+        @Size(max = 100, message = "아이템명은 100자 이하로 입력해 주세요.")
         private String itemName;
+
+        @Size(max = 500, message = "메모는 500자 이하로 입력해 주세요.")
         private String memo;
     }
 
     @Getter
     @Setter
     public static class ItemRequestProcessRequest {
+        @NotNull(message = "처리자 정보가 필요합니다.")
         private Long actorMemberId;
+
+        @NotBlank(message = "처리 상태를 선택해 주세요.")
+        @Size(max = 20, message = "처리 상태는 20자 이하로 입력해 주세요.")
         private String status;
+
+        @Size(max = 500, message = "처리 메모는 500자 이하로 입력해 주세요.")
         private String processedMemo;
     }
 
     @Getter
     @Setter
     public static class CollectionRequest {
+        @NotBlank(message = "캐릭터 이름을 입력해 주세요.")
+        @Size(max = 50, message = "캐릭터 이름은 50자 이하로 입력해 주세요.")
         private String characterName;
+
+        @NotBlank(message = "컬렉템명을 입력해 주세요.")
+        @Size(max = 100, message = "컬렉템명은 100자 이하로 입력해 주세요.")
         private String itemName;
+
+        @NotBlank(message = "상태를 입력해 주세요.")
+        @Size(max = 20, message = "상태는 20자 이하로 입력해 주세요.")
         private String state;
+
+        @Size(max = 500, message = "메모는 500자 이하로 입력해 주세요.")
         private String memo;
+
+        @NotNull(message = "운영자 정보가 필요합니다.")
         private Long adminMemberId;
     }
 
     @Getter
     @Setter
     public static class CollectionItemRequest {
+        @NotBlank(message = "컬렉템명을 입력해 주세요.")
+        @Size(max = 100, message = "컬렉템명은 100자 이하로 입력해 주세요.")
         private String itemName;
+
+        @NotNull(message = "수정자 정보가 필요합니다.")
         private Long actorMemberId;
     }
 
     @Getter
     @Setter
     public static class CollectionStatusRequest {
+        @NotNull(message = "클랜원을 선택해 주세요.")
         private Long memberId;
+
+        @NotNull(message = "컬렉템을 선택해 주세요.")
         private Long itemId;
+
+        @NotBlank(message = "상태를 선택해 주세요.")
+        @Size(max = 20, message = "상태는 20자 이하로 입력해 주세요.")
         private String state;
+
+        @Size(max = 500, message = "메모는 500자 이하로 입력해 주세요.")
         private String memo;
+
+        @NotNull(message = "수정자 정보가 필요합니다.")
         private Long actorMemberId;
     }
 

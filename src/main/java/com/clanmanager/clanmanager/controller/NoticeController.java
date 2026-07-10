@@ -7,6 +7,7 @@ import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.entity.Notice;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.repository.NoticeRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +29,7 @@ public class NoticeController {
     }
 
     @PostMapping
-    public NoticeResponseDto createNotice(@RequestBody NoticeRequestDto request) {
+    public NoticeResponseDto createNotice(@Valid @RequestBody NoticeRequestDto request) {
         Member createdBy = memberRepository.findById(request.getCreatedByMemberId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 클랜원입니다."));
         if (createdBy.getRole() != MemberRole.ADMIN) {

@@ -1137,18 +1137,37 @@ function AdminBackButton({ setPage }) {
 
 function MyInfo({ member }) {
   const [info, setInfo] = useState(null);
-  useEffect(() => { request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {}); }, [member.memberId]);
+  const [collectionData, setCollectionData] = useState(null);
+  useEffect(() => {
+    request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {});
+    request('/management/collection-dashboard').then(setCollectionData).catch(() => setCollectionData(null));
+  }, [member.memberId]);
+  const incompleteCollections = useMemo(() => {
+    if (!collectionData?.items?.length || !collectionData?.statuses) return [];
+    const statusMap = new Map(collectionData.statuses.map((row) => [`${row.memberId}:${row.itemId}`, row.state]));
+    return collectionData.items.filter((item) => statusMap.get(`${member.memberId}:${item.itemId}`) !== '완료');
+  }, [collectionData, member.memberId]);
   if (!info) return <LoadingCard />;
-  return <><div className="page-title"><h1>내 정보 확인</h1></div><ProfileCard member={member} info={info} /></>;
+  return <><div className="page-title"><h1>내 정보 확인</h1></div><ProfileCard member={member} info={info} incompleteCollections={incompleteCollections} /></>;
 }
 
-function ProfileCard({ member, info }) {
+function ProfileCard({ member, info, incompleteCollections = [] }) {
   const canSeeCombatPower = member?.role === 'ADMIN';
   return (
     <section className="white-card profile-overview">
       <div className="profile-name"><span className="avatar">{info.characterName.slice(0, 1)}</span><div><h2>{info.characterName}</h2><div className="pills"><span>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</span>{canSeeCombatPower && <span>전투력 {formatNumber(info.combatPower)}</span>}</div></div></div>
       <div className="metric-grid"><Metric label="현재 참여율" value={`${info.participationRate}%`} caption={`참여 ${info.myAttendanceCount}회 / 1등 ${info.topAttendanceCount}회`} tone="blue" /><Metric label="기여율" value={`${info.participationRate}%`} caption="최고 참여 횟수를 100%로 계산" tone="green" /><Metric label="참석 횟수" value={`${info.myAttendanceCount}회`} caption="전체 활동 기준" tone="purple" /></div>
       <div className="formula-row"><div><b>참여율 계산 기준</b><p>내 참석 횟수 / 가장 많이 참석한 캐릭터의 참석 횟수 × 100</p></div><div><b>현재 100% 기준</b><p>{info.topAttendanceCount}회</p></div></div>
+      <div className="my-collection-alert">
+        <div>
+          <b>미완료 컬렉템</b>
+          <p>{incompleteCollections.length ? '아직 받지 않은 컬렉템입니다.' : '모든 컬렉템이 완료 상태입니다.'}</p>
+        </div>
+        <div className="my-collection-chip-list">
+          {incompleteCollections.slice(0, 12).map((item) => <span key={item.itemId}>{item.itemName}</span>)}
+          {incompleteCollections.length > 12 && <span>+{incompleteCollections.length - 12}개</span>}
+        </div>
+      </div>
     </section>
   );
 }
@@ -1165,6 +1184,11 @@ function Participation({ member, setPage }) {
   const [searchName, setSearchName] = useState('');
   const [memberBossHistory, setMemberBossHistory] = useState([]);
   const [memberBossHistoryLoading, setMemberBossHistoryLoading] = useState(false);
+  const [bossRecords, setBossRecords] = useState([]);
+  const [detailMember, setDetailMember] = useState(null);
+  const [detailPeriodIndex, setDetailPeriodIndex] = useState(getCurrentParticipationPeriodIndex());
+  const [detailHistory, setDetailHistory] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     Promise.allSettled([request('/members'), request('/participation-periods')]).then(([memberResult, periodResult]) => {
@@ -1189,6 +1213,12 @@ function Participation({ member, setPage }) {
       .then((summary) => setParticipationSummary(summary || null))
       .catch(() => setParticipationSummary(null));
   }, [period.start, period.end]);
+
+  useEffect(() => {
+    request('/boss-participations')
+      .then((records) => setBossRecords(Array.isArray(records) ? records : []))
+      .catch(() => setBossRecords([]));
+  }, []);
 
   const rows = useMemo(() => (participationSummary?.rows || []).map((row) => ({
     ...row,
@@ -1215,6 +1245,45 @@ function Participation({ member, setPage }) {
       .finally(() => setMemberBossHistoryLoading(false));
   }, [searchedMember?.memberId]);
   const canSeeCombatPower = member?.role === 'ADMIN';
+  const openParticipationDetail = (targetMember) => {
+    setDetailMember(targetMember);
+    setDetailPeriodIndex(periodIndex);
+  };
+  useEffect(() => {
+    if (!detailMember?.memberId) {
+      setDetailHistory([]);
+      return;
+    }
+    setDetailLoading(true);
+    request(`/boss-participations/member/${detailMember.memberId}`)
+      .then((history) => setDetailHistory(Array.isArray(history) ? history : []))
+      .catch(() => setDetailHistory([]))
+      .finally(() => setDetailLoading(false));
+  }, [detailMember?.memberId]);
+  const detailPeriod = getParticipationPeriod(detailPeriodIndex);
+  const detailPeriodName = periodNames[detailPeriodIndex] || defaultPeriodName(detailPeriod);
+  const detailPeriodOptions = useMemo(() => {
+    const current = getCurrentParticipationPeriodIndex();
+    const maxIndex = Math.max(current + 2, detailPeriodIndex + 1, periodIndex + 1);
+    return Array.from({ length: maxIndex + 1 }, (_, index) => getParticipationPeriod(index));
+  }, [detailPeriodIndex, periodIndex]);
+  const detailRecordsInPeriod = useMemo(() => bossRecords.filter((record) => record.bossDate >= detailPeriod.start && record.bossDate < detailPeriod.end), [bossRecords, detailPeriod.start, detailPeriod.end]);
+  const detailHistoryInPeriod = useMemo(() => detailHistory.filter((record) => record.bossDate >= detailPeriod.start && record.bossDate < detailPeriod.end), [detailHistory, detailPeriod.start, detailPeriod.end]);
+  const detailBossStats = useMemo(() => {
+    const allNames = [...new Set([
+      ...bossCheckSlots.map((slot) => slot.bossName),
+      ...detailRecordsInPeriod.map((record) => record.bossName),
+      ...detailHistoryInPeriod.map((record) => record.bossName),
+    ])];
+    return allNames.map((bossName) => {
+      const total = detailRecordsInPeriod.filter((record) => record.bossName === bossName).length;
+      const attended = detailHistoryInPeriod.filter((record) => record.bossName === bossName).length;
+      return { bossName, total, attended };
+    }).filter((row) => row.total || row.attended);
+  }, [detailRecordsInPeriod, detailHistoryInPeriod]);
+  const detailParticipationScore = detailHistoryInPeriod.reduce((sum, row) => sum + Number(row.score || 1), 0);
+  const detailPenaltyScore = 0;
+  const detailFinalScore = Math.max(0, detailParticipationScore - detailPenaltyScore);
 
   const savePeriodName = async () => {
     if (member?.role !== 'ADMIN') return;
@@ -1306,14 +1375,68 @@ function Participation({ member, setPage }) {
             <div className="section-heading"><h2>{clan}</h2><span className="result-count">{list.length}명</span></div>
             <div className="table-wrap">
               <table className="data-table participation-ranking-table">
-                <thead><tr><th>순위</th><th>닉네임</th><th>참석</th><th>참여율</th><th>기여율</th></tr></thead>
-                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td>{m.count}회</td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.rate}%</td></tr>)}</tbody>
+                <thead><tr><th>순위</th><th>닉네임</th><th>참석</th><th>참여율</th><th>기여율</th><th>상세</th></tr></thead>
+                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td>{m.count}회</td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.rate}%</td><td><button type="button" className="mini-button" onClick={() => openParticipationDetail(m)}>상세정보</button></td></tr>)}</tbody>
               </table>
             </div>
           </div>
         ))}
         {!rows.length && <div className="empty-state">클랜원이 등록되면 이곳에 순위가 표시됩니다.</div>}
       </section>
+      {detailMember && (
+        <div className="modal-backdrop" onClick={() => setDetailMember(null)}>
+          <section className="participation-detail-modal" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="modal-close" onClick={() => setDetailMember(null)}>×</button>
+            <div className="section-heading">
+              <div>
+                <h2>{detailMember.characterName} 상세 참여 점수</h2>
+                <p className="subtle">{detailPeriod.start} ~ {detailPeriod.end}</p>
+              </div>
+              <select value={detailPeriodIndex} onChange={(event) => setDetailPeriodIndex(Number(event.target.value))}>
+                {detailPeriodOptions.map((option) => (
+                  <option key={option.index} value={option.index}>{periodNames[option.index] || defaultPeriodName(option)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="participation-score-card">
+              <p>상세 참여 점수</p>
+              <strong>{detailFinalScore}점</strong>
+              <div>
+                <span><small>참여 점수</small><b>{detailParticipationScore}점</b></span>
+                <span><small>패널티</small><b className="red-text">{detailPenaltyScore}점</b></span>
+                <span><small>최종 점수</small><b className="blue-text">{detailFinalScore}점</b></span>
+              </div>
+            </div>
+            <div className="participation-detail-panel">
+              <h3>보스별 참여 현황</h3>
+              {detailLoading ? <div className="empty-state">상세 참여 기록을 불러오는 중입니다.</div> : (
+                <div className="boss-stat-list">
+                  {detailBossStats.map((row) => (
+                    <div key={row.bossName} className={row.total && row.attended >= row.total ? 'perfect' : ''}>
+                      <span>{row.bossName}</span>
+                      <b>{row.attended}회 / {row.total || row.attended}회</b>
+                    </div>
+                  ))}
+                  {!detailBossStats.length && <div className="empty-state">이 회차의 참여 기록이 없습니다.</div>}
+                </div>
+              )}
+            </div>
+            <div className="participation-detail-panel">
+              <h3>날짜별 상세 참여현황</h3>
+              <div className="detail-history-list">
+                {detailHistoryInPeriod.map((row) => (
+                  <div key={`${row.recordId}-${row.bossName}-${row.bossDate}`}>
+                    <span>{row.bossDate}</span>
+                    <b>{row.bossName}</b>
+                    <small>{String(row.cutTime || '').slice(0, 5)} · {row.score || 1}점</small>
+                  </div>
+                ))}
+                {!detailHistoryInPeriod.length && <div className="empty-state">해당 회차에 나온 기록이 없습니다.</div>}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
@@ -2856,16 +2979,17 @@ function CollectionPage({ member }) {
                   <td><span className={`clan-badge ${normalize(canonicalClanName(targetMember.guildName))}`}>{canonicalClanName(targetMember.guildName)}</span></td>
                   {data.items.map((item) => {
                     const { key, status, state } = collectionCell(targetMember, item);
+                    const done = state === '완료';
                     return (
                       <td key={key}>
                         <button
                           type="button"
-                          className={`collection-status-cell ${state}`}
+                          className={`collection-status-cell ${done ? 'complete' : 'incomplete'}`}
                           disabled={savingCell === key}
                           title={status?.updatedByName ? `${status.updatedByName} · ${new Date(status.updatedAt).toLocaleString('ko-KR')}` : '클릭해서 완료/미완료 변경'}
                           onClick={() => toggleCollectionStatus(targetMember, item)}
                         >
-                          {savingCell === key ? '저장중' : state === '완료' ? '완료' : state === '회수' ? '회수' : '미완료'}
+                          {savingCell === key ? '저장중' : done ? '완료' : '미완료'}
                         </button>
                       </td>
                     );

@@ -6,6 +6,7 @@ import com.clanmanager.clanmanager.entity.Member;
 import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.security.PasswordSupport;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,7 +23,7 @@ public class AuthController {
     private final MemberRepository memberRepository;
 
     @PostMapping("/register")
-    public Map<String, Object> register(@RequestBody RegisterRequestDto request) {
+    public Map<String, Object> register(@Valid @RequestBody RegisterRequestDto request) {
         if (memberRepository.existsByCharacterName(request.getCharacterName())) {
             throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
         }
@@ -44,12 +45,16 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public Map<String, Object> login(@RequestBody LoginRequestDto request) {
+    public Map<String, Object> login(@Valid @RequestBody LoginRequestDto request) {
         Member member = memberRepository.findByCharacterName(request.getCharacterName())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 캐릭터입니다."));
 
         if (!PasswordSupport.matches(request.getPassword(), member.getPassword())) {
             throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
+        }
+
+        if (Boolean.FALSE.equals(member.getActive())) {
+            throw new IllegalArgumentException("비활성화된 계정입니다. 운영진에게 문의해 주세요.");
         }
 
         if (!PasswordSupport.isEncoded(member.getPassword())) {

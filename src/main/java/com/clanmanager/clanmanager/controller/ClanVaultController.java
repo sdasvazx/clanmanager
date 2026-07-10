@@ -12,6 +12,7 @@ import com.clanmanager.clanmanager.repository.ClanVaultRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.repository.VaultTransactionRepository;
 import jakarta.transaction.Transactional;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -65,7 +66,7 @@ public class ClanVaultController {
 
     @PostMapping("/deposit")
     @Transactional
-    public VaultTransactionResponseDto deposit(@RequestBody VaultTransactionRequestDto request) {
+    public VaultTransactionResponseDto deposit(@Valid @RequestBody VaultTransactionRequestDto request) {
         requireAdmin(request.getCreatedByMemberId());
         long amount = requirePositiveAmount(request.getAmountDiamonds());
         ClanVault vault = getOrCreateVault();
@@ -76,7 +77,7 @@ public class ClanVaultController {
 
     @PostMapping("/distribute")
     @Transactional
-    public VaultTransactionResponseDto distribute(@RequestBody VaultTransactionRequestDto request) {
+    public VaultTransactionResponseDto distribute(@Valid @RequestBody VaultTransactionRequestDto request) {
         requireAdmin(request.getCreatedByMemberId());
         long amount = requirePositiveAmount(request.getAmountDiamonds());
         Member targetMember = findRequiredMember(request.getTargetMemberId(), "분배받을 클랜원을 선택해 주세요.");
@@ -92,7 +93,7 @@ public class ClanVaultController {
     @Transactional
     public VaultTransactionResponseDto claimDistribution(@PathVariable Long transactionId, @RequestParam Long memberId) {
         Member requester = findRequiredMember(memberId, "수령 확인 회원 정보가 필요합니다.");
-        VaultTransaction transaction = transactionRepository.findById(transactionId)
+        VaultTransaction transaction = transactionRepository.findWithLockByTransactionId(transactionId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 분배 기록입니다."));
 
         if (transaction.getType() != VaultTransactionType.DISTRIBUTION || transaction.getTargetMember() == null) {
@@ -106,7 +107,7 @@ public class ClanVaultController {
             throw new IllegalArgumentException("이미 수령 완료된 분배금입니다.");
         }
 
-        ClanVault vault = getOrCreateVault();
+        ClanVault vault = getOrCreateVaultWithLock();
         long amount = requirePositiveAmount(transaction.getAmountDiamonds());
         if (vault.getBalanceDiamonds() < amount) {
             throw new IllegalArgumentException("클랜금고 잔액이 부족합니다.");
@@ -122,7 +123,7 @@ public class ClanVaultController {
 
     @PostMapping("/withdraw")
     @Transactional
-    public VaultTransactionResponseDto withdraw(@RequestBody VaultTransactionRequestDto request) {
+    public VaultTransactionResponseDto withdraw(@Valid @RequestBody VaultTransactionRequestDto request) {
         requireAdmin(request.getCreatedByMemberId());
         long amount = requirePositiveAmount(request.getAmountDiamonds());
         ClanVault vault = getOrCreateVault();
@@ -137,7 +138,7 @@ public class ClanVaultController {
 
     @PatchMapping("/balance")
     @Transactional
-    public VaultTransactionResponseDto updateBalance(@RequestBody VaultTransactionRequestDto request) {
+    public VaultTransactionResponseDto updateBalance(@Valid @RequestBody VaultTransactionRequestDto request) {
         requireAdmin(request.getCreatedByMemberId());
         if (request.getBalanceDiamonds() == null || request.getBalanceDiamonds() < 0) {
             throw new IllegalArgumentException("금고 잔액은 0 이상으로 입력해 주세요.");
@@ -161,6 +162,14 @@ public class ClanVaultController {
 
     private ClanVault getOrCreateVault() {
         return vaultRepository.findById(VAULT_ID)
+                .orElseGet(() -> vaultRepository.save(ClanVault.builder()
+                        .vaultId(VAULT_ID)
+                        .balanceDiamonds(0L)
+                        .build()));
+    }
+
+    private ClanVault getOrCreateVaultWithLock() {
+        return vaultRepository.findWithLockByVaultId(VAULT_ID)
                 .orElseGet(() -> vaultRepository.save(ClanVault.builder()
                         .vaultId(VAULT_ID)
                         .balanceDiamonds(0L)

@@ -2,10 +2,13 @@ package com.clanmanager.clanmanager.repository;
 
 import com.clanmanager.clanmanager.entity.VaultTransaction;
 import com.clanmanager.clanmanager.entity.VaultTransactionType;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface VaultTransactionRepository extends JpaRepository<VaultTransaction, Long> {
 
@@ -15,11 +18,15 @@ public interface VaultTransactionRepository extends JpaRepository<VaultTransacti
 
     long countByType(VaultTransactionType type);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<VaultTransaction> findWithLockByTransactionId(Long transactionId);
+
     @Query("""
             select coalesce(sum(v.amountDiamonds), 0)
             from VaultTransaction v
             where v.type = com.clanmanager.clanmanager.entity.VaultTransactionType.DISTRIBUTION
             and (v.claimed is null or v.claimed = false)
+            and v.targetMember.active = true
             """)
     long sumPendingDistributionAmount();
 }

@@ -8,6 +8,8 @@ import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.ActivityTypeRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -35,7 +37,7 @@ public class AttendanceController {
     private final ActivityTypeRepository activityTypeRepository;
 
     @PostMapping
-    public Map<String, Object> recordAttendance(@RequestBody AttendanceRequest request) {
+    public Map<String, Object> recordAttendance(@Valid @RequestBody AttendanceRequest request) {
         requireAdmin(request.getAdminMemberId());
 
         Member member = memberRepository.findById(request.getMemberId())
@@ -142,8 +144,13 @@ public class AttendanceController {
     @Getter
     @Setter
     public static class AttendanceRequest {
+        @NotNull(message = "운영자 정보가 필요합니다.")
         private Long adminMemberId;
+
+        @NotNull(message = "출석 대상 클랜원을 선택해 주세요.")
         private Long memberId;
+
+        @NotNull(message = "활동을 선택해 주세요.")
         private Long activityTypeId;
         private LocalDate attendanceDate;
         private AttendanceStatus status;

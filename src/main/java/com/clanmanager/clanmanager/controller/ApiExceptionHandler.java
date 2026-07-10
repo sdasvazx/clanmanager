@@ -3,6 +3,7 @@ package com.clanmanager.clanmanager.controller;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -20,6 +21,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(SecurityException.class)
     public ResponseEntity<Map<String, String>> handleForbidden(SecurityException exception) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", exception.getMessage()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, String>> handleUnreadableRequest(HttpMessageNotReadableException exception) {
+        return ResponseEntity.badRequest().body(Map.of("message", "요청 형식이 올바르지 않습니다. 입력값을 확인해 주세요."));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
