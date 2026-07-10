@@ -48,6 +48,15 @@ npm.cmd run dev
 
 브라우저에서 `http://localhost:5173`을 엽니다. API 주소를 바꾸려면 `frontend/.env`에 `VITE_API_BASE_URL=http://localhost:8080/api` 형식으로 지정하세요.
 
+출석 스크린샷 OCR을 사용하려면 `frontend/.env`에 OCR 서버 주소도 지정하세요.
+
+```env
+VITE_OCR_API_BASE_URL=http://localhost:8090
+VITE_OCR_API_KEY=선택사항
+```
+
+운영 배포에서 OCR 서버를 분리하는 방법은 [DEPLOYMENT_OCR.md](./DEPLOYMENT_OCR.md)를 참고하세요.
+
 ## 테스트
 
 ```powershell

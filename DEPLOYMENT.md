@@ -60,6 +60,6 @@ VITE_API_BASE_URL=https://your-backend-domain.up.railway.app/api
 
 - 처음에는 Railway Hobby 사용량 한도를 낮게 잡습니다.
 - 로그를 너무 많이 찍지 않도록 `JPA_SHOW_SQL=false`를 유지합니다.
-- 이미지 업로드 원본 저장은 아직 하지 않습니다. 현재 OCR은 브라우저 안에서 처리됩니다.
+- 이미지 업로드 원본 저장은 아직 하지 않습니다. OCR은 별도 Python OCR 서버에서 처리됩니다.
 - DB 백업은 초반엔 수동 export라도 주기적으로 받습니다.
 

@@ -64,12 +64,61 @@ def verify_ocr_key(x_ocr_api_key: str | None) -> None:
         raise HTTPException(status_code=401, detail="Invalid OCR API key.")
 
 
-def build_user_prompt(clan_hint: str | None) -> str:
+def parse_members_json(members_json: str | None) -> list[dict]:
+    if not members_json:
+        return []
+    try:
+        parsed = json.loads(members_json)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+
+    members: list[dict] = []
+    seen: set[str] = set()
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("characterName") or item.get("name") or "").strip()
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        clan = str(item.get("guildName") or item.get("clanName") or "").strip()
+        members.append({"name": name, "clan": clan})
+    return members
+
+
+def build_member_context(members: list[dict], clan_hint: str | None) -> str:
+    if not members:
+        return ""
+
+    hint_key = (clan_hint or "").strip().casefold()
+    ordered = sorted(
+        members,
+        key=lambda item: (
+            0 if hint_key and str(item.get("clan", "")).casefold() == hint_key else 1,
+            str(item.get("clan", "")),
+            str(item.get("name", "")),
+        ),
+    )
+    lines = []
+    for item in ordered[:260]:
+        clan = item.get("clan") or "미분류"
+        lines.append(f"- [{clan}] {item['name']}")
+    return "\n등록된 클랜원 명단입니다. 이미지에서 보이는 이름이 아래 명단과 거의 같으면 반드시 명단의 정확한 닉네임으로 보정하세요:\n" + "\n".join(lines)
+
+
+def build_user_prompt(clan_hint: str | None, members: list[dict] | None = None) -> str:
     hint = f'\n기준 클랜 힌트: "{clan_hint}"' if clan_hint else ""
+    member_context = build_member_context(members or [], clan_hint)
     return f"""
 이 게임 파티 명단 스크린샷을 읽고 파티별 닉네임 목록만 JSON으로 반환하세요.
 레벨, 아이콘, 빈칸, + 버튼은 제외하세요.
 {hint}
+{member_context}
 """.strip()
 
 
@@ -131,6 +180,7 @@ def health_check() -> dict:
 async def gpt_vision_ocr(
     file: UploadFile = File(...),
     clan_hint: str | None = Form(None),
+    members_json: str | None = Form(None),
     x_ocr_api_key: str | None = Header(None, alias="X-OCR-API-Key"),
 ) -> dict:
     verify_ocr_key(x_ocr_api_key)
@@ -145,6 +195,7 @@ async def gpt_vision_ocr(
     content_type = file.content_type or "image/jpeg"
     base64_image = base64.b64encode(image_bytes).decode("utf-8")
     image_url = f"data:{content_type};base64,{base64_image}"
+    members = parse_members_json(members_json)
 
     client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -158,7 +209,7 @@ async def gpt_vision_ocr(
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": build_user_prompt(clan_hint)},
+                        {"type": "text", "text": build_user_prompt(clan_hint, members)},
                         {"type": "image_url", "image_url": {"url": image_url}},
                     ],
                 },
