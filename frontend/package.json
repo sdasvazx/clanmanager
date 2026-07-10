@@ -9,10 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "tesseract.js": "^7.0.0",
-    "vite": "latest"
+    "@vitejs/plugin-react": "6.0.2",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "vite": "8.0.16"
   }
 }

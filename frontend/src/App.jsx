@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createWorker } from 'tesseract.js';
 import './roster.css';
 import './vault.css';
 import './manager.css';
@@ -75,7 +74,7 @@ async function request(path, options = {}) {
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 const money = (value) => `${formatNumber(value)} 다이아`;
 const today = () => new Date().toISOString().slice(0, 10);
-const PARTICIPATION_PERIOD_START = '2026-07-08';
+const PARTICIPATION_PERIOD_START = import.meta.env.VITE_PARTICIPATION_PERIOD_START || '2026-07-08';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const formatLocalDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const dateOnly = (value) => {
@@ -773,515 +772,39 @@ function buildOcrReview(text, members, clanName, options = {}) {
   return { exactNames: [...new Set([...exactNames, ...confident])], ambiguous, appliedCorrections };
 }
 
-const wordText = (word) => String(word?.text ?? '').trim();
-const wordBox = (word) => word?.bbox || word?.box || word?.boundingBox || null;
-const boxWidth = (box) => Math.max(1, Number(box?.x1 ?? 0) - Number(box?.x0 ?? 0));
-const boxHeight = (box) => Math.max(1, Number(box?.y1 ?? 0) - Number(box?.y0 ?? 0));
-const boxCenterX = (box) => (Number(box?.x0 ?? 0) + Number(box?.x1 ?? 0)) / 2;
-const boxCenterY = (box) => (Number(box?.y0 ?? 0) + Number(box?.y1 ?? 0)) / 2;
-const mergeBoxes = (boxes) => boxes.reduce((acc, box) => ({
-  x0: Math.min(acc.x0, Number(box.x0)),
-  y0: Math.min(acc.y0, Number(box.y0)),
-  x1: Math.max(acc.x1, Number(box.x1)),
-  y1: Math.max(acc.y1, Number(box.y1)),
-}), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
-
-function normalizeOcrWords(words = []) {
-  return (words || [])
-    .map((word) => ({ text: wordText(word), bbox: wordBox(word), confidence: Number(word?.confidence ?? word?.conf ?? 0) }))
-    .filter((word) => word.text && word.bbox && Number.isFinite(Number(word.bbox.x0)) && Number.isFinite(Number(word.bbox.y0)));
-}
-
-function findLevelAnchors(words = []) {
-  const normalizedWords = normalizeOcrWords(words);
-  const anchors = [];
-  normalizedWords.forEach((word, index) => {
-    const text = word.text.replace(/\s+/g, '');
-    if (/^Lv\.?\d{1,3}$/i.test(text) || /^LV\.?\d{1,3}$/i.test(text)) {
-      anchors.push({ bbox: word.bbox, words: [word] });
-      return;
-    }
-    if (/^\d{2,3}$/.test(text)) {
-      const previous = normalizedWords[index - 1];
-      const sameLine = previous && Math.abs(boxCenterY(previous.bbox) - boxCenterY(word.bbox)) < Math.max(boxHeight(word.bbox), boxHeight(previous.bbox)) * 0.9;
-      const close = previous && Number(word.bbox.x0) - Number(previous.bbox.x1) < boxWidth(word.bbox) * 1.6;
-      if (sameLine && close && /^Lv\.?$/i.test(previous.text.replace(/\s+/g, ''))) {
-        anchors.push({ bbox: mergeBoxes([previous.bbox, word.bbox]), words: [previous, word] });
-      }
-    }
-  });
-  const unique = new Map();
-  anchors.forEach((anchor) => {
-    const key = `${Math.round(boxCenterX(anchor.bbox) / 8)}:${Math.round(boxCenterY(anchor.bbox) / 8)}`;
-    const current = unique.get(key);
-    if (!current || boxWidth(anchor.bbox) > boxWidth(current.bbox)) unique.set(key, anchor);
-  });
-  return [...unique.values()].sort((a, b) => boxCenterY(a.bbox) - boxCenterY(b.bbox) || boxCenterX(a.bbox) - boxCenterX(b.bbox));
-}
-
-function extractNicknameAboveLevel(anchor, words = []) {
-  const normalizedWords = normalizeOcrWords(words);
-  const anchorBox = anchor.bbox;
-  const anchorCx = boxCenterX(anchorBox);
-  const anchorWidth = boxWidth(anchorBox);
-  const anchorHeight = boxHeight(anchorBox);
-  const yMin = Number(anchorBox.y0) - Math.max(anchorHeight * 3.8, 26);
-  const yMax = Number(anchorBox.y0) - Math.max(2, anchorHeight * 0.12);
-  const xAllowance = Math.max(anchorWidth * 2.45, 46);
-  const candidates = normalizedWords
-    .filter((word) => !anchor.words?.some((anchorWord) => anchorWord.text === word.text && anchorWord.bbox === word.bbox))
-    .filter((word) => {
-      const text = cleanOcrNicknameToken(word.text);
-      if (!text) return false;
-      const cy = boxCenterY(word.bbox);
-      const cx = boxCenterX(word.bbox);
-      return cy >= yMin && cy <= yMax && Math.abs(cx - anchorCx) <= xAllowance;
-    })
-    .sort((a, b) => Number(a.bbox.y0) - Number(b.bbox.y0) || Number(a.bbox.x0) - Number(b.bbox.x0));
-  if (!candidates.length) return '';
-  const mainY = boxCenterY(candidates[candidates.length - 1].bbox);
-  const sameLine = candidates
-    .filter((word) => Math.abs(boxCenterY(word.bbox) - mainY) <= Math.max(10, anchorHeight * 0.85))
-    .sort((a, b) => Number(a.bbox.x0) - Number(b.bbox.x0));
-  const merged = sameLine.map((word) => cleanOcrNicknameToken(word.text)).filter(Boolean).join('');
-  return cleanOcrNicknameToken(merged) || cleanOcrNicknameToken(sameLine.at(-1)?.text || '');
-}
-
-function buildLevelAnchorReview(words, members, clanName = '', options = {}) {
-  const filters = options.filters || [];
-  const corrections = options.corrections || {};
-  const exactNames = [];
-  const ambiguous = [];
-  const appliedCorrections = [];
-  const seenAnchors = new Set();
-  findLevelAnchors(words).forEach((anchor, index) => {
-    const rawName = extractNicknameAboveLevel(anchor, words);
-    if (!rawName || isOcrFilteredName(rawName, filters)) return;
-    const anchorKey = `${Math.round(boxCenterX(anchor.bbox))}:${Math.round(boxCenterY(anchor.bbox))}:${normalize(rawName)}`;
-    if (seenAnchors.has(anchorKey)) return;
-    seenAnchors.add(anchorKey);
-    const corrected = findAutoCorrectedMember(rawName, members, clanName, corrections);
-    if (corrected && !isOcrFilteredName(corrected, filters)) {
-      exactNames.push(corrected);
-      if (normalize(corrected) !== normalize(rawName)) appliedCorrections.push({ wrong: rawName, right: corrected });
-      return;
-    }
-    const suggestions = rankSimilarMembers(rawName, members, clanName, {
-      limit: 3,
-      minScore: 0.48,
-      guaranteeOne: true,
-      clanBoost: 0.12,
-      preferClan: Boolean(clanName),
-    });
-    const [best, second] = suggestions;
-    if (best && best.score >= 0.9 && (!second || best.score - second.score >= 0.1)) {
-      exactNames.push(best.member.characterName);
-      return;
-    }
-    if (best) {
-      ambiguous.push({
-        raw: rawName,
-        suggestions,
-        anchorIndex: index,
-      });
-    }
-  });
-  return {
-    exactNames: [...new Set(exactNames)],
-    ambiguous,
-    appliedCorrections,
-  };
-}
-
 function namesFromText(value) {
   return [...new Set(String(value ?? '').split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean))];
 }
 
-const canvasToBlob = (canvas) => new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-
-const loadImageElement = (file) => new Promise((resolve, reject) => {
-  const image = new Image();
-  image.onload = () => resolve(image);
-  image.onerror = reject;
-  image.src = URL.createObjectURL(file);
-});
-
-async function createOcrVariants(file, precise = false) {
-  const image = await loadImageElement(file);
-  const makeCanvas = (scale, mode, threshold = 120) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const context = canvas.getContext('2d');
-    context.imageSmoothingEnabled = false;
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    if (mode) {
-      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-      const { data } = imageData;
-      for (let index = 0; index < data.length; index += 4) {
-        const gray = (data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114);
-        const value = mode === 'threshold' ? (gray > threshold ? 255 : 0) : Math.max(0, Math.min(255, (gray - threshold) * 1.65 + 140));
-        data[index] = value;
-        data[index + 1] = value;
-        data[index + 2] = value;
-      }
-      context.putImageData(imageData, 0, 0);
-    }
-    return canvas;
-  };
-  const baseVariants = [
-    file,
-    await canvasToBlob(makeCanvas(2, 'contrast')),
-  ];
-  if (!precise) return baseVariants.filter(Boolean);
-  return [
-    ...baseVariants,
-    await canvasToBlob(makeCanvas(2.4, 'threshold')),
-    await canvasToBlob(makeCanvas(2.8, 'contrast')),
-    await canvasToBlob(makeCanvas(3.2, 'threshold')),
-  ].filter(Boolean);
+function serverOcrResultToText(result) {
+  const lines = [];
+  (result?.names || []).forEach((item) => {
+    if (item.name) lines.push(item.name);
+  });
+  (result?.ambiguous || []).forEach((item) => {
+    if (item.raw) lines.push(item.raw);
+  });
+  return [...new Set(lines)].join('\n');
 }
 
-async function createNameSlotOcrVariants(file, precise = true) {
-  const image = await loadImageElement(file);
-  const makeCanvas = (scale, mode, threshold = 112) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const context = canvas.getContext('2d');
-    context.imageSmoothingEnabled = false;
-    context.fillStyle = '#000';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    const { data } = imageData;
-    for (let index = 0; index < data.length; index += 4) {
-      const r = data[index];
-      const g = data[index + 1];
-      const b = data[index + 2];
-      const gray = (r * 0.299) + (g * 0.587) + (b * 0.114);
-      const boosted = Math.max(r, g, b);
-      const value = mode === 'threshold'
-        ? (boosted > threshold || gray > threshold ? 255 : 0)
-        : Math.max(0, Math.min(255, (boosted - threshold) * 1.9 + 150));
-      data[index] = value;
-      data[index + 1] = value;
-      data[index + 2] = value;
-    }
-    context.putImageData(imageData, 0, 0);
-    return canvas;
-  };
-  const baseVariants = [
-    file,
-    await canvasToBlob(makeCanvas(3.2, 'contrast', 104)),
-  ];
-  if (!precise) return baseVariants.filter(Boolean);
-  return [
-    ...baseVariants,
-    await canvasToBlob(makeCanvas(4.4, 'threshold', 102)),
-  ].filter(Boolean);
-}
-
-async function recognizeOcrVariantsWithWorker(file, worker, onProgress, precise = false) {
-  const variants = await createOcrVariants(file, precise);
-  const texts = [];
-  for (let index = 0; index < variants.length; index += 1) {
-    onProgress?.(Math.round((index / variants.length) * 100));
-    const { data } = await worker.recognize(variants[index]);
-    texts.push(data.text);
+async function recognizeImageTextMultiple(file, onProgress, members = [], options = {}) {
+  onProgress?.(5);
+  const result = await recognizePartyPanelsOnServer(file, members, options);
+  if (!result) {
+    throw new Error('OCR 서버 주소가 설정되지 않았습니다. VITE_OCR_API_BASE_URL을 확인해 주세요.');
   }
   onProgress?.(100);
-  return texts.join('\n');
-}
-
-async function recognizeWordBoxesWithWorker(file, worker, precise = false) {
-  const variants = await createOcrVariants(file, precise);
-  const words = [];
-  const texts = [];
-  const limit = Math.min(2, variants.length);
-  await worker.setParameters({
-    preserve_interword_spaces: '1',
-    user_defined_dpi: precise ? '420' : '360',
-    tessedit_pageseg_mode: '6',
-  });
-  for (let index = 0; index < limit; index += 1) {
-    const { data } = await worker.recognize(variants[index]);
-    texts.push(data.text || '');
-    if (Array.isArray(data.words)) words.push(...data.words);
-  }
-  return { text: texts.join('\n'), words: normalizeOcrWords(words) };
-}
-
-async function recognizeNameSlotWithWorker(file, worker, precise = true) {
-  const variants = await createNameSlotOcrVariants(file, precise);
-  const texts = [];
-  const pageSegModes = ['7'];
-  for (const pageSegMode of pageSegModes) {
-    await worker.setParameters({
-      preserve_interword_spaces: '1',
-      user_defined_dpi: precise ? '450' : '360',
-      tessedit_pageseg_mode: pageSegMode,
-    });
-    for (let index = 0; index < variants.length; index += 1) {
-      const { data } = await worker.recognize(variants[index]);
-      texts.push(data.text);
-    }
-  }
-  await worker.setParameters({
-    preserve_interword_spaces: '1',
-    user_defined_dpi: '300',
-    tessedit_pageseg_mode: '6',
-  });
-  return texts.join('\n');
-}
-
-async function recognizeImageTextMultiple(file, onProgress) {
-  const worker = await createWorker('kor+eng', 1, {
-    logger: (log) => {
-      if (log.status === 'recognizing text') onProgress?.(Math.round(log.progress * 100));
-    },
-  });
-  try {
-    await worker.setParameters({
-      preserve_interword_spaces: '1',
-      user_defined_dpi: '300',
-      tessedit_pageseg_mode: '6',
-    });
-    return await recognizeOcrVariantsWithWorker(file, worker, onProgress);
-  } finally {
-    await worker.terminate();
-  }
-}
-
-async function createPartyPanelFiles(file) {
-  const image = await loadImageElement(file);
-  const columns = 2;
-  const bounds = detectRosterContentBounds(image);
-  const cropX = bounds.x;
-  const cropY = bounds.y;
-  const cropWidth = bounds.width;
-  const cropHeight = bounds.height;
-  const panelWidth = Math.floor(cropWidth / columns);
-  const estimatedPanelHeight = Math.max(88, Math.round(panelWidth * 0.24));
-  const rows = Math.max(1, Math.min(5, Math.round(cropHeight / estimatedPanelHeight)));
-  const panelHeight = Math.floor(cropHeight / rows);
-  const panels = [];
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      const baseX = cropX + (column * panelWidth);
-      const baseY = cropY + (row * panelHeight);
-      const baseHeight = row === rows - 1 ? cropHeight - (row * panelHeight) : panelHeight;
-      const padX = Math.round(panelWidth * 0.018);
-      const padY = Math.max(4, Math.round(panelHeight * 0.08));
-      const sx = Math.max(cropX, baseX - padX);
-      const sy = Math.max(cropY, baseY - padY);
-      const ex = Math.min(cropX + cropWidth, baseX + panelWidth + padX);
-      const ey = Math.min(cropY + cropHeight, baseY + baseHeight + padY);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, ex - sx);
-      canvas.height = Math.max(1, ey - sy);
-      const context = canvas.getContext('2d');
-      context.imageSmoothingEnabled = false;
-      context.drawImage(image, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-      const blob = await canvasToBlob(canvas);
-      if (blob) panels.push({ partyNumber: (row * columns) + column + 1, file: blob });
-    }
-  }
-  return panels.slice(0, 10);
-}
-
-async function createPartyNameSlotFiles(file, precise = true) {
-  const image = await loadImageElement(file);
-  const slots = [];
-  const slotCount = 5;
-  const slotWidth = image.naturalWidth / slotCount;
-  const cropBands = precise ? [
-    { top: 0.33, height: 0.36, label: 'name-wide' },
-    { top: 0.39, height: 0.30, label: 'name-mid' },
-    { top: 0.38, height: 0.46, label: 'name-level' },
-  ] : [
-    { top: 0.32, height: 0.42, label: 'name-fast-wide' },
-    { top: 0.38, height: 0.34, label: 'name-fast-low' },
-  ];
-  for (let index = 0; index < slotCount; index += 1) {
-    const sx = Math.max(0, Math.round((index * slotWidth) - (slotWidth * 0.08)));
-    const sw = Math.min(image.naturalWidth - sx, Math.round(slotWidth * 1.16));
-    for (const band of cropBands) {
-      const cropTop = Math.max(0, Math.round(image.naturalHeight * band.top));
-      const cropHeight = Math.max(18, Math.round(image.naturalHeight * band.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = sw;
-      canvas.height = Math.min(cropHeight, image.naturalHeight - cropTop);
-      const context = canvas.getContext('2d');
-      context.imageSmoothingEnabled = false;
-      context.drawImage(image, sx, cropTop, sw, canvas.height, 0, 0, sw, canvas.height);
-      const blob = await canvasToBlob(canvas);
-      if (blob) slots.push({ slotNumber: index + 1, band: band.label, file: blob });
-    }
-  }
-  return slots;
-}
-
-function detectRosterContentBounds(image) {
-  const canvas = document.createElement('canvas');
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const context = canvas.getContext('2d');
-  context.drawImage(image, 0, 0);
-  const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
-  const columnScores = Array(width).fill(0);
-  const rowScores = Array(height).fill(0);
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const index = (y * width + x) * 4;
-      const r = data[index];
-      const g = data[index + 1];
-      const b = data[index + 2];
-      const brightness = (r + g + b) / 3;
-      const isTextOrLine = brightness > 72 || (g > 85 && b > 65) || (r > 95 && g > 80 && b < 70);
-      if (isTextOrLine) {
-        columnScores[x] += 1;
-        rowScores[y] += 1;
-      }
-    }
-  }
-  const findRange = (scores, minScore, padding, max) => {
-    let start = 0;
-    let end = max - 1;
-    while (start < max && scores[start] < minScore) start += 1;
-    while (end > start && scores[end] < minScore) end -= 1;
-    return {
-      start: Math.max(0, start - padding),
-      end: Math.min(max - 1, end + padding),
-    };
-  };
-  const xRange = findRange(columnScores, Math.max(3, Math.round(height * 0.025)), 10, width);
-  const yRange = findRange(rowScores, Math.max(8, Math.round(width * 0.012)), 6, height);
-  const detectedWidth = xRange.end - xRange.start + 1;
-  const detectedHeight = yRange.end - yRange.start + 1;
-  if (detectedWidth < width * 0.35 || detectedHeight < height * 0.45) {
-    return { x: 0, y: 0, width, height };
-  }
-  return {
-    x: xRange.start,
-    y: yRange.start,
-    width: detectedWidth,
-    height: detectedHeight,
-  };
+  return serverOcrResultToText(result);
 }
 
 async function recognizePartyPanels(file, members, onProgress, options = {}) {
-  const panels = await createPartyPanelFiles(file);
-  const worker = await createWorker('kor+eng', 1);
-  const precise = Boolean(options.precise);
-  const names = [];
-  const ambiguous = [];
-  const appliedCorrections = [];
-  const panelTexts = [];
-  let dominantClan = '';
-  try {
-    await worker.setParameters({
-      preserve_interword_spaces: '1',
-      user_defined_dpi: '300',
-      tessedit_pageseg_mode: '6',
-    });
-    for (let index = 0; index < panels.length; index += 1) {
-      const panel = panels[index];
-      const slotTexts = [];
-      let levelWords = [];
-      let text = await recognizeOcrVariantsWithWorker(panel.file, worker, (progressValue) => {
-        const baseWeight = precise ? 0.55 : 1;
-        const overall = Math.round(((index + ((progressValue / 100) * baseWeight)) / Math.max(1, panels.length)) * 100);
-        onProgress?.(overall);
-      }, precise);
-      const quickReview = !precise ? buildOcrReview(text, members, '', options) : null;
-      const needsAdaptiveSlotScan = !precise && quickReview.exactNames.length < 5;
-      if (precise || needsAdaptiveSlotScan) {
-        const wordBoxResult = await recognizeWordBoxesWithWorker(panel.file, worker, precise);
-        levelWords = wordBoxResult.words;
-        text += `\n${wordBoxResult.text}`;
-      }
-      const earlyTextReview = precise ? buildOcrReview(text, members, '', options) : quickReview;
-      const earlyLevelReview = levelWords?.length
-        ? buildLevelAnchorReview(levelWords, members, '', options)
-        : { exactNames: [] };
-      const earlyNameKeys = new Set([
-        ...(earlyTextReview?.exactNames || []),
-        ...(earlyLevelReview.exactNames || []),
-      ].map(normalize));
-      const needsPreciseSlotScan = precise && earlyNameKeys.size < 5;
-      if (needsPreciseSlotScan || needsAdaptiveSlotScan) {
-        const slotFiles = await createPartyNameSlotFiles(panel.file, precise);
-        for (let slotIndex = 0; slotIndex < slotFiles.length; slotIndex += 1) {
-          const slot = slotFiles[slotIndex];
-          const slotText = await recognizeNameSlotWithWorker(slot.file, worker, precise);
-          slotTexts.push({ slotNumber: slot.slotNumber, text: slotText });
-          text += `\n${slotText}`;
-          const slotStart = precise ? 0.55 : 0.82;
-          const slotWeight = precise ? 0.45 : 0.18;
-          const overall = Math.round(((index + slotStart + (((slotIndex + 1) / Math.max(1, slotFiles.length)) * slotWeight)) / Math.max(1, panels.length)) * 100);
-          onProgress?.(overall);
-        }
-      }
-      panelTexts.push({ panel, text, slotTexts, levelWords });
-    }
-    const firstPassReviews = panelTexts.map(({ text }) => buildOcrReview(text, members, '', options));
-    dominantClan = inferDominantClanFromNames(firstPassReviews.flatMap((review) => review.exactNames), members);
-    panelTexts.forEach(({ panel, text, slotTexts, levelWords }, index) => {
-      const review = dominantClan
-        ? buildOcrReview(text, members, dominantClan, options)
-        : firstPassReviews[index];
-      const levelReview = levelWords?.length
-        ? buildLevelAnchorReview(levelWords, members, dominantClan || '', options)
-        : { exactNames: [], ambiguous: [], appliedCorrections: [] };
-      const panelNames = new Set(review.exactNames.map(normalize));
-      names.push(...review.exactNames.map((name) => ({ name, positions: [panel.partyNumber] })));
-      levelReview.exactNames.forEach((name) => {
-        const key = normalize(name);
-        if (panelNames.has(key)) return;
-        panelNames.add(key);
-        names.push({ name, positions: [panel.partyNumber] });
-      });
-      const slotAmbiguous = [];
-      if (slotTexts?.length && panelNames.size < 5) {
-        slotTexts.forEach((slot) => {
-          const slotReview = buildOcrReview(slot.text, members, dominantClan || '', options);
-          slotReview.exactNames.forEach((name) => {
-            const key = normalize(name);
-            if (panelNames.has(key)) return;
-            panelNames.add(key);
-            names.push({ name, positions: [panel.partyNumber] });
-          });
-          if (!slotReview.exactNames.length && panelNames.size < 5) {
-            slotAmbiguous.push(...slotReview.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
-          }
-        });
-      }
-      ambiguous.push(...review.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
-      ambiguous.push(...levelReview.ambiguous.map((item) => ({ ...item, positions: [panel.partyNumber] })));
-      ambiguous.push(...slotAmbiguous);
-      appliedCorrections.push(...(review.appliedCorrections || []).map((item) => ({ ...item, positions: [panel.partyNumber] })));
-      appliedCorrections.push(...(levelReview.appliedCorrections || []).map((item) => ({ ...item, positions: [panel.partyNumber] })));
-    });
-    const confirmedNameKeys = new Set(names.map((item) => normalize(item.name)));
-    const bestAmbiguousByMember = new Map();
-    ambiguous.forEach((item) => {
-      const bestName = item.suggestions?.[0]?.member?.characterName;
-      if (!bestName || confirmedNameKeys.has(normalize(bestName))) return;
-      const current = bestAmbiguousByMember.get(bestName);
-      if (!current || ambiguousCandidateRank(item) > ambiguousCandidateRank(current)) {
-        bestAmbiguousByMember.set(bestName, item);
-      }
-    });
-    const limitedAmbiguous = [...bestAmbiguousByMember.values()]
-      .sort((a, b) => ambiguousCandidateRank(b) - ambiguousCandidateRank(a))
-      .slice(0, 7);
-    ambiguous.splice(0, ambiguous.length, ...limitedAmbiguous);
-  } finally {
-    await worker.terminate();
+  onProgress?.(5);
+  const result = await recognizePartyPanelsOnServer(file, members, options);
+  if (!result) {
+    throw new Error('OCR 서버 주소가 설정되지 않았습니다. VITE_OCR_API_BASE_URL을 확인해 주세요.');
   }
   onProgress?.(100);
-  return { names, ambiguous, dominantClan, appliedCorrections };
+  return result;
 }
 
 function splitKoreanTime(value) {
@@ -2252,7 +1775,7 @@ function Attendance({ member, setPage }) {
     setOcrStatus('스샷 글자를 읽는 중입니다.');
     setProgress(0);
     try {
-      const text = await recognizeImageTextMultiple(file, setProgress);
+      const text = await recognizeImageTextMultiple(file, setProgress, members, { clanHint: form.clanName });
       const { exactNames: names, ambiguous } = buildOcrReview(text, members, form.clanName, { corrections: ocrCorrections, filters: ocrFilters });
       const merged = [...new Set([...namesFromText(currentDraftNames), ...names])];
       updateCurrentDraft(merged.join('\n'));
@@ -3858,7 +3381,7 @@ function RosterScan() {
     setStatus('이미지에서 이름을 읽는 중입니다...');
     setProgress(0);
     try {
-      const ocrText = await recognizeImageTextMultiple(file, setProgress);
+      const ocrText = await recognizeImageTextMultiple(file, setProgress, members);
       setText(ocrText);
       const memberByNormalized = new Map(members.map((m) => [normalize(m.characterName), m.characterName]));
       const names = extractOcrNames(ocrText, members).slice(0, 40);
