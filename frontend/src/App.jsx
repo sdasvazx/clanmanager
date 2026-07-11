@@ -3624,11 +3624,12 @@ function ActivitySettingsPage({ member, setPage }) {
         method: 'PUT',
         body: JSON.stringify({
           adminMemberId: member.memberId,
-          activities: orderedRows.map((row) => ({
+          activities: orderedRows.filter((row) => row.active).map((row) => ({
             ...row,
             activityName: row.activityName.trim(),
             participationScore: Number(row.participationScore || 0),
             absencePenaltyScore: Number(row.absencePenaltyScore || 0),
+            active: true,
           })),
         }),
       });

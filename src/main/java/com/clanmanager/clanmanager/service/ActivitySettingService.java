@@ -85,14 +85,17 @@ public class ActivitySettingService {
     public List<ActivitySettingDto.Response> saveSettings(ActivitySettingDto.SaveRequest request) {
         validateAdmin(request == null ? null : request.getAdminMemberId());
         List<ActivitySettingDto.Row> rows = request == null ? List.of() : request.getActivities();
-        if (rows == null || rows.isEmpty()) {
+        List<ActivitySettingDto.Row> activeRows = rows == null ? List.of() : rows.stream()
+                .filter(row -> row.getActive() == null || row.getActive())
+                .toList();
+        if (activeRows.isEmpty()) {
             throw new IllegalArgumentException("저장할 활동 설정이 없습니다.");
         }
-        validateRows(rows);
+        validateRows(activeRows);
 
         List<Long> savedIds = new ArrayList<>();
         int order = 1;
-        for (ActivitySettingDto.Row row : rows) {
+        for (ActivitySettingDto.Row row : activeRows) {
             ActivityType activityType = row.getActivityTypeId() == null
                     ? new ActivityType()
                     : activityTypeRepository.findById(row.getActivityTypeId())
@@ -107,7 +110,7 @@ public class ActivitySettingService {
             activityType.setPenaltyEnabled(Boolean.TRUE.equals(row.getPenaltyEnabled()));
             activityType.setAbsencePenaltyScore(absencePenaltyScore);
             activityType.setDisplayOrder(row.getDisplayOrder() == null ? order : row.getDisplayOrder());
-            activityType.setActive(row.getActive() == null || row.getActive());
+            activityType.setActive(true);
             savedIds.add(activityTypeRepository.save(activityType).getActivityTypeId());
             order++;
         }
