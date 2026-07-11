@@ -456,7 +456,39 @@
 }
 
 .participation-ranking-table.wide {
-  min-width: 1180px;
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.participation-ranking-table th,
+.participation-ranking-table td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.participation-ranking-table th {
+  padding: 10px 12px;
+}
+
+.participation-ranking-table td {
+  padding: 9px 12px;
+}
+
+.participation-ranking-table td:nth-child(2) {
+  min-width: 104px;
+  font-weight: 800;
+}
+
+.participation-ranking-table .mini-clan-pill,
+.participation-ranking-table .mini-button {
+  white-space: nowrap;
+}
+
+.participation-ranking-table .mini-button {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: .78rem;
 }
 
 .ranking-footnote {
@@ -3066,6 +3098,17 @@
   .ranking table {
     min-width: 0;
     font-size: .84rem;
+  }
+
+  .participation-ranking-table.wide {
+    min-width: max-content;
+    font-size: .82rem;
+  }
+
+  .participation-ranking-table th,
+  .participation-ranking-table td {
+    padding: 8px 9px;
+    white-space: nowrap;
   }
 
   .lobby-ranking-table th,
