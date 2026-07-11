@@ -92,16 +92,18 @@ public class BossParticipationController {
             throw new IllegalArgumentException("\uBCF4\uC2A4\uBA85\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
         }
 
+        ActivityType activityType = resolveActivityType(request.getActivityTypeId(), bossName);
         BossParticipationRecord record = recordRepository.save(BossParticipationRecord.builder()
                 .bossDate(request.getBossDate() == null ? LocalDate.now() : request.getBossDate())
                 .cutTime(request.getCutTime() == null ? LocalTime.now().withSecond(0).withNano(0) : request.getCutTime())
                 .bossName(bossName)
                 .score(request.getScore() == null ? 1 : request.getScore())
+                .activityType(activityType)
                 .memo(clean(request.getMemo()))
                 .createdBy(admin)
                 .build());
 
-        saveRecordMembers(record, request.getMembers(), resolveActivityType(request.getActivityTypeId(), bossName));
+        saveRecordMembers(record, request.getMembers(), activityType);
 
         return toResponse(record);
     }
@@ -124,8 +126,13 @@ public class BossParticipationController {
 
         BossParticipationRecord record = findRecord(recordId);
         List<BossParticipationMember> previousMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
+        ActivityType activityType = request.getActivityTypeId() == null
+                ? resolveActivityType(record)
+                : resolveActivityType(request.getActivityTypeId(), record.getBossName());
+        record.setActivityType(activityType);
+        recordRepository.save(record);
         participationMemberRepository.deleteByRecord(record);
-        saveRecordMembers(record, request.getMembers(), resolveActivityType(request.getActivityTypeId(), record.getBossName()));
+        saveRecordMembers(record, request.getMembers(), activityType);
 
         List<BossParticipationMember> currentMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
         removeAttendanceForDeletedMembers(record, previousMembers, currentMembers);
@@ -167,7 +174,7 @@ public class BossParticipationController {
             List<BossParticipationMember> previousMembers,
             List<BossParticipationMember> currentMembers
     ) {
-        ActivityType activityType = resolveActivityType(record.getBossName());
+        ActivityType activityType = resolveActivityType(record);
         if (activityType == null) {
             return;
         }
@@ -197,7 +204,7 @@ public class BossParticipationController {
                         LinkedHashMap::new,
                         Collectors.counting()
                 ));
-        ActivityType activityType = resolveActivityType(record.getBossName());
+        ActivityType activityType = resolveActivityType(record);
         return BossParticipationResponseDto.from(
                 record,
                 members.size(),
@@ -244,6 +251,13 @@ public class BossParticipationController {
                 .orElse(null);
     }
 
+    private ActivityType resolveActivityType(BossParticipationRecord record) {
+        if (record.getActivityType() != null && Boolean.TRUE.equals(record.getActivityType().getActive())) {
+            return record.getActivityType();
+        }
+        return resolveActivityType(record.getBossName());
+    }
+
     private ActivityType resolveActivityType(Long activityTypeId, String bossName) {
         if (activityTypeId != null) {
             return activityTypeRepository.findById(activityTypeId)
@@ -256,6 +270,21 @@ public class BossParticipationController {
     private Optional<ActivityType> findActivityTypeByKeyword(String bossName) {
         String compact = bossName.replaceAll("\\s+", "").toLowerCase();
 
+        if (compact.contains("13")) {
+            return activityTypeRepository.findByTypeName("13\uC2DC (2\uC131)")
+                    .or(() -> activityTypeRepository.findByTypeName("13\uC2DC \uBCF4\uC2A4"));
+        }
+        if (compact.contains("17")) {
+            return activityTypeRepository.findByTypeName("17\uC2DC (1\uC131)")
+                    .or(() -> activityTypeRepository.findByTypeName("17\uC2DC \uBCF4\uC2A4"));
+        }
+        if (compact.contains("21")) {
+            return activityTypeRepository.findByTypeName("21\uC2DC (2\uC131)")
+                    .or(() -> activityTypeRepository.findByTypeName("21\uC2DC \uBCF4\uC2A4"));
+        }
+        if (compact.contains("\uC18C\uC218\uC7C1")) {
+            return activityTypeRepository.findByTypeName("\uC18C\uC218\uC7C1");
+        }
         if (compact.contains("\uC815\uC608")) {
             return activityTypeRepository.findByTypeName("\uC815\uC608\uB358\uC804\uBCF4\uC2A4");
         }
@@ -265,35 +294,24 @@ public class BossParticipationController {
         if (compact.contains("\uB9C8\uC288\uBBF8\uB4DC") || compact.contains("\uB9C8\uC288")) {
             return activityTypeRepository.findByTypeName("\uB9C8\uC288\uBBF8\uB4DC");
         }
-        if (compact.contains("소수쟁")) {
-            return activityTypeRepository.findByTypeName("소수쟁");
+        if (compact.contains("\uACB0\uC2B9")) {
+            return activityTypeRepository.findByTypeName("\uACB0\uC2B9\uC804");
+        }
+        if (compact.contains("\uC804\uCD08")) {
+            return activityTypeRepository.findByTypeName("\uC804\uCD08\uC804");
         }
         if (compact.contains("\uD074\uB79C\uC784\uBB34") || compact.contains("\uC784\uBB34")) {
             return activityTypeRepository.findByTypeName("\uD074\uB79C\uC784\uBB34");
         }
         if (compact.contains("\uC218\uD638")) {
-            return activityTypeRepository.findByTypeName("클랜수호")
+            return activityTypeRepository.findByTypeName("\uD074\uB79C\uC218\uD638")
                     .or(() -> activityTypeRepository.findByTypeName("\uC218\uD638"));
         }
         if (compact.contains("\uC7C1\uD0C8")) {
-            return activityTypeRepository.findByTypeName("전초전")
-                    .or(() -> activityTypeRepository.findByTypeName("\uC7C1\uD0C8\uC804"));
-        }
-        if (compact.contains("13")) {
-            return activityTypeRepository.findByTypeName("13시 (2성)")
-                    .or(() -> activityTypeRepository.findByTypeName("13\uC2DC \uBCF4\uC2A4"));
-        }
-        if (compact.contains("17")) {
-            return activityTypeRepository.findByTypeName("17시 (1성)")
-                    .or(() -> activityTypeRepository.findByTypeName("17\uC2DC \uBCF4\uC2A4"));
-        }
-        if (compact.contains("21")) {
-            return activityTypeRepository.findByTypeName("21시 (2성)")
-                    .or(() -> activityTypeRepository.findByTypeName("21\uC2DC \uBCF4\uC2A4"));
+            return activityTypeRepository.findByTypeName("\uC7C1\uD0C8\uC804");
         }
         return Optional.empty();
     }
-
     public record MemberBossParticipationDto(
             Long recordId,
             LocalDate bossDate,

@@ -35,6 +35,10 @@ public class BossParticipationRecord {
     @Column(nullable = false)
     private Integer score;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "activity_type_id")
+    private ActivityType activityType;
+
     @Column(length = 255)
     private String memo;
 

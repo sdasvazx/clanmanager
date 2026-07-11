@@ -1878,6 +1878,7 @@ function Attendance({ member, setPage }) {
         }),
       });
       updateBatchRow(key, { savedRecord: saved, message: `${saved.bossName} ${saved.totalCount}명 저장 완료${skippedCount ? ` · 주황색 ${skippedCount}개 제외` : ''}` });
+      setMessage(`${saved.bossName} 사진 등록이 완료되었습니다. 참여율 조회에 반영됩니다.${skippedCount ? ` 주황색 ${skippedCount}개는 제외했습니다.` : ''}`);
       await load();
     } catch (err) {
       updateBatchRow(key, { message: err.message });
