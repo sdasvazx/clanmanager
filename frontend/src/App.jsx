@@ -14,7 +14,7 @@ const menu = [
   ['lobby', '로', '로비'],
   ['my-info', '내', '내 정보 확인'],
   ['participation', '참', '참여율 조회'],
-  ['attendance', '보', '보스 참여내역 조회'],
+  ['boss-history', '보', '보스 참여내역 조회'],
   ['payment', '분', '분배금 조회'],
   ['ledger', '통', '통장현황'],
   ['book', '장', '장부 조회'],
@@ -1442,7 +1442,7 @@ function Participation({ member, setPage }) {
             <div className="table-wrap">
               <table className="data-table participation-ranking-table wide">
                 <thead><tr><th>순위</th><th>닉네임</th><th>클랜</th><th>클래스</th><th>레벨</th><th>참여횟수</th>{activityColumns.map((activity) => <th key={activity.activityTypeId}>{activity.activityName}</th>)}<th>기본점수</th><th>미참여 페널티</th><th>소수쟁 가산점</th><th>최종점수</th><th>참여율</th><th>기여율</th><th>상세</th></tr></thead>
-                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td>{m.characterName}</td><td><span className="mini-clan-pill">{m.guildName || '-'}</span></td><td>{m.characterClass || '-'}</td><td>{m.level ?? '-'}</td><td>{m.count}회</td>{activityColumns.map((activity) => <td key={activity.activityTypeId} className="blue-text">{m.activityCounts?.[activity.activityTypeId] || 0}회</td>)}<td>{m.baseParticipationScore}점</td><td className="red-text">-{m.absencePenaltyScore}점</td><td>{m.minorityBonusScore}점</td><td><b>{m.finalParticipationScore}점</b></td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.contributionRate}%</td><td><button type="button" className="mini-button" onClick={() => openParticipationDetail(m)}>상세정보</button></td></tr>)}</tbody>
+                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td><button type="button" className="link-button participation-name-button" onClick={() => openParticipationDetail(m)}>{m.characterName}</button></td><td><span className="mini-clan-pill">{m.guildName || '-'}</span></td><td>{m.characterClass || '-'}</td><td>{m.level ?? '-'}</td><td>{m.count}회</td>{activityColumns.map((activity) => <td key={activity.activityTypeId} className="blue-text">{m.activityCounts?.[activity.activityTypeId] || 0}회</td>)}<td>{m.baseParticipationScore}점</td><td className="red-text">-{m.absencePenaltyScore}점</td><td>{m.minorityBonusScore}점</td><td><b>{m.finalParticipationScore}점</b></td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.contributionRate}%</td><td><button type="button" className="mini-button" onClick={() => openParticipationDetail(m)}>상세정보</button></td></tr>)}</tbody>
               </table>
             </div>
           </div>
@@ -1507,7 +1507,7 @@ function Participation({ member, setPage }) {
   );
 }
 
-function Attendance({ member, setPage }) {
+function Attendance({ member, setPage, mode = 'check' }) {
   const [records, setRecords] = useState([]);
   const [members, setMembers] = useState([]);
   const [batchRows, setBatchRows] = useState(() => buildBatchRowsFromActivitySettings());
@@ -1546,6 +1546,12 @@ function Attendance({ member, setPage }) {
 
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
+  const showCheck = mode !== 'history';
+  const showHistory = mode !== 'check';
+  const pageTitle = showCheck ? '출석체크' : '보스 참여내역 조회';
+  const pageDescription = showCheck
+    ? '보스 시간별 사진을 등록하고 참석 인원을 저장합니다.'
+    : '저장된 보스 참여내역과 참여 명단만 조회합니다.';
   const correctionEntries = useMemo(() => Object.entries(ocrCorrections).sort(([a], [b]) => a.localeCompare(b, 'ko-KR')), [ocrCorrections]);
   const filterEntries = useMemo(() => [...ocrFilters].sort((a, b) => a.localeCompare(b, 'ko-KR')), [ocrFilters]);
   const saveOcrCorrection = () => {
@@ -1937,16 +1943,28 @@ function Attendance({ member, setPage }) {
     setReviewEdit(null);
   };
 
-  const load = () => Promise.all([request('/boss-participations'), request('/members'), request('/activities/settings')])
-    .then(([recordRows, memberRows, activityRows]) => {
-      const freshActivityRows = preferFreshActivitySettings(activityRows);
-      setRecords(recordRows);
-      setMembers(memberRows);
-      setBatchRows((previousRows) => buildBatchRowsFromActivitySettings(freshActivityRows, previousRows));
-    })
-    .catch((err) => setMessage(err.message));
+  const load = () => {
+    const jobs = showCheck
+      ? [request('/members'), request('/activities/settings')]
+      : [request('/boss-participations'), request('/members')];
+    return Promise.all(jobs)
+      .then((rows) => {
+        if (showCheck) {
+          const [memberRows, activityRows] = rows;
+          const freshActivityRows = preferFreshActivitySettings(activityRows);
+          setMembers(memberRows);
+          setBatchRows((previousRows) => buildBatchRowsFromActivitySettings(freshActivityRows, previousRows));
+          setSelectedRecord(null);
+          return;
+        }
+        const [recordRows, memberRows] = rows;
+        setRecords(recordRows);
+        setMembers(memberRows);
+      })
+      .catch((err) => setMessage(err.message));
+  };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [mode]);
 
   const selectFile = (event) => {
     const nextFile = event.target.files?.[0];
@@ -2100,11 +2118,11 @@ function Attendance({ member, setPage }) {
         {members.map((candidate) => <option key={candidate.memberId} value={candidate.characterName} />)}
       </datalist>
       <div className="page-title">
-        <h1>보스 참여내역 조회</h1>
-        <p>각 클랜 스크린샷을 OCR로 읽어 보스 회차별 참석 인원과 명단을 기록합니다.</p>
+        <h1>{pageTitle}</h1>
+        <p>{pageDescription}</p>
       </div>
 
-      {member.role === 'ADMIN' && (
+      {showCheck && member.role === 'ADMIN' && (
         <section className="white-card boss-batch-card">
           <div className="section-heading">
             <div>
@@ -2452,7 +2470,7 @@ function Attendance({ member, setPage }) {
         </section>
       )}
 
-      <section className="white-card boss-history-card">
+      {showHistory && <section className="white-card boss-history-card">
         <div className="filters">
           <select><option>전체 날짜</option></select>
           <input placeholder="보스명" />
@@ -2491,9 +2509,9 @@ function Attendance({ member, setPage }) {
           </table>
         </div>
         {!records.length && <div className="empty-state">아직 등록된 보스 참여내역이 없습니다.</div>}
-      </section>
+      </section>}
 
-      {selectedRecord && (
+      {showHistory && selectedRecord && (
         <section className="white-card boss-roster-card">
           <div className="section-heading">
             <div>
@@ -3809,7 +3827,8 @@ export default function App() {
   const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} favoritePages={visibleFavoritePages} />
     : page === 'my-info' ? <MyInfo member={member} />
     : page === 'participation' ? <Participation member={member} setPage={setPage} />
-    : page === 'attendance' ? <Attendance member={member} setPage={setPage} />
+    : page === 'attendance' ? <Attendance member={member} setPage={setPage} mode="check" />
+    : page === 'boss-history' ? <Attendance member={member} setPage={setPage} mode="history" />
     : page === 'payment' ? <PaymentClaimPage member={member} />
     : page === 'ledger' ? <ClanVaultPage member={member} />
     : page === 'book' ? <ClanVaultPage member={member} readonly />
@@ -3827,3 +3846,4 @@ export default function App() {
     : <Lobby member={member} setPage={setPage} favoritePages={visibleFavoritePages} />;
   return <Shell member={member} page={page} setPage={setPage} onLogout={logout} favorites={favorites} toggleFavorite={toggleFavorite}>{view}</Shell>;
 }
+
