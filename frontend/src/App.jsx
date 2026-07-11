@@ -183,6 +183,22 @@ const buildBatchRowsFromActivitySettings = (activities = [], previousRows = []) 
   const previousByBossName = new Map(previousRows.map((row) => [row.bossName, row]));
   return slots.map((slot) => createBatchRowFromSlot(slot, previousByKey.get(slot.key) || previousByBossName.get(slot.bossName)));
 };
+const ACTIVITY_SETTINGS_CACHE_KEY = 'clanmanager:activity-settings:last-saved';
+const readCachedActivitySettings = () => {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(ACTIVITY_SETTINGS_CACHE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+const writeCachedActivitySettings = (rows) => {
+  if (Array.isArray(rows)) sessionStorage.setItem(ACTIVITY_SETTINGS_CACHE_KEY, JSON.stringify(rows));
+};
+const preferFreshActivitySettings = (apiRows = []) => {
+  const cachedRows = readCachedActivitySettings();
+  return cachedRows.length > (Array.isArray(apiRows) ? apiRows.length : 0) ? cachedRows : apiRows;
+};
 const clanDisplayOrder = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 
 function canonicalClanName(value) {
@@ -1922,9 +1938,10 @@ function Attendance({ member, setPage }) {
 
   const load = () => Promise.all([request('/boss-participations'), request('/members'), request('/activities/settings')])
     .then(([recordRows, memberRows, activityRows]) => {
+      const freshActivityRows = preferFreshActivitySettings(activityRows);
       setRecords(recordRows);
       setMembers(memberRows);
-      setBatchRows((previousRows) => buildBatchRowsFromActivitySettings(activityRows, previousRows));
+      setBatchRows((previousRows) => buildBatchRowsFromActivitySettings(freshActivityRows, previousRows));
     })
     .catch((err) => setMessage(err.message));
 
@@ -3613,6 +3630,7 @@ function ActivitySettingsPage({ member, setPage }) {
   const load = () => request('/activities/settings')
     .then((data) => {
       const normalized = normalizeRows(data);
+      writeCachedActivitySettings(normalized);
       setRows(normalized);
       setOriginal(JSON.stringify(normalized));
     })
@@ -3675,6 +3693,7 @@ function ActivitySettingsPage({ member, setPage }) {
         }),
       });
       const normalized = normalizeRows(saved);
+      writeCachedActivitySettings(normalized);
       setRows(normalized);
       setOriginal(JSON.stringify(normalized));
       setMessage('출석보스 설정을 저장했습니다. 참여율 조회 화면에 바로 반영됩니다.');
