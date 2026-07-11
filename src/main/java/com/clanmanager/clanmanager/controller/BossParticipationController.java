@@ -101,7 +101,7 @@ public class BossParticipationController {
                 .createdBy(admin)
                 .build());
 
-        saveRecordMembers(record, request.getMembers());
+        saveRecordMembers(record, request.getMembers(), resolveActivityType(request.getActivityTypeId(), bossName));
 
         return toResponse(record);
     }
@@ -125,7 +125,7 @@ public class BossParticipationController {
         BossParticipationRecord record = findRecord(recordId);
         List<BossParticipationMember> previousMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
         participationMemberRepository.deleteByRecord(record);
-        saveRecordMembers(record, request.getMembers());
+        saveRecordMembers(record, request.getMembers(), resolveActivityType(request.getActivityTypeId(), record.getBossName()));
 
         List<BossParticipationMember> currentMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
         removeAttendanceForDeletedMembers(record, previousMembers, currentMembers);
@@ -136,9 +136,7 @@ public class BossParticipationController {
                 .toList();
     }
 
-    private void saveRecordMembers(BossParticipationRecord record, List<BossParticipationRequestDto.MemberEntry> members) {
-        ActivityType activityType = resolveActivityType(record.getBossName());
-
+    private void saveRecordMembers(BossParticipationRecord record, List<BossParticipationRequestDto.MemberEntry> members, ActivityType activityType) {
         members.stream()
                 .map(this::normalizeEntry)
                 .filter(Objects::nonNull)
@@ -244,6 +242,15 @@ public class BossParticipationController {
         return activityTypeRepository.findByTypeName(name)
                 .or(() -> findActivityTypeByKeyword(name))
                 .orElse(null);
+    }
+
+    private ActivityType resolveActivityType(Long activityTypeId, String bossName) {
+        if (activityTypeId != null) {
+            return activityTypeRepository.findById(activityTypeId)
+                    .filter(activityType -> Boolean.TRUE.equals(activityType.getActive()))
+                    .orElseThrow(() -> new IllegalArgumentException("활동 설정을 찾을 수 없습니다."));
+        }
+        return resolveActivityType(bossName);
     }
 
     private Optional<ActivityType> findActivityTypeByKeyword(String bossName) {

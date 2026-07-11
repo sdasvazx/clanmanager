@@ -1518,6 +1518,15 @@ function Attendance({ member, setPage }) {
   const [correctionDraft, setCorrectionDraft] = useState({ wrong: '', right: '' });
   const [ocrFilters, setOcrFilters] = useState(() => readStoredOcrFilters());
   const [filterDraft, setFilterDraft] = useState('');
+  const attendanceBossOptions = useMemo(() => {
+    const names = batchRows.map((row) => row.bossName).filter(Boolean);
+    return names.length ? names : bossOptions;
+  }, [batchRows]);
+  useEffect(() => {
+    if (attendanceBossOptions.length && !attendanceBossOptions.includes(form.bossName)) {
+      setForm((prev) => ({ ...prev, bossName: attendanceBossOptions[0] }));
+    }
+  }, [attendanceBossOptions, form.bossName]);
 
   const currentDraftNames = draftByClan[form.clanName] ?? '';
   const totalDraftCount = Object.values(draftByClan).reduce((sum, text) => sum + namesFromText(text).length, 0);
@@ -1843,6 +1852,7 @@ function Attendance({ member, setPage }) {
         method: 'POST',
         body: JSON.stringify({
           createdByMemberId: member.memberId,
+          activityTypeId: row.activityTypeId,
           bossDate: form.bossDate,
           cutTime: row.cutInput || row.cutTime,
           bossName: row.bossName,
@@ -1962,6 +1972,7 @@ function Attendance({ member, setPage }) {
         method: 'POST',
         body: JSON.stringify({
           createdByMemberId: member.memberId,
+          activityTypeId: batchRows.find((row) => row.bossName === form.bossName)?.activityTypeId ?? null,
           bossDate: form.bossDate,
           cutTime: form.cutTime,
           bossName: form.bossName,
@@ -2326,7 +2337,7 @@ function Attendance({ member, setPage }) {
           <form className="boss-form" onSubmit={saveRecord}>
             <label>날짜<input type="date" value={form.bossDate} onChange={(e) => setForm({ ...form, bossDate: e.target.value })} /></label>
             <label>컷시간<input type="time" value={form.cutTime} onChange={(e) => setForm({ ...form, cutTime: e.target.value })} /></label>
-            <label>보스명<select value={form.bossName} onChange={(e) => setForm({ ...form, bossName: e.target.value })}>{bossOptions.map((boss) => <option key={boss}>{boss}</option>)}</select></label>
+            <label>보스명<select value={form.bossName} onChange={(e) => setForm({ ...form, bossName: e.target.value })}>{attendanceBossOptions.map((boss) => <option key={boss}>{boss}</option>)}</select></label>
             <label>클랜<select value={form.clanName} onChange={(e) => setForm({ ...form, clanName: e.target.value })}>{clanOptions.map((clan) => <option key={clan}>{clan}</option>)}</select></label>
             <label>점수<input type="number" min="0" value={form.score} onChange={(e) => setForm({ ...form, score: e.target.value })} /></label>
             <label className="wide">메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 2성, 정산 제외 등" /></label>

@@ -17,6 +17,7 @@ import java.util.List;
 public class BossParticipationRequestDto {
 
     private Long createdByMemberId;
+    private Long activityTypeId;
     private LocalDate bossDate;
     private LocalTime cutTime;
 
