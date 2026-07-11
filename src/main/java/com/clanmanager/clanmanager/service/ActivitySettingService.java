@@ -96,11 +96,11 @@ public class ActivitySettingService {
         List<Long> savedIds = new ArrayList<>();
         int order = 1;
         for (ActivitySettingDto.Row row : activeRows) {
+            String activityName = clean(row.getActivityName());
             ActivityType activityType = row.getActivityTypeId() == null
-                    ? new ActivityType()
+                    ? activityTypeRepository.findByTypeName(activityName).orElseGet(ActivityType::new)
                     : activityTypeRepository.findById(row.getActivityTypeId())
                     .orElseThrow(() -> new IllegalArgumentException("활동 설정을 찾을 수 없습니다."));
-            String activityName = clean(row.getActivityName());
             int participationScore = number(row.getParticipationScore(), 0);
             int absencePenaltyScore = number(row.getAbsencePenaltyScore(), 0);
             activityType.setTypeName(activityName);

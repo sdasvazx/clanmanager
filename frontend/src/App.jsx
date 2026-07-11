@@ -1158,8 +1158,8 @@ function ProfileCard({ member, info, incompleteCollections = [] }) {
   return (
     <section className="white-card profile-overview">
       <div className="profile-name"><span className="avatar">{info.characterName.slice(0, 1)}</span><div><h2>{info.characterName}</h2><div className="pills"><span>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</span>{canSeeCombatPower && <span>전투력 {formatNumber(info.combatPower)}</span>}</div></div></div>
-      <div className="metric-grid"><Metric label="현재 참여율" value={`${info.participationRate}%`} caption={`참여 ${info.myAttendanceCount}회 / 1등 ${info.topAttendanceCount}회`} tone="blue" /><Metric label="기여율" value={`${info.participationRate}%`} caption="최고 참여 횟수를 100%로 계산" tone="green" /><Metric label="참석 횟수" value={`${info.myAttendanceCount}회`} caption="전체 활동 기준" tone="purple" /></div>
-      <div className="formula-row"><div><b>참여율 계산 기준</b><p>내 참석 횟수 / 가장 많이 참석한 캐릭터의 참석 횟수 × 100</p></div><div><b>현재 100% 기준</b><p>{info.topAttendanceCount}회</p></div></div>
+      <div className="metric-grid"><Metric label="현재 참여율" value={`${info.participationRate}%`} caption={`참여 ${info.myAttendanceCount}회 / 전체 ${info.totalActivityCount ?? 0}회`} tone="blue" /><Metric label="기여율" value={`${info.participationRate}%`} caption="전체 보스참여횟수 기준" tone="green" /><Metric label="참석 횟수" value={`${info.myAttendanceCount}회`} caption="전체 활동 기준" tone="purple" /></div>
+      <div className="formula-row"><div><b>참여율 계산 기준</b><p>내 참석 횟수 / 전체 보스참여횟수 × 100</p></div><div><b>전체 보스참여횟수</b><p>{info.totalActivityCount ?? 0}회</p></div></div>
       <div className="my-collection-alert">
         <div>
           <b>미완료 컬렉템</b>
@@ -1314,12 +1314,12 @@ function Participation({ member, setPage }) {
       <AdminBackButton setPage={setPage} />
       <div className="page-title">
         <h1>참여율·기여율 조회</h1>
-        <p>2주 회차별로 참여 횟수를 계산하고, 가장 많이 참석한 캐릭터를 100%로 잡습니다.</p>
+        <p>2주 회차별로 전체 보스참여횟수 대비 개인 참여율을 계산합니다.</p>
       </div>
       <section className="white-card participation-period-card">
         <div className="info-banner">
           <b>참여율 계산 기준</b>
-          <span>선택 회차 내 참석 횟수 / 회차 1등 참석 횟수 × 100</span>
+          <span>선택 회차 내 개인 참석 횟수 / 전체 보스참여횟수 × 100</span>
         </div>
         <div className="participation-controls">
           <label>2주 회차

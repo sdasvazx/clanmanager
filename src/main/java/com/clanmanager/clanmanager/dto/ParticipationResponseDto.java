@@ -43,6 +43,7 @@ public class ParticipationResponseDto {
         private Integer combatPower;
         private Long attendanceCount;
         private Long topAttendanceCount;
+        private Integer totalActivityCount;
         private Double participationRate;
         private Integer baseParticipationScore;
         private Integer absencePenaltyScore;

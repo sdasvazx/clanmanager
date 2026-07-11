@@ -52,6 +52,7 @@ public class MemberController {
                 .level(member.getLevel())
                 .myAttendanceCount(participation.getAttendanceCount())
                 .topAttendanceCount(participation.getTopAttendanceCount())
+                .totalActivityCount(participation.getTotalActivityCount())
                 .participationRate(participation.getParticipationRate())
                 .build();
     }

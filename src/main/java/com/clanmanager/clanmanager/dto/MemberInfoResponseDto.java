@@ -16,6 +16,7 @@ public class MemberInfoResponseDto {
 
     private Long myAttendanceCount;
     private Long topAttendanceCount;
+    private Integer totalActivityCount;
 
     private Double participationRate;
 }
