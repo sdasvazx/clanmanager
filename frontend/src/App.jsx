@@ -142,6 +142,47 @@ const bossCheckSlots = [
   { key: 'mashumid', title: '마슈미드', cutTime: '22:00', bossName: '마슈미드', score: 1 },
   { key: 'enoch', title: '에노크', cutTime: '22:00', bossName: '에노크', score: 1 },
 ];
+const inferActivityCutTime = (activityName) => {
+  const match = String(activityName || '').match(/(\d{1,2})\s*시/);
+  if (!match) return '22:00';
+  return `${String(Math.min(23, Math.max(0, Number(match[1])))).padStart(2, '0')}:00`;
+};
+const activitySettingToBossSlot = (activity, index) => {
+  const activityName = activity.activityName || activity.typeName || `활동 ${index + 1}`;
+  return {
+    key: `activity-${activity.activityTypeId ?? (normalize(activityName) || index)}`,
+    activityTypeId: activity.activityTypeId ?? null,
+    title: activityName,
+    cutTime: inferActivityCutTime(activityName),
+    bossName: activityName,
+    score: activity.participationScore ?? activity.score ?? 1,
+  };
+};
+const createBatchRowFromSlot = (slot, previous = {}) => ({
+  ...slot,
+  files: previous.files || [],
+  fileReviews: previous.fileReviews || [],
+  names: previous.names || [],
+  ambiguous: previous.ambiguous || [],
+  appliedCorrections: previous.appliedCorrections || [],
+  cutInput: previous.cutInput ?? slot.cutTime,
+  longTerm: previous.longTerm || false,
+  doubleScore: previous.doubleScore || false,
+  precise: previous.precise || false,
+  scanning: false,
+  progress: previous.progress || 0,
+  savedRecord: previous.savedRecord || null,
+  message: previous.message || '',
+});
+const buildBatchRowsFromActivitySettings = (activities = [], previousRows = []) => {
+  const activeActivities = Array.isArray(activities) ? activities.filter((activity) => activity.active !== false) : [];
+  const slots = activeActivities.length
+    ? activeActivities.map(activitySettingToBossSlot)
+    : bossCheckSlots;
+  const previousByKey = new Map(previousRows.map((row) => [row.key, row]));
+  const previousByBossName = new Map(previousRows.map((row) => [row.bossName, row]));
+  return slots.map((slot) => createBatchRowFromSlot(slot, previousByKey.get(slot.key) || previousByBossName.get(slot.bossName)));
+};
 const clanDisplayOrder = ['귀신', '운좋은사람들', '귀신Z', '로망'];
 
 function canonicalClanName(value) {
@@ -1280,7 +1321,7 @@ function Participation({ member, setPage }) {
   const detailHistoryInPeriod = useMemo(() => detailHistory.filter((record) => record.bossDate >= detailPeriod.start && record.bossDate < detailPeriod.end), [detailHistory, detailPeriod.start, detailPeriod.end]);
   const detailBossStats = useMemo(() => {
     const allNames = [...new Set([
-      ...bossCheckSlots.map((slot) => slot.bossName),
+      ...activityColumns.map((activity) => activity.activityName),
       ...detailRecordsInPeriod.map((record) => record.bossName),
       ...detailHistoryInPeriod.map((record) => record.bossName),
     ])];
@@ -1289,7 +1330,7 @@ function Participation({ member, setPage }) {
       const attended = detailHistoryInPeriod.filter((record) => record.bossName === bossName).length;
       return { bossName, total, attended };
     }).filter((row) => row.total || row.attended);
-  }, [detailRecordsInPeriod, detailHistoryInPeriod]);
+  }, [activityColumns, detailRecordsInPeriod, detailHistoryInPeriod]);
   const detailParticipationScore = detailHistoryInPeriod.reduce((sum, row) => sum + Number(row.score || 1), 0);
   const detailPenaltyScore = 0;
   const detailFinalScore = Math.max(0, detailParticipationScore - detailPenaltyScore);
@@ -1453,22 +1494,7 @@ function Participation({ member, setPage }) {
 function Attendance({ member, setPage }) {
   const [records, setRecords] = useState([]);
   const [members, setMembers] = useState([]);
-  const [batchRows, setBatchRows] = useState(() => bossCheckSlots.map((slot) => ({
-    ...slot,
-    files: [],
-    fileReviews: [],
-    names: [],
-    ambiguous: [],
-    appliedCorrections: [],
-    cutInput: slot.cutTime,
-    longTerm: false,
-    doubleScore: false,
-    precise: false,
-    scanning: false,
-    progress: 0,
-    savedRecord: null,
-    message: '',
-  })));
+  const [batchRows, setBatchRows] = useState(() => buildBatchRowsFromActivitySettings());
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedClan, setSelectedClan] = useState('');
   const [selectedMembers, setSelectedMembers] = useState([]);
@@ -1884,8 +1910,12 @@ function Attendance({ member, setPage }) {
     setReviewEdit(null);
   };
 
-  const load = () => Promise.all([request('/boss-participations'), request('/members')])
-    .then(([recordRows, memberRows]) => { setRecords(recordRows); setMembers(memberRows); })
+  const load = () => Promise.all([request('/boss-participations'), request('/members'), request('/activities/settings')])
+    .then(([recordRows, memberRows, activityRows]) => {
+      setRecords(recordRows);
+      setMembers(memberRows);
+      setBatchRows((previousRows) => buildBatchRowsFromActivitySettings(activityRows, previousRows));
+    })
     .catch((err) => setMessage(err.message));
 
   useEffect(() => { load(); }, []);

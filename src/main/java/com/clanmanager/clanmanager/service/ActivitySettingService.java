@@ -52,24 +52,18 @@ public class ActivitySettingService {
             activityType.setActive(true);
         }
 
-        Set<String> defaultNames = DEFAULT_ACTIVITIES.stream()
-                .map(DefaultActivity::name)
-                .collect(java.util.stream.Collectors.toSet());
         activityTypeRepository.findAll().forEach(activityType -> {
-            if (!defaultNames.contains(activityType.getTypeName())) {
-                activityType.setActive(false);
-                if (activityType.getDisplayOrder() == null) {
-                    activityType.setDisplayOrder(999);
-                }
-                if (activityType.getParticipationScore() == null) {
-                    activityType.setParticipationScore(activityType.getScore() == null ? 1 : activityType.getScore());
-                }
-                if (activityType.getPenaltyEnabled() == null) {
-                    activityType.setPenaltyEnabled(false);
-                }
-                if (activityType.getAbsencePenaltyScore() == null) {
-                    activityType.setAbsencePenaltyScore(0);
-                }
+            if (activityType.getDisplayOrder() == null) {
+                activityType.setDisplayOrder(999);
+            }
+            if (activityType.getParticipationScore() == null) {
+                activityType.setParticipationScore(activityType.getScore() == null ? 1 : activityType.getScore());
+            }
+            if (activityType.getPenaltyEnabled() == null) {
+                activityType.setPenaltyEnabled(false);
+            }
+            if (activityType.getAbsencePenaltyScore() == null) {
+                activityType.setAbsencePenaltyScore(0);
             }
         });
     }
