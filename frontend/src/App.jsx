@@ -25,7 +25,7 @@ const menu = [
   ['admin', '관', '관리자 설정'],
 ];
 
-const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball', 'spec-history', 'activity-settings']);
+const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball', 'spec-history', 'activity-settings', 'all-items']);
 
 const adminCards = [
   ['✓', '출석체크', 'mint', 'attendance'],
@@ -37,6 +37,7 @@ const adminCards = [
   ['▥', '참여율 선택조회', 'cyan', 'participation'],
   ['⚠', '게헨나감지', 'red', 'roster'],
   ['🎯', '핀볼', 'purple', 'pinball'],
+  ['▦', '전체아이템', 'green', 'all-items'],
 ];
 
 const favoriteStorageKey = (member) => `clanmanager:favorites:${member?.memberId || 'guest'}`;
@@ -50,6 +51,7 @@ const pageMetaList = [
   { id: 'spec-history', icon: '스', label: '스펙/장비 기록' },
   { id: 'roster', icon: '스', label: '출석 OCR' },
   { id: 'item-request', icon: '신', label: '아이템 신청' },
+  { id: 'all-items', icon: '템', label: '전체아이템' },
 ];
 const pageMetaMap = new Map(pageMetaList.map((item) => [item.id, item]));
 const pageMeta = (id) => pageMetaMap.get(id) || { id, icon: '★', label: id };
@@ -1194,18 +1196,24 @@ function AdminBackButton({ setPage }) {
   return setPage ? <button className="admin-back-button" onClick={() => setPage('admin')}>← 관리자설정으로</button> : null;
 }
 
-function MyInfo({ member }) {
-  const [info, setInfo] = useState(null);
+function useIncompleteCollections(memberId) {
   const [collectionData, setCollectionData] = useState(null);
   useEffect(() => {
-    request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {});
     request('/management/collection-dashboard').then(setCollectionData).catch(() => setCollectionData(null));
-  }, [member.memberId]);
-  const incompleteCollections = useMemo(() => {
+  }, []);
+  return useMemo(() => {
     if (!collectionData?.items?.length || !collectionData?.statuses) return [];
     const statusMap = new Map(collectionData.statuses.map((row) => [`${row.memberId}:${row.itemId}`, row.state]));
-    return collectionData.items.filter((item) => statusMap.get(`${member.memberId}:${item.itemId}`) !== '완료');
-  }, [collectionData, member.memberId]);
+    return collectionData.items.filter((item) => statusMap.get(`${memberId}:${item.itemId}`) !== '완료');
+  }, [collectionData, memberId]);
+}
+
+function MyInfo({ member }) {
+  const [info, setInfo] = useState(null);
+  const incompleteCollections = useIncompleteCollections(member.memberId);
+  useEffect(() => {
+    request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {});
+  }, [member.memberId]);
   if (!info) return <LoadingCard />;
   return <><div className="page-title"><h1>내 정보 확인</h1></div><ProfileCard member={member} info={info} incompleteCollections={incompleteCollections} /></>;
 }
@@ -1441,8 +1449,8 @@ function Participation({ member, setPage }) {
             <div className="section-heading"><h2>{clan}</h2><span className="result-count">{list.length}명</span></div>
             <div className="table-wrap">
               <table className="data-table participation-ranking-table wide">
-                <thead><tr><th>순위</th><th>닉네임</th><th>클랜</th><th>클래스</th><th>레벨</th><th>참여횟수</th>{activityColumns.map((activity) => <th key={activity.activityTypeId}>{activity.activityName}</th>)}<th>기본점수</th><th>미참여 페널티</th><th>소수쟁 가산점</th><th>최종점수</th><th>참여율</th><th>기여율</th><th>상세</th></tr></thead>
-                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td><button type="button" className="link-button participation-name-button" onClick={() => openParticipationDetail(m)}>{m.characterName}</button></td><td><span className="mini-clan-pill">{m.guildName || '-'}</span></td><td>{m.characterClass || '-'}</td><td>{m.level ?? '-'}</td><td>{m.count}회</td>{activityColumns.map((activity) => <td key={activity.activityTypeId} className="blue-text">{m.activityCounts?.[activity.activityTypeId] || 0}회</td>)}<td>{m.baseParticipationScore}점</td><td className="red-text">-{m.absencePenaltyScore}점</td><td>{m.minorityBonusScore}점</td><td><b>{m.finalParticipationScore}점</b></td><td className="blue-text">{m.rate}%</td><td className="green-text">{m.contributionRate}%</td><td><button type="button" className="mini-button" onClick={() => openParticipationDetail(m)}>상세정보</button></td></tr>)}</tbody>
+                <thead><tr><th>순위</th><th>닉네임</th><th>클랜</th><th>클래스</th><th>레벨</th><th>참여횟수</th>{activityColumns.map((activity) => <th key={activity.activityTypeId}>{activity.activityName}</th>)}<th>기본점수</th><th>미참여 페널티</th></tr></thead>
+                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td><button type="button" className="link-button participation-name-button" onClick={() => openParticipationDetail(m)}>{m.characterName}</button></td><td><span className="mini-clan-pill">{m.guildName || '-'}</span></td><td>{m.characterClass || '-'}</td><td>{m.level ?? '-'}</td><td>{m.count}회</td>{activityColumns.map((activity) => <td key={activity.activityTypeId} className="blue-text">{m.activityCounts?.[activity.activityTypeId] || 0}회</td>)}<td>{m.baseParticipationScore}점</td><td className="red-text">-{m.absencePenaltyScore}점</td></tr>)}</tbody>
               </table>
             </div>
           </div>
@@ -2884,6 +2892,56 @@ function InventoryPage({ member }) {
   return <CrudPage title="재고현황" description="클랜 보유 아이템과 수량을 조회합니다." canManage={canManage} form={<form className="record-form" onSubmit={add}><input required placeholder="아이템명" value={form.itemName} onChange={(e) => setForm({ ...form, itemName: e.target.value })} /><input required type="number" min="0" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /><input placeholder="보관 위치" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /><input placeholder="메모" value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} /><button className="primary-button">추가</button></form>} rows={rows} getId={(row) => row.inventoryItemId} columns={['아이템', '수량', '위치', '메모', '등록일']} render={(row) => [row.itemName, formatNumber(row.quantity), row.location || '-', row.memo || '-', new Date(row.createdAt).toLocaleDateString('ko-KR')]} onDelete={async (id) => { await request(`/management/inventory/${id}?adminMemberId=${member.memberId}`, { method: 'DELETE' }); await load(); }} />;
 }
 
+function AllItemsPage({ member, setPage }) {
+  const [rows, setRows] = useState([]);
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const load = () => request('/management/all-items').then((data) => setRows(Array.isArray(data) ? data : [])).catch((err) => setMessage(err.message));
+  useEffect(() => { load(); }, []);
+  const grouped = useMemo(() => {
+    const tierMap = new Map();
+    rows.forEach((row) => {
+      if (!tierMap.has(row.tierName)) tierMap.set(row.tierName, new Map());
+      const categoryMap = tierMap.get(row.tierName);
+      if (!categoryMap.has(row.categoryName)) categoryMap.set(row.categoryName, []);
+      categoryMap.get(row.categoryName).push(row);
+    });
+    return Array.from(tierMap.entries()).map(([tierName, categoryMap]) => ({
+      tierName,
+      categories: Array.from(categoryMap.entries()).map(([categoryName, items]) => ({ categoryName, items })),
+    }));
+  }, [rows]);
+  const updateRow = (target, patch) => {
+    setRows((prev) => prev.map((row) => (row.allItemStockId === target.allItemStockId && row.displayOrder === target.displayOrder ? { ...row, ...patch } : row)));
+  };
+  const save = async () => {
+    setSaving(true);
+    setMessage('');
+    try {
+      const saved = await request('/management/all-items', {
+        method: 'PUT',
+        body: JSON.stringify({
+          adminMemberId: member.memberId,
+          rows: rows.map((row) => ({
+            tierName: row.tierName,
+            categoryName: row.categoryName,
+            itemName: row.itemName,
+            stockQuantity: Number(row.stockQuantity || 0),
+            paidQuantity: Number(row.paidQuantity || 0),
+          })),
+        }),
+      });
+      setRows(Array.isArray(saved) ? saved : []);
+      setMessage('전체아이템 재고를 저장했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <><div className="page-title with-actions"><div><h1>전체아이템</h1><p>T2/T3 아이템 재고와 지급 수량을 직접 입력해 관리합니다.</p></div><div className="page-actions"><AdminBackButton setPage={setPage} /><button className="primary-button" onClick={save} disabled={saving}>{saving ? '저장중...' : '저장'}</button></div></div>{message && <p className="vault-message">{message}</p>}<section className="white-card all-items-card">{grouped.map((tier) => <div className="all-items-tier" key={tier.tierName}><h2>{tier.tierName}</h2><div className="all-items-table-wrap"><table className="all-items-table"><tbody>{tier.categories.map((category) => <React.Fragment key={`${tier.tierName}-${category.categoryName}`}><tr><th className="all-items-category" rowSpan={category.items.length + 1}>{category.categoryName}</th><th className="all-items-label">목록</th><th>재고</th><th>지급</th><th className="remaining-head">남은 재고</th></tr>{category.items.map((item) => { const remaining = Math.max(Number(item.stockQuantity || 0) - Number(item.paidQuantity || 0), 0); return <tr key={`${item.tierName}-${item.categoryName}-${item.itemName}`}><td className="all-items-label">{item.itemName}</td><td><input type="number" min="0" value={item.stockQuantity ?? 0} onChange={(e) => updateRow(item, { stockQuantity: e.target.value })} /></td><td><input type="number" min="0" value={item.paidQuantity ?? 0} onChange={(e) => updateRow(item, { paidQuantity: e.target.value })} /></td><td className="remaining-cell">{remaining}</td></tr>; })}</React.Fragment>)}</tbody></table></div></div>)}</section></>;
+}
+
 function BiddingPage({ member }) {
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState({ itemName: '', bidder: '', bidDiamonds: '', memo: '' });
@@ -3257,6 +3315,7 @@ function MyPage({ member, setPage, favoritePages = [] }) {
   const [info, setInfo] = useState(null);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordMessage, setPasswordMessage] = useState('');
+  const incompleteCollections = useIncompleteCollections(member.memberId);
   useEffect(() => { request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {}); }, [member.memberId]);
   if (!info) return <LoadingCard />;
   const changePassword = async (event) => {
@@ -3275,7 +3334,7 @@ function MyPage({ member, setPage, favoritePages = [] }) {
       setPasswordMessage('비밀번호를 변경했습니다. 다음 로그인부터 새 비밀번호를 사용하세요.');
     } catch (err) { setPasswordMessage(err.message); }
   };
-  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><FavoriteLinks favorites={favoritePages} setPage={setPage} /><ProfileCard member={member} info={info} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div></section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
+  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><FavoriteLinks favorites={favoritePages} setPage={setPage} /><ProfileCard member={member} info={info} incompleteCollections={incompleteCollections} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div></section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
 }
 
 function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites = [], toggleFavorite }) {
@@ -3833,6 +3892,7 @@ export default function App() {
     : page === 'ledger' ? <ClanVaultPage member={member} />
     : page === 'book' ? <ClanVaultPage member={member} readonly />
     : page === 'inventory' ? <InventoryPage member={member} />
+    : page === 'all-items' ? <AllItemsPage member={member} setPage={setPage} />
     : page === 'bidding' ? <BiddingPage member={member} />
     : page === 'collection' ? <CollectionPage member={member} />
     : page === 'item-request' ? <ItemRequestPage member={member} />

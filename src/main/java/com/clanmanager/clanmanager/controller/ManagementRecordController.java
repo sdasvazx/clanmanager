@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -23,6 +24,7 @@ import java.util.Map;
 public class ManagementRecordController {
 
     private final InventoryItemRepository inventoryItemRepository;
+    private final AllItemStockRepository allItemStockRepository;
     private final ItemBidRepository itemBidRepository;
     private final CollectionRecordRepository collectionRecordRepository;
     private final CollectionItemRepository collectionItemRepository;
@@ -30,6 +32,39 @@ public class ManagementRecordController {
     private final CollectionHistoryRepository collectionHistoryRepository;
     private final ItemRequestRepository itemRequestRepository;
     private final MemberRepository memberRepository;
+
+    private static final List<DefaultAllItem> DEFAULT_ALL_ITEMS = List.of(
+            new DefaultAllItem("T2", "무기", "오브"),
+            new DefaultAllItem("T2", "무기", "낫"),
+            new DefaultAllItem("T2", "무기", "총"),
+            new DefaultAllItem("T2", "무기", "검"),
+            new DefaultAllItem("T2", "무기", "톤파"),
+            new DefaultAllItem("T2", "방어구", "투구"),
+            new DefaultAllItem("T2", "방어구", "갑옷"),
+            new DefaultAllItem("T2", "방어구", "장갑"),
+            new DefaultAllItem("T2", "방어구", "신발"),
+            new DefaultAllItem("T2", "장신구", "벨트"),
+            new DefaultAllItem("T2", "장신구", "목걸이"),
+            new DefaultAllItem("T2", "장신구", "귀걸이"),
+            new DefaultAllItem("T2", "장신구", "팔찌"),
+            new DefaultAllItem("T2", "장신구", "반지"),
+            new DefaultAllItem("T2", "장신구", "문장"),
+            new DefaultAllItem("T3", "무기", "오브"),
+            new DefaultAllItem("T3", "무기", "낫"),
+            new DefaultAllItem("T3", "무기", "총"),
+            new DefaultAllItem("T3", "무기", "검"),
+            new DefaultAllItem("T3", "무기", "톤파"),
+            new DefaultAllItem("T3", "방어구", "투구"),
+            new DefaultAllItem("T3", "방어구", "갑옷"),
+            new DefaultAllItem("T3", "방어구", "장갑"),
+            new DefaultAllItem("T3", "방어구", "신발"),
+            new DefaultAllItem("T3", "장신구", "벨트"),
+            new DefaultAllItem("T3", "장신구", "목걸이"),
+            new DefaultAllItem("T3", "장신구", "귀걸이"),
+            new DefaultAllItem("T3", "장신구", "팔찌"),
+            new DefaultAllItem("T3", "장신구", "반지"),
+            new DefaultAllItem("T3", "장신구", "문장")
+    );
 
     private static final List<String> DEFAULT_COLLECTION_ITEMS = List.of(
             "행동불가저항[3000]",
@@ -69,6 +104,33 @@ public class ManagementRecordController {
         validateAdmin(adminMemberId);
         inventoryItemRepository.deleteById(itemId);
         return Map.of("message", "재고 기록 삭제 완료", "itemId", itemId);
+    }
+
+    @GetMapping("/all-items")
+    public List<AllItemStock> getAllItems() {
+        seedDefaultAllItems();
+        return allItemStockRepository.findAllByOrderByDisplayOrderAscAllItemStockIdAsc();
+    }
+
+    @PutMapping("/all-items")
+    @Transactional
+    public List<AllItemStock> saveAllItems(@Valid @RequestBody AllItemStockSaveRequest request) {
+        validateAdmin(request.getAdminMemberId());
+        allItemStockRepository.deleteAll();
+        List<AllItemStock> rows = new ArrayList<>();
+        int order = 1;
+        for (AllItemStockRow row : request.getRows()) {
+            rows.add(AllItemStock.builder()
+                    .tierName(cleanRequired(row.getTierName(), "티어를 입력해 주세요."))
+                    .categoryName(cleanRequired(row.getCategoryName(), "분류를 입력해 주세요."))
+                    .itemName(cleanRequired(row.getItemName(), "아이템명을 입력해 주세요."))
+                    .stockQuantity(number(row.getStockQuantity()))
+                    .paidQuantity(number(row.getPaidQuantity()))
+                    .displayOrder(order++)
+                    .build());
+        }
+        allItemStockRepository.saveAll(rows);
+        return allItemStockRepository.findAllByOrderByDisplayOrderAscAllItemStockIdAsc();
     }
 
     @GetMapping("/bids")
@@ -326,6 +388,32 @@ public class ManagementRecordController {
         return value == null ? "" : value.trim();
     }
 
+    private int number(Integer value) {
+        if (value == null) {
+            return 0;
+        }
+        return Math.max(value, 0);
+    }
+
+    private void seedDefaultAllItems() {
+        if (allItemStockRepository.count() > 0) {
+            return;
+        }
+        List<AllItemStock> defaults = new ArrayList<>();
+        for (int index = 0; index < DEFAULT_ALL_ITEMS.size(); index += 1) {
+            DefaultAllItem item = DEFAULT_ALL_ITEMS.get(index);
+            defaults.add(AllItemStock.builder()
+                    .tierName(item.tierName())
+                    .categoryName(item.categoryName())
+                    .itemName(item.itemName())
+                    .stockQuantity(0)
+                    .paidQuantity(0)
+                    .displayOrder(index + 1)
+                    .build());
+        }
+        allItemStockRepository.saveAll(defaults);
+    }
+
     private void seedDefaultCollectionItems() {
         if (collectionItemRepository.countByActiveTrue() > 0) {
             return;
@@ -362,6 +450,41 @@ public class ManagementRecordController {
 
         @NotNull(message = "운영자 정보가 필요합니다.")
         private Long adminMemberId;
+    }
+
+    @Getter
+    @Setter
+    public static class AllItemStockSaveRequest {
+        @NotNull(message = "운영자 정보가 필요합니다.")
+        private Long adminMemberId;
+
+        @NotNull(message = "저장할 아이템 목록이 필요합니다.")
+        private List<AllItemStockRow> rows = new ArrayList<>();
+    }
+
+    @Getter
+    @Setter
+    public static class AllItemStockRow {
+        @NotBlank(message = "티어를 입력해 주세요.")
+        @Size(max = 20, message = "티어는 20자 이하로 입력해 주세요.")
+        private String tierName;
+
+        @NotBlank(message = "분류를 입력해 주세요.")
+        @Size(max = 30, message = "분류는 30자 이하로 입력해 주세요.")
+        private String categoryName;
+
+        @NotBlank(message = "아이템명을 입력해 주세요.")
+        @Size(max = 50, message = "아이템명은 50자 이하로 입력해 주세요.")
+        private String itemName;
+
+        @Min(value = 0, message = "재고는 0 이상으로 입력해 주세요.")
+        private Integer stockQuantity;
+
+        @Min(value = 0, message = "지급 수량은 0 이상으로 입력해 주세요.")
+        private Integer paidQuantity;
+    }
+
+    private record DefaultAllItem(String tierName, String categoryName, String itemName) {
     }
 
     @Getter
