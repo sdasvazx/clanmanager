@@ -3777,3 +3777,13 @@
 .dark .all-items-table {
   color: #111827;
 }
+
+.participation-ranking-table th .activity-total-count {
+  display: block;
+  margin-top: 3px;
+  font-size: .72rem;
+  line-height: 1;
+  color: #64748b;
+  font-weight: 800;
+  white-space: nowrap;
+}
