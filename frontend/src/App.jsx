@@ -1208,23 +1208,199 @@ function useIncompleteCollections(memberId) {
   }, [collectionData, memberId]);
 }
 
-function MyInfo({ member }) {
+function MyInfo({ member, setPage }) {
   const [info, setInfo] = useState(null);
+  const [participationSummary, setParticipationSummary] = useState(null);
+  const [bossRecords, setBossRecords] = useState([]);
+  const [bossHistory, setBossHistory] = useState([]);
+  const [periodHistory, setPeriodHistory] = useState([]);
   const incompleteCollections = useIncompleteCollections(member.memberId);
+  const periodIndex = getCurrentParticipationPeriodIndex();
+  const period = getParticipationPeriod(periodIndex);
   useEffect(() => {
     request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {});
   }, [member.memberId]);
+  useEffect(() => {
+    request(`/participation?startDate=${period.start}&endDate=${period.end}`)
+      .then((summary) => setParticipationSummary(summary || null))
+      .catch(() => setParticipationSummary(null));
+    request('/boss-participations')
+      .then((records) => setBossRecords(Array.isArray(records) ? records : []))
+      .catch(() => setBossRecords([]));
+    request(`/boss-participations/member/${member.memberId}`)
+      .then((history) => setBossHistory(Array.isArray(history) ? history : []))
+      .catch(() => setBossHistory([]));
+  }, [member.memberId, period.start, period.end]);
+  useEffect(() => {
+    const indexes = Array.from({ length: Math.min(2, periodIndex) }, (_, index) => periodIndex - index - 1);
+    if (!indexes.length) {
+      setPeriodHistory([]);
+      return;
+    }
+    Promise.all(indexes.map((index) => {
+      const pastPeriod = getParticipationPeriod(index);
+      return request(`/participation?startDate=${pastPeriod.start}&endDate=${pastPeriod.end}`)
+        .then((summary) => ({ period: pastPeriod, summary }))
+        .catch(() => ({ period: pastPeriod, summary: null }));
+    })).then(setPeriodHistory);
+  }, [periodIndex]);
   if (!info) return <LoadingCard />;
-  return <><div className="page-title"><h1>내 정보 확인</h1></div><ProfileCard member={member} info={info} incompleteCollections={incompleteCollections} /></>;
+  return (
+    <>
+      <div className="page-title my-info-title"><h1>내 정보 확인</h1></div>
+      <ProfileCard
+        member={member}
+        info={info}
+        incompleteCollections={incompleteCollections}
+        participationSummary={participationSummary}
+        bossRecords={bossRecords}
+        bossHistory={bossHistory}
+        period={period}
+        periodHistory={periodHistory}
+        setPage={setPage}
+      />
+    </>
+  );
 }
 
-function ProfileCard({ member, info, incompleteCollections = [] }) {
+function ProfileCard({ member, info, incompleteCollections = [], participationSummary, bossRecords = [], bossHistory = [], period = getParticipationPeriod(getCurrentParticipationPeriodIndex()), periodHistory = [], setPage }) {
   const canSeeCombatPower = member?.role === 'ADMIN';
+  const currentRow = useMemo(() => (participationSummary?.rows || []).find((row) => Number(row.memberId) === Number(info.memberId)), [participationSummary, info.memberId]);
+  const activityColumns = participationSummary?.activityColumns || [];
+  const attendanceCount = Number(currentRow?.attendanceCount ?? currentRow?.count ?? info.myAttendanceCount ?? 0);
+  const totalActivityCount = Number(currentRow?.totalActivityCount ?? participationSummary?.totalActivityCount ?? info.totalActivityCount ?? 0);
+  const participationRate = Number(currentRow?.participationRate ?? currentRow?.rate ?? info.participationRate ?? 0);
+  const contributionRate = Number(currentRow?.contributionRate ?? participationRate);
+  const baseScore = Number(currentRow?.baseParticipationScore ?? attendanceCount);
+  const penaltyScore = Number(currentRow?.absencePenaltyScore ?? 0);
+  const finalScore = Number(currentRow?.finalParticipationScore ?? Math.max(0, baseScore - penaltyScore));
+  const topFinalScore = Number(participationSummary?.topFinalScore ?? finalScore);
+  const activityCounts = currentRow?.activityCounts || {};
+  const recordsInPeriod = useMemo(() => bossRecords.filter((record) => record.bossDate >= period.start && record.bossDate < period.end), [bossRecords, period.start, period.end]);
+  const historyInPeriod = useMemo(() => bossHistory.filter((record) => record.bossDate >= period.start && record.bossDate < period.end), [bossHistory, period.start, period.end]);
+  const historyRecordIds = useMemo(() => new Set(historyInPeriod.map((record) => record.recordId).filter(Boolean)), [historyInPeriod]);
+  const normalizeActivityName = (value) => normalize(String(value || '').replace(/\(.+?\)/g, ''));
+  const bossStats = activityColumns.map((activity) => ({
+    activity,
+    attended: Number(activityCounts?.[activity.activityTypeId] || 0),
+    total: Number(activity.totalCount || 0),
+  }));
+  const penaltyDetails = activityColumns.flatMap((activity) => {
+    if (!activity.penaltyEnabled) return [];
+    const relatedRecords = recordsInPeriod.filter((record) => normalizeActivityName(record.activityTypeName || record.bossName) === normalizeActivityName(activity.activityName));
+    const missedRecords = relatedRecords.filter((record) => !historyRecordIds.has(record.recordId));
+    if (missedRecords.length) {
+      return missedRecords.map((record) => ({
+        key: `${record.recordId}-${activity.activityTypeId}`,
+        text: `${record.bossDate} · ${activity.activityName} 미참여`,
+        score: Number(activity.absencePenaltyScore || 0),
+      }));
+    }
+    const missedCount = Math.max(0, Number(activity.totalCount || 0) - Number(activityCounts?.[activity.activityTypeId] || 0));
+    return Array.from({ length: missedCount }, (_, index) => ({
+      key: `${activity.activityTypeId}-missing-${index}`,
+      text: `${activity.activityName} 미참여`,
+      score: Number(activity.absencePenaltyScore || 0),
+    }));
+  }).filter((row) => row.score > 0);
+  const dateRows = [...new Set(recordsInPeriod.map((record) => record.bossDate))].sort().map((date) => {
+    const cells = activityColumns.map((activity) => {
+      const dayRecords = recordsInPeriod.filter((record) => record.bossDate === date && normalizeActivityName(record.activityTypeName || record.bossName) === normalizeActivityName(activity.activityName));
+      if (!dayRecords.length) return '-';
+      return dayRecords.some((record) => historyRecordIds.has(record.recordId)) ? '100%' : '미참';
+    });
+    return { date, cells };
+  });
+  const pastRates = periodHistory.map(({ period: pastPeriod, summary }) => {
+    const row = (summary?.rows || []).find((entry) => Number(entry.memberId) === Number(info.memberId));
+    return { period: pastPeriod, rate: Number(row?.participationRate ?? row?.rate ?? 0) };
+  });
+  const averagePastRate = pastRates.length ? (pastRates.reduce((sum, row) => sum + row.rate, 0) / pastRates.length) : 0;
+
   return (
-    <section className="white-card profile-overview">
-      <div className="profile-name"><span className="avatar">{info.characterName.slice(0, 1)}</span><div><h2>{info.characterName}</h2><div className="pills"><span>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</span>{canSeeCombatPower && <span>전투력 {formatNumber(info.combatPower)}</span>}</div></div></div>
-      <div className="metric-grid"><Metric label="현재 참여율" value={`${info.participationRate}%`} caption={`참여 ${info.myAttendanceCount}회 / 전체 ${info.totalActivityCount ?? 0}회`} tone="blue" /><Metric label="기여율" value={`${info.participationRate}%`} caption="전체 보스참여횟수 기준" tone="green" /><Metric label="참석 횟수" value={`${info.myAttendanceCount}회`} caption="전체 활동 기준" tone="purple" /></div>
-      <div className="formula-row"><div><b>참여율 계산 기준</b><p>내 참석 횟수 / 전체 보스참여횟수 × 100</p></div><div><b>전체 보스참여횟수</b><p>{info.totalActivityCount ?? 0}회</p></div></div>
+    <section className="white-card profile-overview my-info-overview">
+      <div className="my-info-card-title">내 참여율·기여율 상세</div>
+      <div className="my-info-hero">
+        <div className="my-info-hero-main">
+          <h2>{info.characterName}</h2>
+          <div className="pills my-info-pills">
+            <span>클랜 {info.guildName || '-'}</span>
+            <span>클래스 {info.characterClass || '-'}</span>
+            <span>Lv.{info.level || 0}</span>
+            {canSeeCombatPower && <span>전투력 {formatNumber(info.combatPower)}</span>}
+          </div>
+        </div>
+        {setPage && <button type="button" className="outline-button my-info-edit-button" onClick={() => setPage('mypage')}>✎ 정보수정</button>}
+      </div>
+
+      <div className="my-info-summary-grid">
+        <div className="my-info-history-card">
+          <b>과거 참여율 (최근 2개 기록)</b>
+          <div className="my-info-past-list">
+            {pastRates.map((row) => (
+              <div key={row.period.index}><span>{row.period.start} ~ {addDays(row.period.end, -1)}</span><b>{row.rate}%</b></div>
+            ))}
+            {!pastRates.length && <p>아직 과거 회차 기록이 없습니다.</p>}
+          </div>
+          {!!pastRates.length && <div className="my-info-average"><span>평균 (과거 {pastRates.length}개)</span><b>{averagePastRate.toFixed(1)}%</b></div>}
+        </div>
+        <Metric label="현재 참여율 (참여 횟수 기반)" value={`${participationRate}%`} caption={`참여 ${attendanceCount}회 / 총 ${totalActivityCount}회 × 100`} tone="blue" />
+        <Metric label="기여율 (참여 점수 기반)" value={`${contributionRate}%`} caption={`본인 획득 점수 / 최고 참여점수 × 100 · 최고 ${topFinalScore}점`} tone="green" />
+      </div>
+
+      <div className="formula-row my-info-formula-row">
+        <div><b>참여율 (횟수 기준)</b><p>개인 참여횟수 / 전체 보스 참여횟수 × 100<br />100% 기준: {totalActivityCount}회</p></div>
+        <div><b>기여율 (점수 기준)</b><p>개인 참여점수 / 최고 참여점수 × 100<br />100% 기준: {topFinalScore}점</p></div>
+      </div>
+
+      <div className="my-info-score-grid">
+        <div className="participation-score-card compact-score-card">
+          <p>상세 참여 점수</p>
+          <strong>{finalScore}점</strong>
+          <div>
+            <span><small>참여 점수</small><b>{baseScore}점</b></span>
+            <span><small>패널티</small><b className="red-text">-{penaltyScore}점</b></span>
+            <span><small>최종 점수</small><b className="blue-text">{finalScore}점</b></span>
+          </div>
+        </div>
+        <div className="participation-score-card compact-score-card combat-score-card">
+          <p>투력점수</p>
+          <strong>0점</strong>
+        </div>
+      </div>
+
+      <div className="my-info-section-panel">
+        <h3>보스별 참여 현황</h3>
+        <div className="my-info-boss-grid">
+          {bossStats.map(({ activity, attended, total }) => (
+            <div key={activity.activityTypeId} className={total && attended >= total ? 'perfect' : ''}>
+              <span>{activity.activityName}</span><b>{attended} / {total}회</b>
+            </div>
+          ))}
+        </div>
+        {!!penaltyDetails.length && (
+          <div className="my-info-penalty-box">
+            <h4>패널티 내역</h4>
+            {penaltyDetails.map((row) => <div key={row.key}><span>{row.text}</span><b>-{row.score}점</b></div>)}
+            <div className="total"><span>총 패널티</span><b>-{penaltyScore}점</b></div>
+          </div>
+        )}
+      </div>
+
+      <div className="my-info-section-panel">
+        <h3>날짜별 상세 참여현황</h3>
+        <p className="subtle">※ '-'는 미시행 일정입니다.</p>
+        <div className="table-wrap my-info-date-table-wrap">
+          <table className="data-table my-info-date-table">
+            <thead><tr><th>날짜 / 콘텐츠</th>{activityColumns.map((activity) => <th key={activity.activityTypeId}>{activity.activityName}</th>)}</tr></thead>
+            <tbody>
+              {dateRows.map((row) => <tr key={row.date}><td>{row.date}</td>{row.cells.map((cell, index) => <td key={`${row.date}-${index}`} className={cell === '미참' ? 'red-text' : cell === '100%' ? 'green-text' : ''}>{cell}</td>)}</tr>)}
+            </tbody>
+          </table>
+        </div>
+        {!dateRows.length && <div className="empty-state compact">이번 회차의 보스 기록이 없습니다.</div>}
+      </div>
+
       <div className="my-collection-alert">
         <div>
           <b>미완료 컬렉템</b>
@@ -3884,7 +4060,7 @@ export default function App() {
   if (!member) return <AuthScreen onLogin={login} />;
   if (member.role !== 'ADMIN' && adminOnlyPages.has(page)) return <Shell member={member} page={page} setPage={setPage} onLogout={logout} favorites={favorites} toggleFavorite={toggleFavorite}><AccessDenied /></Shell>;
   const view = page === 'lobby' ? <Lobby member={member} setPage={setPage} favoritePages={visibleFavoritePages} />
-    : page === 'my-info' ? <MyInfo member={member} />
+    : page === 'my-info' ? <MyInfo member={member} setPage={setPage} />
     : page === 'participation' ? <Participation member={member} setPage={setPage} />
     : page === 'attendance' ? <Attendance member={member} setPage={setPage} mode="check" />
     : page === 'boss-history' ? <Attendance member={member} setPage={setPage} mode="history" />
