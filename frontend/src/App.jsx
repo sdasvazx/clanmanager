@@ -3026,6 +3026,130 @@ function PaymentPage({ member }) {
   return <><div className="page-title"><h1>분배금 조회</h1><p>내 캐릭터에게 지급된 클랜금고 분배 기록입니다.</p></div><div className="metric-grid"><Metric label="내 누적 분배" value={money(total)} caption={`${rows.length}건 지급`} tone="green" /><Metric label="클랜금고 잔액" value={money(summary?.balanceDiamonds)} caption="현재 남은 다이아" tone="blue" /><Metric label="최근 기록" value={`${rows.length}건`} caption="최근 거래 기준" tone="purple" /></div><section className="white-card"><div className="table-wrap"><table className="data-table"><thead><tr><th>일시</th><th>수량</th><th>메모</th><th>기록자</th></tr></thead><tbody>{rows.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td className="green-text">{money(row.amountDiamonds)}</td><td>{row.memo || '-'}</td><td>{row.createdByMemberName || '-'}</td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">아직 내게 지급된 분배금 기록이 없습니다.</div>}</section></>;
 }
 
+const DISTRIBUTION_CLANS = ['귀신', '운좋은', '귀신Z', '로망'];
+
+function DistributionAdminPage({ member }) {
+  const initialSettings = {
+    mode: 'CLAN',
+    participationCut: 0,
+    powerScoreCut: 0,
+    totalDiamonds: 0,
+    clanDiamonds: { 귀신: 0, 운좋은: 0, 귀신Z: 0, 로망: 0 },
+    memo: '',
+  };
+  const [settings, setSettings] = useState(initialSettings);
+  const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [historyId, setHistoryId] = useState('current');
+  const [clanFilter, setClanFilter] = useState('전체보기');
+  const [editing, setEditing] = useState(true);
+  const [basisOpen, setBasisOpen] = useState(false);
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const buildPayload = (source = settings) => ({
+    ...source,
+    createdByMemberId: member.memberId,
+    participationCut: Number(source.participationCut || 0),
+    powerScoreCut: Number(source.powerScoreCut || 0),
+    totalDiamonds: Number(source.totalDiamonds || 0),
+    clanDiamonds: Object.fromEntries(DISTRIBUTION_CLANS.map((clan) => [clan, Number(source.clanDiamonds?.[clan] || 0)])),
+  });
+
+  const loadHistory = async () => {
+    const rows = await request('/distributions/snapshots');
+    setHistory(Array.isArray(rows) ? rows : []);
+  };
+
+  const calculate = async (nextSettings = settings) => {
+    const data = await request('/distributions/calculate', { method: 'POST', body: JSON.stringify(buildPayload(nextSettings)) });
+    setResult(data);
+    return data;
+  };
+
+  useEffect(() => {
+    calculate(initialSettings).catch((err) => setMessage(err.message));
+    loadHistory().catch(() => {});
+  }, []);
+
+  const applySettings = (next) => {
+    setSettings(next);
+    setHistoryId('current');
+    if (editing) calculate(next).catch((err) => setMessage(err.message));
+  };
+
+  const update = (key, value) => applySettings({ ...settings, [key]: value });
+  const updateClanDiamond = (clan, value) => applySettings({ ...settings, clanDiamonds: { ...settings.clanDiamonds, [clan]: value } });
+
+  const selectHistory = async (value) => {
+    setHistoryId(value);
+    setMessage('');
+    if (value === 'current') {
+      setEditing(true);
+      await calculate(settings);
+      return;
+    }
+    const snapshot = await request(`/distributions/snapshots/${value}`);
+    setResult(snapshot);
+    setEditing(false);
+  };
+
+  const saveSnapshot = async () => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const saved = await request('/distributions/snapshots', { method: 'POST', body: JSON.stringify(buildPayload()) });
+      setResult(saved);
+      setHistoryId(String(saved.snapshotId));
+      setEditing(false);
+      await loadHistory();
+      setMessage('히스토리를 저장했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deposit = async () => {
+    const amount = Number(result?.allocatedDiamonds || 0);
+    if (amount <= 0) {
+      setMessage('적립할 분배금이 없습니다.');
+      return;
+    }
+    if (!window.confirm(`${money(amount)}를 회원별 미수령 분배금으로 적립할까요?`)) return;
+    setLoading(true);
+    setMessage('');
+    try {
+      await request('/distributions/deposit', { method: 'POST', body: JSON.stringify(buildPayload({ ...settings, memo: settings.memo || '분배금 자동 적립' })) });
+      setMessage('분배금 적립이 완료되었습니다. 회원은 마이페이지에서 수령 처리할 수 있습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const rows = (result?.results ?? []).filter((row) => clanFilter === '전체보기' || row.clanName === clanFilter);
+  const summaries = result?.clanSummaries ?? [];
+
+  return <><div className="page-title distribution-title"><div><h1>분배금 조회</h1><p>참여율과 투력점수 기준으로 분배금을 계산하고 금고 미수령 분배금으로 적립합니다.</p></div><div className="page-actions"><button className="dark-button" onClick={() => setBasisOpen(true)}>투력점수 산출근거</button><button className="green-button" onClick={deposit} disabled={loading}>분배금 적립</button><button className="purple-button" onClick={saveSnapshot} disabled={loading}>히스토리 저장</button><button className="primary-button" onClick={() => { setEditing(true); setHistoryId('current'); }}>✎ 편집</button></div></div>{message && <p className="vault-message">{message}</p>}<div className="distribution-toolbar"><label>히스토리 보기<select value={historyId} onChange={(e) => selectHistory(e.target.value)}><option value="current">현재</option>{history.map((item) => <option key={item.snapshotId} value={item.snapshotId}>{new Date(item.createdAt).toLocaleString('ko-KR')} · {item.mode === 'TOTAL' ? '전체' : '클랜별'} · {money(item.allocatedDiamonds)}</option>)}</select></label><label>클랜(소속) 필터<select value={clanFilter} onChange={(e) => setClanFilter(e.target.value)}><option>전체보기</option>{DISTRIBUTION_CLANS.map((clan) => <option key={clan}>{clan}</option>)}</select></label></div><section className="white-card distribution-settings-card"><div className="section-heading"><h2>분배 설정</h2><span className="admin-badge">관리자 전용</span></div><div className="distribution-settings-grid"><div><small>분배 모드</small><div className="segmented-control"><button className={settings.mode === 'CLAN' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'CLAN')}>클랜별 분배</button><button className={settings.mode === 'TOTAL' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'TOTAL')}>전체 분배</button></div></div><label>참여율 컷 <small>(백분율 %)</small><input disabled={!editing} type="number" min="0" value={settings.participationCut} onChange={(e) => update('participationCut', e.target.value)} /></label><label>투력점수 컷 <small>(값 입력)</small><input disabled={!editing} type="number" min="0" value={settings.powerScoreCut} onChange={(e) => update('powerScoreCut', e.target.value)} /></label></div><p className="info-box">클랜별 분배: 각 클랜별로 분배 다이아를 설정하고, 참여분배 60% / 투력분배 40%로 나눕니다.</p>{settings.mode === 'TOTAL' ? <div className="distribution-diamond-input"><label>전체 분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalDiamonds} onChange={(e) => update('totalDiamonds', e.target.value)} /></label></div> : <div className="distribution-clan-inputs">{DISTRIBUTION_CLANS.map((clan) => <label key={clan}>{clan} 분배 다이아<input disabled={!editing} type="number" min="0" value={settings.clanDiamonds[clan]} onChange={(e) => updateClanDiamond(clan, e.target.value)} /></label>)}</div>}<label className="distribution-memo">적립 메모<input disabled={!editing} value={settings.memo} onChange={(e) => update('memo', e.target.value)} placeholder="예: 7월 2주차 보스 분배" /></label></section><section className="white-card"><div className="section-heading"><h2>{settings.mode === 'TOTAL' ? '전체 분배 다이아' : '클랜별 분배 다이아'}</h2><span className="result-count">총 정산 {money(result?.allocatedDiamonds ?? 0)} · 잔여 {money(result?.remainingDiamonds ?? 0)}</span></div><div className="distribution-summary-list">{summaries.map((summary) => <div className="distribution-summary-card" key={summary.clanName}><div><b>{summary.clanName}</b><small>{summary.memberCount}명</small></div><div><span>총 분배</span><strong>{money(summary.totalDiamonds)}</strong></div><div><span>참여분배</span><strong>{money(summary.participationPool)}</strong><small>{summary.participationEligibleCount}명</small></div><div><span>투력분배</span><strong>{money(summary.powerPool)}</strong><small>{summary.powerEligibleCount}명</small></div><div><span>잔여</span><strong>{money(summary.remainingDiamonds)}</strong></div></div>)}</div></section><section className="white-card"><div className="section-heading"><h2>회원별 분배 결과</h2><span className="result-count">{rows.length}명</span></div><div className="table-wrap"><table className="data-table distribution-result-table"><thead><tr><th>클랜</th><th>닉네임</th><th>참여율</th><th>참여분배</th><th>현재투력</th><th>성장</th><th>투력점수</th><th>투력분배</th><th>최종 지급</th></tr></thead><tbody>{rows.map((row) => <tr key={row.memberId}><td><span className="clan-badge">{row.clanName}</span></td><td><b>{row.characterName}</b><small>{row.characterClass || '-'}</small></td><td className={row.participationEligible ? 'green-text' : 'red-text'}>{row.participationRate ?? 0}%</td><td>{money(row.participationAmount)}</td><td>{row.currentPowerMan}만</td><td>+{row.growthScore}</td><td className={row.powerEligible ? 'green-text' : 'red-text'}>{row.powerScore}</td><td>{money(row.powerAmount)}</td><td><b>{money(row.finalAmount)}</b></td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">분배 결과가 없습니다.</div>}</section>{basisOpen && <PowerScoreModal onClose={() => setBasisOpen(false)} />}</>;
+}
+
+function PowerScoreModal({ onClose }) {
+  const rows = [
+    ['0만 ~ 80만', '1점/만', '80점', '70만→80만: 10만 증가 = 10점'],
+    ['80만 ~ 90만', '1점/만', '10점', '85만→90만: 5만 증가 = 5점'],
+    ['90만 ~ 95만', '2점/만', '10점', '92만→95만: 3만 증가 = 6점'],
+    ['95만 ~ 100만', '3점/만', '15점', '97만→100만: 3만 증가 = 9점'],
+    ['100만 ~ 105만', '5점/만', '25점', '102만→105만: 3만 증가 = 15점'],
+    ['105만 ~ 110만', '7점/만', '35점', '107만→110만: 3만 증가 = 21점'],
+    ['110만 ~ 115만', '9점/만', '45점', '112만→115만: 3만 증가 = 27점'],
+    ['115만 이상', '12점/만', '무제한', '115만→120만: 5만 증가 = 60점'],
+  ];
+  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="power-score-modal"><button className="modal-close" onClick={onClose}>×</button><h2>투력점수 산출근거</h2><p className="info-box">투력점수 = 성장점수 + 현재투력점수</p><h3>1. 성장점수 계산</h3><p>이전투력에서 현재투력까지의 증가량을 구간별로 계산합니다. 단위는 만 기준이며, 소수 첫째 자리까지 반영합니다.</p><table className="power-score-table"><thead><tr><th>투력 구간</th><th>만당 점수</th><th>구간 최대점수</th><th>예시</th></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}>{row.map((cell) => <td key={cell}>{cell}</td>)}</tr>)}</tbody></table><h3>2. 현재투력점수 계산</h3><div className="power-example"><b>예시: 92만인 경우</b><ul><li>0~80만 통과: 80점</li><li>80~90만 통과: 10점</li><li>90~92만: 2만 × 2점 = 4점</li><li>합계: 94점</li></ul></div><div className="power-example green"><b>최종 예시: 85만 → 92만</b><ul><li>성장점수: 9점</li><li>현재투력점수: 94점</li><li>최종 투력점수: 103점</li></ul></div></div></div>;
+}
+
 function PaymentClaimPage({ member }) {
   const [summary, setSummary] = useState(null);
   const [rows, setRows] = useState([]);
@@ -4064,7 +4188,7 @@ export default function App() {
     : page === 'participation' ? <Participation member={member} setPage={setPage} />
     : page === 'attendance' ? <Attendance member={member} setPage={setPage} mode="check" />
     : page === 'boss-history' ? <Attendance member={member} setPage={setPage} mode="history" />
-    : page === 'payment' ? <PaymentClaimPage member={member} />
+    : page === 'payment' ? (member.role === 'ADMIN' ? <DistributionAdminPage member={member} /> : <PaymentClaimPage member={member} />)
     : page === 'ledger' ? <ClanVaultPage member={member} />
     : page === 'book' ? <ClanVaultPage member={member} readonly />
     : page === 'inventory' ? <InventoryPage member={member} />
