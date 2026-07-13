@@ -234,21 +234,25 @@ public class DistributionService {
     }
 
     private DistributionGroupResult allocateGroup(String clanName, List<DistributionResponseDto.ResultItemDto> rows, long totalDiamonds) {
-        long participationPool = Math.max(0L, totalDiamonds * 60 / 100);
-        long powerPool = Math.max(0L, totalDiamonds - participationPool);
         List<DistributionResponseDto.ResultItemDto> participationEligible = rows.stream()
                 .filter(row -> Boolean.TRUE.equals(row.getParticipationEligible()))
                 .toList();
         List<DistributionResponseDto.ResultItemDto> powerEligible = rows.stream()
                 .filter(row -> Boolean.TRUE.equals(row.getPowerEligible()))
                 .toList();
-        long participationShare = participationEligible.isEmpty() ? 0L : participationPool / participationEligible.size();
-        long powerShare = powerEligible.isEmpty() ? 0L : powerPool / powerEligible.size();
+        double totalScore = rows.stream()
+                .mapToDouble(this::personalScore)
+                .sum();
+        double diamondsPerPoint = totalScore <= 0.0 ? 0.0 : totalDiamonds / totalScore;
 
         List<DistributionResponseDto.ResultItemDto> allocatedRows = rows.stream()
                 .map(row -> {
-                    long participationAmount = Boolean.TRUE.equals(row.getParticipationEligible()) ? participationShare : 0L;
-                    long powerAmount = Boolean.TRUE.equals(row.getPowerEligible()) ? powerShare : 0L;
+                    long participationAmount = Boolean.TRUE.equals(row.getParticipationEligible())
+                            ? Math.round(nullToZero(row.getFinalParticipationScore()) * diamondsPerPoint)
+                            : 0L;
+                    long powerAmount = Boolean.TRUE.equals(row.getPowerEligible())
+                            ? Math.round(nullToZero(row.getPowerScore()) * diamondsPerPoint)
+                            : 0L;
                     return copyWithAmounts(row, participationAmount, powerAmount);
                 })
                 .toList();
@@ -259,8 +263,8 @@ public class DistributionService {
                         .clanName(clanName)
                         .memberCount(rows.size())
                         .totalDiamonds(totalDiamonds)
-                        .participationPool(participationPool)
-                        .powerPool(powerPool)
+                        .participationPool(0L)
+                        .powerPool(0L)
                         .participationEligibleCount(participationEligible.size())
                         .powerEligibleCount(powerEligible.size())
                         .allocatedDiamonds(allocated)
@@ -268,6 +272,16 @@ public class DistributionService {
                         .build(),
                 allocatedRows
         );
+    }
+
+    private double personalScore(DistributionResponseDto.ResultItemDto row) {
+        double participationScore = Boolean.TRUE.equals(row.getParticipationEligible())
+                ? nullToZero(row.getFinalParticipationScore())
+                : 0.0;
+        double powerScore = Boolean.TRUE.equals(row.getPowerEligible())
+                ? nullToZero(row.getPowerScore())
+                : 0.0;
+        return participationScore + powerScore;
     }
 
     private DistributionResponseDto.ResultItemDto copyWithAmounts(
@@ -400,8 +414,8 @@ public class DistributionService {
         return value == null || value < 0 ? 0L : value;
     }
 
-    private double nullToZero(Double value) {
-        return value == null ? 0.0 : value;
+    private double nullToZero(Number value) {
+        return value == null ? 0.0 : value.doubleValue();
     }
 
     private double round1(double value) {
