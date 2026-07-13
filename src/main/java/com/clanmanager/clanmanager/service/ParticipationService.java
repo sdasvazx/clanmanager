@@ -116,7 +116,7 @@ public class ParticipationService {
             }
         }
 
-        int finalScore = baseScore - penaltyScore + minorityBonusScore;
+        int finalScore = Math.max(0, baseScore - penaltyScore + minorityBonusScore);
         double participationRate = totalActivityCount == 0
                 ? 0.0
                 : Math.round(((double) attendanceCount / totalActivityCount) * 1000) / 10.0;
