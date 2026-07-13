@@ -3260,6 +3260,7 @@ function CollectionPage({ member }) {
   const [memoByCell, setMemoByCell] = useState({});
   const [savingCell, setSavingCell] = useState('');
   const [showLogs, setShowLogs] = useState(false);
+  const [filters, setFilters] = useState({ keyword: '', clan: 'all', characterClass: 'all', itemKeyword: '', state: 'all' });
   const load = () => request('/management/collection-dashboard').then(setData).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
   const statusMap = useMemo(() => {
@@ -3359,6 +3360,23 @@ function CollectionPage({ member }) {
     const { state } = collectionCell(targetMember, item);
     updateStatus(targetMember, item, state === '완료' ? '미완료' : '완료');
   };
+  const collectionClanOptions = useMemo(() => Array.from(new Set(data.members.map((row) => canonicalClanName(row.guildName)).filter(Boolean))).sort(), [data.members]);
+  const collectionClassOptions = useMemo(() => Array.from(new Set(data.members.map((row) => row.characterClass || '').filter(Boolean))).sort(), [data.members]);
+  const visibleItems = useMemo(() => data.items.filter((item) => normalize(item.itemName).includes(normalize(filters.itemKeyword))), [data.items, filters.itemKeyword]);
+  const visibleMembers = useMemo(() => data.members.filter((targetMember) => {
+    const keyword = normalize(filters.keyword);
+    const matchesKeyword = !keyword || [targetMember.characterName, targetMember.guildName, targetMember.characterClass, targetMember.rank, targetMember.status]
+      .some((value) => normalize(value).includes(keyword));
+    const matchesClan = filters.clan === 'all' || canonicalClanName(targetMember.guildName) === filters.clan;
+    const matchesClass = filters.characterClass === 'all' || (targetMember.characterClass || '') === filters.characterClass;
+    const matchesState = filters.state === 'all' || visibleItems.some((item) => collectionCell(targetMember, item).state === filters.state);
+    return matchesKeyword && matchesClan && matchesClass && matchesState;
+  }), [data.members, filters, visibleItems, statusMap]);
+  const visibleTotalCount = visibleMembers.length * visibleItems.length;
+  const visibleCompletedCount = visibleMembers.reduce((sum, targetMember) => (
+    sum + visibleItems.filter((item) => collectionCell(targetMember, item).state === '완료').length
+  ), 0);
+  const resetFilters = () => setFilters({ keyword: '', clan: 'all', characterClass: 'all', itemKeyword: '', state: 'all' });
   return (
     <>
       <div className="page-title">
@@ -3389,13 +3407,22 @@ function CollectionPage({ member }) {
           <div><small>관리 인원</small><b>{data.members.length}명</b></div>
           <div><small>완료율</small><b>{totalCount ? Math.round((completedCount / totalCount) * 100) : 0}%</b></div>
         </div>
+        <div className="table-filter-panel collection-filter-panel">
+          <label>닉네임/클랜원 검색<input value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} placeholder="닉네임, 클랜, 클래스 검색" /></label>
+          <label>클랜<select value={filters.clan} onChange={(event) => setFilters({ ...filters, clan: event.target.value })}><option value="all">전체 클랜</option>{collectionClanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
+          <label>클래스<select value={filters.characterClass} onChange={(event) => setFilters({ ...filters, characterClass: event.target.value })}><option value="all">전체 클래스</option>{collectionClassOptions.map((characterClass) => <option key={characterClass} value={characterClass}>{characterClass}</option>)}</select></label>
+          <label>컬렉템/스킬 검색<input value={filters.itemKeyword} onChange={(event) => setFilters({ ...filters, itemKeyword: event.target.value })} placeholder="항목명 검색" /></label>
+          <label>지급상태<select value={filters.state} onChange={(event) => setFilters({ ...filters, state: event.target.value })}><option value="all">전체 상태</option><option value="완료">완료 있음</option><option value="미완료">미완료 있음</option></select></label>
+          <button type="button" className="outline-button no-margin" onClick={resetFilters}>필터 초기화</button>
+          <span className="result-count">표시 {visibleMembers.length}명 · {visibleItems.length}개 · 완료 {visibleCompletedCount}/{visibleTotalCount}</span>
+        </div>
         <div className="table-wrap collection-wide-wrap">
           <table className="collection-wide-table">
             <thead>
               <tr>
                 <th className="collection-member-head">클랜원</th>
                 <th>클랜</th>
-                {data.items.map((item) => (
+                {visibleItems.map((item) => (
                   <th key={item.itemId}>
                     {editingItem?.itemId === item.itemId ? (
                       <span className="collection-item-edit compact">
@@ -3417,11 +3444,11 @@ function CollectionPage({ member }) {
               </tr>
             </thead>
             <tbody>
-              {data.members.map((targetMember) => (
+              {visibleMembers.map((targetMember) => (
                 <tr key={targetMember.memberId}>
                   <td className="collection-member-name"><b>{targetMember.characterName}</b><small>{targetMember.characterClass || '-'}</small></td>
                   <td><span className={`clan-badge ${normalize(canonicalClanName(targetMember.guildName))}`}>{canonicalClanName(targetMember.guildName)}</span></td>
-                  {data.items.map((item) => {
+                  {visibleItems.map((item) => {
                     const { key, status, state } = collectionCell(targetMember, item);
                     const done = state === '완료';
                     return (
@@ -3445,6 +3472,7 @@ function CollectionPage({ member }) {
         </div>
         {!data.members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
         {!data.items.length && <div className="empty-state">등록된 컬렉템 항목이 없습니다. 위에서 항목을 먼저 추가하세요.</div>}
+        {!!data.members.length && !!data.items.length && (!visibleMembers.length || !visibleItems.length) && <div className="empty-state">현재 필터에 맞는 컬렉템 지급현황이 없습니다.</div>}
       </section>
       <section className="white-card collection-log-card collapsible">
         <button type="button" className="collection-log-toggle" onClick={() => setShowLogs(!showLogs)}>
@@ -3650,6 +3678,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
   const [createForm, setCreateForm] = useState(emptyCreateForm);
   const [bulkEditing, setBulkEditing] = useState(false);
   const [bulkEdits, setBulkEdits] = useState({});
+  const [memberFilters, setMemberFilters] = useState({ keyword: '', clan: 'all', characterClass: 'all', status: 'all', role: 'all' });
   const load = () => request('/members').then(setMembers).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
 
@@ -3712,6 +3741,30 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
     const edited = bulkEdits[row.memberId];
     return edited && !isSameProfile(formFromMember(row), edited);
   });
+  const memberClanOptions = useMemo(() => Array.from(new Set(members.map((row) => canonicalClanName(row.guildName)).filter(Boolean))).sort(), [members]);
+  const memberClassOptions = useMemo(() => Array.from(new Set(members.map((row) => row.characterClass || '').filter(Boolean))).sort(), [members]);
+  const memberStatusOptions = useMemo(() => Array.from(new Set(members.map((row) => row.active ? (row.status || '활성') : '비활성').filter(Boolean))).sort(), [members]);
+  const filteredMembers = useMemo(() => members.filter((row) => {
+    const keyword = normalize(memberFilters.keyword);
+    const rowStatus = row.active ? (row.status || '활성') : '비활성';
+    const matchesKeyword = !keyword || [
+      row.characterName,
+      row.guildName,
+      row.characterClass,
+      row.rank,
+      row.status,
+      row.role === 'ADMIN' ? '운영자' : '클랜원',
+      row.active ? '활성' : '비활성',
+      row.combatPower,
+      row.level,
+    ].some((value) => normalize(value).includes(keyword));
+    const matchesClan = memberFilters.clan === 'all' || canonicalClanName(row.guildName) === memberFilters.clan;
+    const matchesClass = memberFilters.characterClass === 'all' || (row.characterClass || '') === memberFilters.characterClass;
+    const matchesStatus = memberFilters.status === 'all' || rowStatus === memberFilters.status;
+    const matchesRole = memberFilters.role === 'all' || row.role === memberFilters.role;
+    return matchesKeyword && matchesClan && matchesClass && matchesStatus && matchesRole;
+  }), [members, memberFilters]);
+  const resetMemberFilters = () => setMemberFilters({ keyword: '', clan: 'all', characterClass: 'all', status: 'all', role: 'all' });
 
   const saveProfile = async (event) => {
     event.preventDefault();
@@ -3860,7 +3913,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
         <div className="section-heading">
           <div><h2>클랜원 관리</h2><p className="subtle">닉네임, 길드, 클래스, 레벨, 전투력, 상태, 권한을 관리합니다.</p></div>
           <div className="bulk-edit-actions">
-            <span className="result-count">{members.length}명</span>
+            <span className="result-count">표시 {filteredMembers.length} / {members.length}명</span>
             {bulkEditing ? (
               <>
                 <span className="result-count changed">{bulkChangedRows().length}명 변경</span>
@@ -3873,6 +3926,14 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
           </div>
         </div>
         {message && <p className="vault-message">{message}</p>}
+        <div className="table-filter-panel member-filter-panel">
+          <label>닉네임 검색<input value={memberFilters.keyword} onChange={(event) => setMemberFilters({ ...memberFilters, keyword: event.target.value })} placeholder="닉네임, 직급, 전투력 검색" /></label>
+          <label>클랜<select value={memberFilters.clan} onChange={(event) => setMemberFilters({ ...memberFilters, clan: event.target.value })}><option value="all">전체 클랜</option>{memberClanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
+          <label>클래스<select value={memberFilters.characterClass} onChange={(event) => setMemberFilters({ ...memberFilters, characterClass: event.target.value })}><option value="all">전체 클래스</option>{memberClassOptions.map((characterClass) => <option key={characterClass} value={characterClass}>{characterClass}</option>)}</select></label>
+          <label>상태<select value={memberFilters.status} onChange={(event) => setMemberFilters({ ...memberFilters, status: event.target.value })}><option value="all">전체 상태</option>{memberStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+          <label>권한<select value={memberFilters.role} onChange={(event) => setMemberFilters({ ...memberFilters, role: event.target.value })}><option value="all">전체 권한</option><option value="ADMIN">운영자</option><option value="MEMBER">클랜원</option></select></label>
+          <button type="button" className="outline-button no-margin" onClick={resetMemberFilters}>필터 초기화</button>
+        </div>
         {resetTarget && (
           <form className="admin-reset-form" onSubmit={savePasswordReset}>
             <div>
@@ -3887,7 +3948,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
         <div className="table-wrap">
           <table className="data-table role-table">
             <thead><tr><th>닉네임</th><th>길드</th><th>클래스</th><th>레벨</th><th>전투력</th><th>직급</th><th>상태</th><th>권한</th><th>정보수정</th><th>비밀번호</th><th>권한변경</th><th>삭제</th></tr></thead>
-            <tbody>{members.map((row) => {
+            <tbody>{filteredMembers.map((row) => {
               const bulkForm = bulkEdits[row.memberId] || formFromMember(row);
               return (
               <React.Fragment key={row.memberId}>
@@ -3930,6 +3991,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
           </table>
         </div>
         {!members.length && <div className="empty-state">등록된 클랜원이 없습니다.</div>}
+        {!!members.length && !filteredMembers.length && <div className="empty-state">현재 필터에 맞는 클랜원이 없습니다.</div>}
       </section>
     </>
   );

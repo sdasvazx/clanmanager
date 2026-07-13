@@ -264,6 +264,7 @@
 [data-theme="dark"] .collection-wide-table .collection-member-name,
 [data-theme="dark"] .collection-member-card,
 [data-theme="dark"] .collection-member-card input,
+[data-theme="dark"] .table-filter-panel,
 [data-theme="dark"] .vault-target-picker,
 [data-theme="dark"] .vault-target-list,
 [data-theme="dark"] .vault-target-list label {
@@ -277,6 +278,17 @@
   background: #111b2a;
   border-color: #26364d;
   color: #d6e0ed;
+}
+
+[data-theme="dark"] .table-filter-panel input,
+[data-theme="dark"] .table-filter-panel select {
+  background: #0f1724;
+  border-color: #304158;
+  color: #e5edf7;
+}
+
+[data-theme="dark"] .table-filter-panel label {
+  color: #9fb0c5;
 }
 
 [data-theme="dark"] .collection-wide-table td,
