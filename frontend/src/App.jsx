@@ -25,14 +25,14 @@ const menu = [
   ['admin', '관', '관리자 설정'],
 ];
 
-const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball', 'spec-history', 'activity-settings', 'all-items']);
+const adminOnlyPages = new Set(['ledger', 'roster', 'admin', 'member-admin', 'pinball', 'spec-history', 'activity-settings', 'all-items', 'general-settings']);
 
 const adminCards = [
   ['✓', '출석체크', 'mint', 'attendance'],
   ['♕', '출석보스 설정', 'red', 'activity-settings'],
   ['♙', '클랜원/전투력 관리', 'blue', 'member-admin'],
   ['⚙', '가중치 설정', 'orange', 'activity-settings'],
-  ['✿', '기타 설정', 'indigo', 'admin'],
+  ['✿', '기타 설정', 'indigo', 'general-settings'],
   ['▣', '스펙/장비 수정기록', 'amber', 'spec-history'],
   ['▥', '참여율 선택조회', 'cyan', 'participation'],
   ['⚠', '게헨나감지', 'red', 'roster'],
@@ -52,6 +52,7 @@ const pageMetaList = [
   { id: 'roster', icon: '스', label: '출석 OCR' },
   { id: 'item-request', icon: '신', label: '아이템 신청' },
   { id: 'all-items', icon: '템', label: '전체아이템' },
+  { id: 'general-settings', icon: '설', label: '기타 설정' },
 ];
 const pageMetaMap = new Map(pageMetaList.map((item) => [item.id, item]));
 const pageMeta = (id) => pageMetaMap.get(id) || { id, icon: '★', label: id };
@@ -132,6 +133,59 @@ const OCR_NOISE_WORDS = new Set(['lv', 'lvl', 'level', 'l', 'v', 'iv', 'il', 'i'
 const OCR_CORRECTION_STORAGE_KEY = 'clanmanagerOcrCorrections';
 const OCR_FILTER_STORAGE_KEY = 'clanmanagerOcrFilters';
 const clanOptions = ['귀신', '운좋은사람들', '귀신Z', '로망'];
+const classOptions = ['그림리퍼', '바이퍼', '블러드스테인', '아카샤', '카니지'];
+const rosterSettingStorageKey = 'clanmanager:roster-settings';
+const defaultRosterSettings = {
+  clans: [
+    { id: 'clan-ghost', name: '귀신', color: '#dc2626' },
+    { id: 'clan-ghost-z', name: '귀신Z', color: '#10b981' },
+    { id: 'clan-romang', name: '로망', color: '#3b82f6' },
+    { id: 'clan-lucky', name: '운좋은', color: '#a855f7' },
+  ],
+  classes: [
+    { id: 'class-reaper', name: '그림리퍼', color: '#9ca3af' },
+    { id: 'class-viper', name: '바이퍼', color: '#2f7d32' },
+    { id: 'class-bloodstain', name: '블러드스테인', color: '#0052ff' },
+    { id: 'class-akasha', name: '아카샤', color: '#d1009f' },
+    { id: 'class-carnage', name: '카니지', color: '#c00000' },
+  ],
+};
+const normalizeSettingItems = (items, fallback) => {
+  const rows = Array.isArray(items) ? items : fallback;
+  return rows
+    .map((item, index) => ({
+      id: item.id || `setting-${Date.now()}-${index}`,
+      name: String(item.name || '').trim(),
+      color: /^#[0-9a-f]{6}$/i.test(item.color || '') ? item.color : fallback[index % fallback.length]?.color || '#3b82f6',
+    }))
+    .filter((item) => item.name);
+};
+const readRosterSettings = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(rosterSettingStorageKey) || '{}');
+    return {
+      clans: normalizeSettingItems(parsed.clans, defaultRosterSettings.clans),
+      classes: normalizeSettingItems(parsed.classes, defaultRosterSettings.classes),
+    };
+  } catch {
+    return defaultRosterSettings;
+  }
+};
+const writeRosterSettings = (settings) => localStorage.setItem(rosterSettingStorageKey, JSON.stringify(settings));
+function useRosterSettings() {
+  const [settings, setSettings] = useState(readRosterSettings);
+  const saveSettings = (nextSettings) => {
+    setSettings(nextSettings);
+    writeRosterSettings(nextSettings);
+    window.dispatchEvent(new Event('clanmanager-roster-settings'));
+  };
+  useEffect(() => {
+    const refresh = () => setSettings(readRosterSettings());
+    window.addEventListener('clanmanager-roster-settings', refresh);
+    return () => window.removeEventListener('clanmanager-roster-settings', refresh);
+  }, []);
+  return [settings, saveSettings];
+}
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
 const bossCheckSlots = [
   { key: '01', title: '01시 (1성)', cutTime: '01:00', bossName: '01시 보스', score: 1 },
@@ -3661,13 +3715,33 @@ function CrudPage({ title, description, canManage, canCreate = canManage, canDel
   return <><div className="page-title"><h1>{title}</h1><p>{description}</p></div>{canCreate && <section className="white-card">{form}</section>}<section className="white-card"><div className="table-wrap"><table className="data-table"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}{canDelete && <th>관리</th>}</tr></thead><tbody>{rows.map((row) => <tr key={getId(row)}>{render(row).map((cell, index) => <td key={index}>{cell}</td>)}{canDelete && <td><button className="role-button danger" onClick={() => onDelete(getId(row))}>삭제</button></td>}</tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">아직 등록된 기록이 없습니다.</div>}</section></>;
 }
 
-function MyPage({ member, setPage, favoritePages = [] }) {
+function MyPage({ member, setPage, favoritePages = [], onMemberUpdate }) {
   const [info, setInfo] = useState(null);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordMessage, setPasswordMessage] = useState('');
+  const [nameForm, setNameForm] = useState({ characterName: member.characterName || '' });
+  const [nameMessage, setNameMessage] = useState('');
   const incompleteCollections = useIncompleteCollections(member.memberId);
   useEffect(() => { request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {}); }, [member.memberId]);
+  useEffect(() => { setNameForm({ characterName: member.characterName || '' }); }, [member.characterName]);
   if (!info) return <LoadingCard />;
+  const changeCharacterName = async (event) => {
+    event.preventDefault();
+    setNameMessage('');
+    const characterName = nameForm.characterName.trim();
+    if (!characterName) {
+      setNameMessage('캐릭터명을 입력해 주세요.');
+      return;
+    }
+    try {
+      const saved = await request(`/members/${member.memberId}/self-profile`, {
+        method: 'PATCH',
+        body: JSON.stringify({ characterName }),
+      });
+      onMemberUpdate?.(saved);
+      setNameMessage('캐릭터명을 변경했습니다. 클랜원 정보에도 바로 반영됩니다.');
+    } catch (err) { setNameMessage(err.message); }
+  };
   const changePassword = async (event) => {
     event.preventDefault();
     setPasswordMessage('');
@@ -3684,7 +3758,7 @@ function MyPage({ member, setPage, favoritePages = [] }) {
       setPasswordMessage('비밀번호를 변경했습니다. 다음 로그인부터 새 비밀번호를 사용하세요.');
     } catch (err) { setPasswordMessage(err.message); }
   };
-  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><FavoriteLinks favorites={favoritePages} setPage={setPage} /><ProfileCard member={member} info={info} incompleteCollections={incompleteCollections} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div></section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
+  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><FavoriteLinks favorites={favoritePages} setPage={setPage} /><ProfileCard member={member} info={info} incompleteCollections={incompleteCollections} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div><form className="password-form profile-name-form" onSubmit={changeCharacterName}><label>캐릭터명 변경<input required maxLength="50" value={nameForm.characterName} onChange={(e) => setNameForm({ characterName: e.target.value })} /></label><button className="primary-button">캐릭터명 저장</button></form>{nameMessage && <p className="vault-message">{nameMessage}</p>}</section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
 }
 
 function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites = [], toggleFavorite }) {
@@ -3701,6 +3775,9 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
   const [bulkEditing, setBulkEditing] = useState(false);
   const [bulkEdits, setBulkEdits] = useState({});
   const [memberFilters, setMemberFilters] = useState({ keyword: '', clan: 'all', characterClass: 'all', status: 'all', role: 'all' });
+  const [rosterSettings] = useRosterSettings();
+  const managedClanOptions = rosterSettings.clans.map((item) => item.name);
+  const managedClassOptions = rosterSettings.classes.map((item) => item.name);
   const load = () => request('/members').then(setMembers).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
 
@@ -3921,8 +3998,8 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
         <form className="admin-create-form" onSubmit={createMember}>
           <label>닉네임<input required value={createForm.characterName} onChange={(e) => setCreateForm({ ...createForm, characterName: e.target.value })} /></label>
           <label>임시 비밀번호<input required value={createForm.initialPassword} onChange={(e) => setCreateForm({ ...createForm, initialPassword: e.target.value })} /></label>
-          <label>클랜<select value={createForm.guildName} onChange={(e) => setCreateForm({ ...createForm, guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
-          <label>클래스<input value={createForm.characterClass} onChange={(e) => setCreateForm({ ...createForm, characterClass: e.target.value })} /></label>
+          <label>클랜<select value={createForm.guildName} onChange={(e) => setCreateForm({ ...createForm, guildName: e.target.value })}><option value="">클랜 선택</option>{managedClanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
+          <label>클래스<select value={createForm.characterClass} onChange={(e) => setCreateForm({ ...createForm, characterClass: e.target.value })}><option value="">클래스 선택</option>{managedClassOptions.map((className) => <option key={className} value={className}>{className}</option>)}</select></label>
           <label>레벨<input type="number" min="0" value={createForm.level} onChange={(e) => setCreateForm({ ...createForm, level: e.target.value })} /></label>
           <label>전투력<input type="number" min="0" value={createForm.combatPower} onChange={(e) => setCreateForm({ ...createForm, combatPower: e.target.value })} /></label>
           <label>직급<input placeholder="예: 장로, 정예, 일반" value={createForm.rank} onChange={(e) => setCreateForm({ ...createForm, rank: e.target.value })} /></label>
@@ -3976,8 +4053,8 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
               <React.Fragment key={row.memberId}>
                 <tr>
                   <td>{bulkEditing ? <input className="bulk-table-input name" required value={bulkForm.characterName} onChange={(e) => updateBulkEdit(row.memberId, { characterName: e.target.value })} /> : row.characterName}</td>
-                  <td>{bulkEditing ? <select className="bulk-table-input" value={bulkForm.guildName} onChange={(e) => updateBulkEdit(row.memberId, { guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select> : (row.guildName || '-')}</td>
-                  <td>{bulkEditing ? <input className="bulk-table-input" value={bulkForm.characterClass} onChange={(e) => updateBulkEdit(row.memberId, { characterClass: e.target.value })} /> : (row.characterClass || '-')}</td>
+                  <td>{bulkEditing ? <select className="bulk-table-input" value={bulkForm.guildName} onChange={(e) => updateBulkEdit(row.memberId, { guildName: e.target.value })}><option value="">클랜 선택</option>{managedClanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select> : (row.guildName || '-')}</td>
+                  <td>{bulkEditing ? <select className="bulk-table-input" value={bulkForm.characterClass} onChange={(e) => updateBulkEdit(row.memberId, { characterClass: e.target.value })}><option value="">클래스 선택</option>{managedClassOptions.map((className) => <option key={className} value={className}>{className}</option>)}</select> : (row.characterClass || '-')}</td>
                   <td>{bulkEditing ? <input className="bulk-table-input small" type="number" min="0" value={bulkForm.level} onChange={(e) => updateBulkEdit(row.memberId, { level: e.target.value })} /> : (row.level ? `Lv.${row.level}` : '-')}</td>
                   <td>{bulkEditing ? <input className="bulk-table-input power" required type="number" min="0" value={bulkForm.combatPower} onChange={(e) => updateBulkEdit(row.memberId, { combatPower: e.target.value })} /> : formatNumber(row.combatPower)}</td>
                   <td>{bulkEditing ? <input className="bulk-table-input" value={bulkForm.rank} onChange={(e) => updateBulkEdit(row.memberId, { rank: e.target.value })} /> : (row.rank || '-')}</td>
@@ -3995,8 +4072,8 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
                     <td colSpan="12">
                       <form className="admin-edit-form inline-member-edit" onSubmit={saveProfile}>
                         <label>닉네임<input required value={editForm.characterName} onChange={(e) => setEditForm({ ...editForm, characterName: e.target.value })} /></label>
-                        <label>클랜<select value={editForm.guildName} onChange={(e) => setEditForm({ ...editForm, guildName: e.target.value })}><option value="">클랜 선택</option>{clanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
-                        <label>클래스<input value={editForm.characterClass} onChange={(e) => setEditForm({ ...editForm, characterClass: e.target.value })} /></label>
+                        <label>클랜<select value={editForm.guildName} onChange={(e) => setEditForm({ ...editForm, guildName: e.target.value })}><option value="">클랜 선택</option>{managedClanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
+                        <label>클래스<select value={editForm.characterClass} onChange={(e) => setEditForm({ ...editForm, characterClass: e.target.value })}><option value="">클래스 선택</option>{managedClassOptions.map((className) => <option key={className} value={className}>{className}</option>)}</select></label>
                         <label>레벨<input type="number" min="0" value={editForm.level} onChange={(e) => setEditForm({ ...editForm, level: e.target.value })} /></label>
                         <label>전투력<input required type="number" min="0" value={editForm.combatPower} onChange={(e) => setEditForm({ ...editForm, combatPower: e.target.value })} /></label>
                         <label>직급<input placeholder="예: 장로, 정예, 일반" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} /></label>
@@ -4057,6 +4134,79 @@ function RosterScan() {
 
 function AccessDenied() { return <section className="placeholder-page"><div className="white-card"><span>🔒</span><h1>운영자 전용 화면</h1><p>이 메뉴는 운영자만 사용할 수 있습니다.<br />일반 클랜원은 조회 메뉴를 이용할 수 있습니다.</p></div></section>; }
 function LoadingCard() { return <section className="white-card loading-card">정보를 불러오는 중입니다...</section>; }
+
+function GeneralSettingsPage({ setPage }) {
+  const [settings, saveSettings] = useRosterSettings();
+  const [draft, setDraft] = useState(settings);
+  const [newItems, setNewItems] = useState({
+    clans: { name: '', color: '#3b82f6' },
+    classes: { name: '', color: '#3b82f6' },
+  });
+  const [message, setMessage] = useState('');
+  useEffect(() => { setDraft(settings); }, [settings]);
+
+  const persist = (next) => {
+    const cleaned = {
+      clans: normalizeSettingItems(next.clans, defaultRosterSettings.clans),
+      classes: normalizeSettingItems(next.classes, defaultRosterSettings.classes),
+    };
+    setDraft(cleaned);
+    saveSettings(cleaned);
+  };
+  const addItem = (type) => {
+    const name = newItems[type].name.trim();
+    if (!name) {
+      setMessage('이름을 입력해 주세요.');
+      return;
+    }
+    if (draft[type].some((item) => item.name.toLowerCase() === name.toLowerCase())) {
+      setMessage('이미 등록된 이름입니다.');
+      return;
+    }
+    persist({ ...draft, [type]: [...draft[type], { id: `${type}-${Date.now()}`, name, color: newItems[type].color }] });
+    setNewItems((prev) => ({ ...prev, [type]: { ...prev[type], name: '' } }));
+    setMessage('추가되었습니다.');
+  };
+  const updateItem = (type, id, patch) => {
+    const nextItems = draft[type].map((item) => (item.id === id ? { ...item, ...patch } : item));
+    if (Object.prototype.hasOwnProperty.call(patch, 'name') && !patch.name.trim()) {
+      setDraft((prev) => ({ ...prev, [type]: nextItems }));
+      setMessage('이름을 입력해 주세요.');
+      return;
+    }
+    persist({ ...draft, [type]: nextItems });
+    setMessage('저장되었습니다.');
+  };
+  const deleteItem = (type, id) => {
+    if (draft[type].length <= 1) {
+      setMessage('목록은 최소 1개 이상 필요합니다.');
+      return;
+    }
+    persist({ ...draft, [type]: draft[type].filter((item) => item.id !== id) });
+    setMessage('삭제되었습니다.');
+  };
+  const card = (type, title, placeholder) => (
+    <section className="white-card roster-setting-card">
+      <h2>{title}</h2>
+      <div className="setting-add-row">
+        <input placeholder={placeholder} value={newItems[type].name} onChange={(event) => setNewItems((prev) => ({ ...prev, [type]: { ...prev[type], name: event.target.value } }))} />
+        <input className="color-input" type="color" value={newItems[type].color} onChange={(event) => setNewItems((prev) => ({ ...prev, [type]: { ...prev[type], color: event.target.value } }))} />
+        <button type="button" className="outline-button no-margin" onClick={() => addItem(type)}>추가</button>
+      </div>
+      <div className="setting-list">
+        {draft[type].map((item) => (
+          <div className="setting-list-row" key={item.id}>
+            <span className="setting-preview-pill" style={{ background: item.color }}>{item.name}</span>
+            <input className="setting-name-input" value={item.name} onChange={(event) => updateItem(type, item.id, { name: event.target.value })} />
+            <input className="color-input" type="color" value={item.color} onChange={(event) => updateItem(type, item.id, { color: event.target.value })} />
+            <button type="button" className="role-button danger" onClick={() => deleteItem(type, item.id)}>×</button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+  return <><div className="general-settings-title"><div><h1>기타 설정</h1><p>클랜과 클래스를 보기 쉽게 관리합니다. 변경한 항목은 클랜원 관리 선택지에 바로 반영됩니다.</p></div><button type="button" className="admin-back-button" onClick={() => setPage('admin')}>←</button></div>{message && <p className="vault-message">{message}</p>}<div className="roster-settings-grid">{card('clans', '클랜 목록', '클랜명 입력')}{card('classes', '클래스 목록', '클래스명 입력')}</div></>;
+}
 
 function RosterScanAdmin({ setPage }) { return <><AdminBackButton setPage={setPage} /><RosterScan /></>; }
 
@@ -4282,9 +4432,10 @@ export default function App() {
     : page === 'item-request' ? <ItemRequestPage member={member} />
     : page === 'spec-history' ? <SpecHistoryPage setPage={setPage} />
     : page === 'activity-settings' ? <ActivitySettingsPage member={member} setPage={setPage} />
+    : page === 'general-settings' ? <GeneralSettingsPage setPage={setPage} />
     : page === 'roster' ? <RosterScanAdmin setPage={setPage} />
     : page === 'pinball' ? <PinballPage setPage={setPage} />
-    : page === 'mypage' ? <MyPage member={member} setPage={setPage} favoritePages={visibleFavoritePages} />
+    : page === 'mypage' ? <MyPage member={member} setPage={setPage} favoritePages={visibleFavoritePages} onMemberUpdate={updateCurrentMember} />
     : page === 'admin' ? <Admin member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} favorites={favorites} toggleFavorite={toggleFavorite} />
     : page === 'member-admin' ? <MemberAdminPage member={member} setPage={setPage} onMemberUpdate={updateCurrentMember} />
     : <Lobby member={member} setPage={setPage} favoritePages={visibleFavoritePages} />;

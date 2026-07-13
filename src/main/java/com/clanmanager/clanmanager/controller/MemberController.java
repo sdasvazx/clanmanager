@@ -192,6 +192,44 @@ public class MemberController {
         return saved;
     }
 
+    @PatchMapping("/{memberId}/self-profile")
+    public Member updateSelfProfile(
+            @PathVariable Long memberId,
+            @Valid @RequestBody SelfProfileRequest request
+    ) {
+        Member member = findMember(memberId);
+        String characterName = request.getCharacterName() == null ? "" : request.getCharacterName().trim();
+        if (characterName.isBlank()) {
+            throw new IllegalArgumentException("캐릭터 이름은 비워둘 수 없습니다.");
+        }
+        if (memberRepository.existsByCharacterNameAndMemberIdNot(characterName, memberId)) {
+            throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
+        }
+
+        String previousName = member.getCharacterName();
+        Integer previousCombatPower = member.getCombatPower();
+        Integer previousLevel = member.getLevel();
+        String previousGuildName = member.getGuildName();
+        String previousCharacterClass = member.getCharacterClass();
+        String previousRank = member.getRank();
+        String previousStatus = member.getStatus();
+
+        member.setCharacterName(characterName);
+        Member saved = memberRepository.save(member);
+        saveSpecHistoryIfChanged(
+                saved,
+                saved,
+                previousName,
+                previousCombatPower,
+                previousLevel,
+                previousGuildName,
+                previousCharacterClass,
+                previousRank,
+                previousStatus
+        );
+        return saved;
+    }
+
     @PostMapping("/bulk-import")
     public Map<String, Object> bulkImportMembers(@Valid @RequestBody MemberBulkImportRequest request) {
         Member admin = findMember(request.getAdminMemberId());
@@ -435,6 +473,14 @@ public class MemberController {
         @Size(max = 30, message = "상태는 30자 이하여야 합니다.")
         private String status;
         private Boolean active;
+    }
+
+    @Getter
+    @Setter
+    public static class SelfProfileRequest {
+        @NotBlank(message = "캐릭터 이름을 입력해 주세요.")
+        @Size(max = 50, message = "캐릭터 이름은 50자 이하여야 합니다.")
+        private String characterName;
     }
 
     @Getter
