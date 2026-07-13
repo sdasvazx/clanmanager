@@ -22,7 +22,11 @@ public class DistributionResponseDto {
     private Double participationCut;
     private Double powerScoreCut;
     private Long totalDiamonds;
+    private Long totalParticipationDiamonds;
+    private Long totalPowerDiamonds;
     private Map<String, Long> clanDiamonds;
+    private Map<String, Long> participationDiamonds;
+    private Map<String, Long> powerDiamonds;
     private Long allocatedDiamonds;
     private Long remainingDiamonds;
     private Boolean readOnly;

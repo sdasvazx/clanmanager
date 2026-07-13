@@ -63,10 +63,13 @@ public class DistributionService {
         List<DistributionResponseDto.ResultItemDto> finalResults = new ArrayList<>();
 
         groups.forEach((clanName, rows) -> {
-            long totalDiamonds = settings.mode().equals("TOTAL")
-                    ? settings.totalDiamonds()
-                    : settings.clanDiamonds().getOrDefault(clanName, 0L);
-            DistributionGroupResult groupResult = allocateGroup(clanName, rows, totalDiamonds);
+            long participationDiamonds = settings.mode().equals("TOTAL")
+                    ? settings.totalParticipationDiamonds()
+                    : settings.participationDiamonds().getOrDefault(clanName, 0L);
+            long powerDiamonds = settings.mode().equals("TOTAL")
+                    ? settings.totalPowerDiamonds()
+                    : settings.powerDiamonds().getOrDefault(clanName, 0L);
+            DistributionGroupResult groupResult = allocateGroup(clanName, rows, participationDiamonds, powerDiamonds);
             summaries.add(groupResult.summary());
             finalResults.addAll(groupResult.results());
         });
@@ -84,7 +87,11 @@ public class DistributionService {
                 .participationCut(settings.participationCut())
                 .powerScoreCut(settings.powerScoreCut())
                 .totalDiamonds(settings.totalDiamonds())
+                .totalParticipationDiamonds(settings.totalParticipationDiamonds())
+                .totalPowerDiamonds(settings.totalPowerDiamonds())
                 .clanDiamonds(settings.clanDiamonds())
+                .participationDiamonds(settings.participationDiamonds())
+                .powerDiamonds(settings.powerDiamonds())
                 .allocatedDiamonds(allocated)
                 .remainingDiamonds(Math.max(0L, total - allocated))
                 .readOnly(false)
@@ -233,38 +240,48 @@ public class DistributionService {
         return groups;
     }
 
-    private DistributionGroupResult allocateGroup(String clanName, List<DistributionResponseDto.ResultItemDto> rows, long totalDiamonds) {
+    private DistributionGroupResult allocateGroup(
+            String clanName,
+            List<DistributionResponseDto.ResultItemDto> rows,
+            long participationPool,
+            long powerPool
+    ) {
         List<DistributionResponseDto.ResultItemDto> participationEligible = rows.stream()
                 .filter(row -> Boolean.TRUE.equals(row.getParticipationEligible()))
                 .toList();
         List<DistributionResponseDto.ResultItemDto> powerEligible = rows.stream()
                 .filter(row -> Boolean.TRUE.equals(row.getPowerEligible()))
                 .toList();
-        double totalScore = rows.stream()
-                .mapToDouble(this::personalScore)
+        double totalParticipationScore = participationEligible.stream()
+                .mapToDouble(row -> nullToZero(row.getFinalParticipationScore()))
                 .sum();
-        double diamondsPerPoint = totalScore <= 0.0 ? 0.0 : totalDiamonds / totalScore;
+        double totalPowerScore = powerEligible.stream()
+                .mapToDouble(row -> nullToZero(row.getPowerScore()))
+                .sum();
+        double participationDiamondsPerPoint = totalParticipationScore <= 0.0 ? 0.0 : participationPool / totalParticipationScore;
+        double powerDiamondsPerPoint = totalPowerScore <= 0.0 ? 0.0 : powerPool / totalPowerScore;
 
         List<DistributionResponseDto.ResultItemDto> allocatedRows = rows.stream()
                 .map(row -> {
                     long participationAmount = Boolean.TRUE.equals(row.getParticipationEligible())
-                            ? Math.round(nullToZero(row.getFinalParticipationScore()) * diamondsPerPoint)
+                            ? Math.round(nullToZero(row.getFinalParticipationScore()) * participationDiamondsPerPoint)
                             : 0L;
                     long powerAmount = Boolean.TRUE.equals(row.getPowerEligible())
-                            ? Math.round(nullToZero(row.getPowerScore()) * diamondsPerPoint)
+                            ? Math.round(nullToZero(row.getPowerScore()) * powerDiamondsPerPoint)
                             : 0L;
                     return copyWithAmounts(row, participationAmount, powerAmount);
                 })
                 .toList();
         long allocated = allocatedRows.stream().mapToLong(DistributionResponseDto.ResultItemDto::getFinalAmount).sum();
+        long totalDiamonds = participationPool + powerPool;
 
         return new DistributionGroupResult(
                 DistributionResponseDto.ClanSummaryDto.builder()
                         .clanName(clanName)
                         .memberCount(rows.size())
                         .totalDiamonds(totalDiamonds)
-                        .participationPool(0L)
-                        .powerPool(0L)
+                        .participationPool(participationPool)
+                        .powerPool(powerPool)
                         .participationEligibleCount(participationEligible.size())
                         .powerEligibleCount(powerEligible.size())
                         .allocatedDiamonds(allocated)
@@ -272,16 +289,6 @@ public class DistributionService {
                         .build(),
                 allocatedRows
         );
-    }
-
-    private double personalScore(DistributionResponseDto.ResultItemDto row) {
-        double participationScore = Boolean.TRUE.equals(row.getParticipationEligible())
-                ? nullToZero(row.getFinalParticipationScore())
-                : 0.0;
-        double powerScore = Boolean.TRUE.equals(row.getPowerEligible())
-                ? nullToZero(row.getPowerScore())
-                : 0.0;
-        return participationScore + powerScore;
     }
 
     private DistributionResponseDto.ResultItemDto copyWithAmounts(
@@ -319,16 +326,32 @@ public class DistributionService {
         }
         Map<String, Long> clanDiamonds = new LinkedHashMap<>();
         CLAN_ORDER.forEach(clan -> clanDiamonds.put(clan, safeAmount(request.getClanDiamonds() == null ? null : request.getClanDiamonds().get(clan))));
-        long totalDiamonds = mode.equals("TOTAL")
-                ? safeAmount(request.getTotalDiamonds())
-                : clanDiamonds.values().stream().mapToLong(Long::longValue).sum();
+        Map<String, Long> participationDiamonds = new LinkedHashMap<>();
+        Map<String, Long> powerDiamonds = new LinkedHashMap<>();
+        CLAN_ORDER.forEach(clan -> {
+            long legacyAmount = clanDiamonds.getOrDefault(clan, 0L);
+            participationDiamonds.put(clan, safeAmount(request.getParticipationDiamonds() == null ? legacyAmount : request.getParticipationDiamonds().get(clan)));
+            powerDiamonds.put(clan, safeAmount(request.getPowerDiamonds() == null ? 0L : request.getPowerDiamonds().get(clan)));
+        });
+        long totalParticipationDiamonds = mode.equals("TOTAL")
+                ? safeAmount(request.getTotalParticipationDiamonds() == null ? request.getTotalDiamonds() : request.getTotalParticipationDiamonds())
+                : participationDiamonds.values().stream().mapToLong(Long::longValue).sum();
+        long totalPowerDiamonds = mode.equals("TOTAL")
+                ? safeAmount(request.getTotalPowerDiamonds())
+                : powerDiamonds.values().stream().mapToLong(Long::longValue).sum();
+        long totalDiamonds = totalParticipationDiamonds + totalPowerDiamonds;
+        clanDiamonds.replaceAll((clan, ignored) -> participationDiamonds.getOrDefault(clan, 0L) + powerDiamonds.getOrDefault(clan, 0L));
 
         return new DistributionSettings(
                 mode,
                 Math.max(0.0, nullToZero(request.getParticipationCut())),
                 Math.max(0.0, nullToZero(request.getPowerScoreCut())),
                 totalDiamonds,
-                clanDiamonds
+                clanDiamonds,
+                participationDiamonds,
+                powerDiamonds,
+                totalParticipationDiamonds,
+                totalPowerDiamonds
         );
     }
 
@@ -437,7 +460,11 @@ public class DistributionService {
                 .participationCut(response.getParticipationCut())
                 .powerScoreCut(response.getPowerScoreCut())
                 .totalDiamonds(response.getTotalDiamonds())
+                .totalParticipationDiamonds(response.getTotalParticipationDiamonds())
+                .totalPowerDiamonds(response.getTotalPowerDiamonds())
                 .clanDiamonds(response.getClanDiamonds())
+                .participationDiamonds(response.getParticipationDiamonds())
+                .powerDiamonds(response.getPowerDiamonds())
                 .allocatedDiamonds(response.getAllocatedDiamonds())
                 .remainingDiamonds(response.getRemainingDiamonds())
                 .readOnly(true)
@@ -453,7 +480,11 @@ public class DistributionService {
             double participationCut,
             double powerScoreCut,
             long totalDiamonds,
-            Map<String, Long> clanDiamonds
+            Map<String, Long> clanDiamonds,
+            Map<String, Long> participationDiamonds,
+            Map<String, Long> powerDiamonds,
+            long totalParticipationDiamonds,
+            long totalPowerDiamonds
     ) {
     }
 
