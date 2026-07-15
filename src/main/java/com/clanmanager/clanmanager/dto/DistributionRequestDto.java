@@ -18,6 +18,8 @@ public class DistributionRequestDto {
     private Map<String, Long> clanDiamonds;
     private Map<String, Long> participationDiamonds;
     private Map<String, Long> powerDiamonds;
+    private Long periodId;
+    private Integer periodIndex;
     private Long createdByMemberId;
     private String memo;
 }

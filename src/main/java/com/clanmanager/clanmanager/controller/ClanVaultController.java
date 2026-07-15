@@ -81,11 +81,13 @@ public class ClanVaultController {
         requireAdmin(request.getCreatedByMemberId());
         long amount = requirePositiveAmount(request.getAmountDiamonds());
         Member targetMember = findRequiredMember(request.getTargetMemberId(), "분배받을 클랜원을 선택해 주세요.");
-        ClanVault vault = getOrCreateVault();
+        ClanVault vault = getOrCreateVaultWithLock();
         long availableDiamonds = getAvailableDiamonds(vault);
         if (availableDiamonds < amount) {
-            throw new IllegalArgumentException("클랜금고 가용 잔액이 부족합니다. 미수령 분배금까지 제외한 가용 잔액: " + availableDiamonds);
+            throw new IllegalArgumentException("클랜금고 가용 다이아가 부족합니다. 가용 다이아: " + availableDiamonds);
         }
+        vault.setBalanceDiamonds(vault.getBalanceDiamonds() - amount);
+        vaultRepository.save(vault);
         return saveTransaction(VaultTransactionType.DISTRIBUTION, amount, vault, targetMember, request);
     }
 
@@ -103,21 +105,28 @@ public class ClanVaultController {
         if (!owner && requester.getRole() != MemberRole.ADMIN) {
             throw new SecurityException("본인 분배금만 수령 처리할 수 있습니다.");
         }
-        if (transaction.getClaimed() != null && transaction.getClaimed()) {
+        if (Boolean.TRUE.equals(transaction.getClaimed())) {
             throw new IllegalArgumentException("이미 수령 완료된 분배금입니다.");
         }
 
-        ClanVault vault = getOrCreateVaultWithLock();
-        long amount = requirePositiveAmount(transaction.getAmountDiamonds());
-        if (vault.getBalanceDiamonds() < amount) {
-            throw new IllegalArgumentException("클랜금고 잔액이 부족합니다.");
-        }
-        vault.setBalanceDiamonds(vault.getBalanceDiamonds() - amount);
-        vaultRepository.save(vault);
-
         transaction.setClaimed(true);
         transaction.setClaimedAt(LocalDateTime.now());
-        transaction.setBalanceAfter(vault.getBalanceDiamonds());
+        return VaultTransactionResponseDto.from(transactionRepository.save(transaction));
+    }
+
+    @PatchMapping("/distributions/{transactionId}/cancel-claim")
+    @Transactional
+    public VaultTransactionResponseDto cancelClaimDistribution(@PathVariable Long transactionId, @RequestParam Long adminMemberId) {
+        requireAdmin(adminMemberId);
+        VaultTransaction transaction = transactionRepository.findWithLockByTransactionId(transactionId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 분배 기록입니다."));
+
+        if (transaction.getType() != VaultTransactionType.DISTRIBUTION || transaction.getTargetMember() == null) {
+            throw new IllegalArgumentException("분배 기록만 수령 취소할 수 있습니다.");
+        }
+
+        transaction.setClaimed(false);
+        transaction.setClaimedAt(null);
         return VaultTransactionResponseDto.from(transactionRepository.save(transaction));
     }
 
@@ -126,10 +135,10 @@ public class ClanVaultController {
     public VaultTransactionResponseDto withdraw(@Valid @RequestBody VaultTransactionRequestDto request) {
         requireAdmin(request.getCreatedByMemberId());
         long amount = requirePositiveAmount(request.getAmountDiamonds());
-        ClanVault vault = getOrCreateVault();
+        ClanVault vault = getOrCreateVaultWithLock();
         long availableDiamonds = getAvailableDiamonds(vault);
         if (availableDiamonds < amount) {
-            throw new IllegalArgumentException("클랜금고 가용 잔액이 부족합니다. 미수령 분배금까지 제외한 가용 잔액: " + availableDiamonds);
+            throw new IllegalArgumentException("클랜금고 가용 다이아가 부족합니다. 가용 다이아: " + availableDiamonds);
         }
         vault.setBalanceDiamonds(vault.getBalanceDiamonds() - amount);
         vaultRepository.save(vault);
@@ -141,12 +150,12 @@ public class ClanVaultController {
     public VaultTransactionResponseDto updateBalance(@Valid @RequestBody VaultTransactionRequestDto request) {
         requireAdmin(request.getCreatedByMemberId());
         if (request.getBalanceDiamonds() == null || request.getBalanceDiamonds() < 0) {
-            throw new IllegalArgumentException("금고 잔액은 0 이상으로 입력해 주세요.");
+            throw new IllegalArgumentException("금고 금액은 0 이상으로 입력해 주세요.");
         }
-        ClanVault vault = getOrCreateVault();
+        ClanVault vault = getOrCreateVaultWithLock();
         long reservedDiamonds = getReservedDistributionDiamonds();
         if (request.getBalanceDiamonds() < reservedDiamonds) {
-            throw new IllegalArgumentException("새 잔액은 미수령 분배금(" + reservedDiamonds + ")보다 작을 수 없습니다.");
+            throw new IllegalArgumentException("새 금액은 미수령 분배금(" + reservedDiamonds + ")보다 작을 수 없습니다.");
         }
         long changedAmount = Math.abs(request.getBalanceDiamonds() - vault.getBalanceDiamonds());
         vault.setBalanceDiamonds(request.getBalanceDiamonds());
@@ -177,7 +186,7 @@ public class ClanVaultController {
     }
 
     private long getReservedDistributionDiamonds() {
-        return transactionRepository.sumPendingDistributionAmount();
+        return 0L;
     }
 
     private long getAvailableDiamonds(ClanVault vault) {

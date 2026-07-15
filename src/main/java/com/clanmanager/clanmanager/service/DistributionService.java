@@ -8,12 +8,14 @@ import com.clanmanager.clanmanager.entity.DistributionSnapshot;
 import com.clanmanager.clanmanager.entity.Member;
 import com.clanmanager.clanmanager.entity.MemberRole;
 import com.clanmanager.clanmanager.entity.MemberSpecHistory;
+import com.clanmanager.clanmanager.entity.ParticipationPeriod;
 import com.clanmanager.clanmanager.entity.VaultTransaction;
 import com.clanmanager.clanmanager.entity.VaultTransactionType;
 import com.clanmanager.clanmanager.repository.ClanVaultRepository;
 import com.clanmanager.clanmanager.repository.DistributionSnapshotRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.repository.MemberSpecHistoryRepository;
+import com.clanmanager.clanmanager.repository.ParticipationPeriodRepository;
 import com.clanmanager.clanmanager.repository.VaultTransactionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -41,6 +44,7 @@ public class DistributionService {
     private final ParticipationService participationService;
     private final MemberRepository memberRepository;
     private final MemberSpecHistoryRepository memberSpecHistoryRepository;
+    private final ParticipationPeriodRepository participationPeriodRepository;
     private final ClanVaultRepository vaultRepository;
     private final VaultTransactionRepository transactionRepository;
     private final DistributionSnapshotRepository snapshotRepository;
@@ -49,7 +53,7 @@ public class DistributionService {
     @Transactional(readOnly = true)
     public DistributionResponseDto calculate(DistributionRequestDto request) {
         DistributionSettings settings = normalize(request);
-        ParticipationResponseDto participation = participationService.getParticipation(null, null);
+        ParticipationResponseDto participation = getParticipationForDistribution(request);
         Map<Long, Member> memberMap = memberRepository.findByActiveTrueOrderByMemberIdAsc().stream()
                 .collect(Collectors.toMap(Member::getMemberId, Function.identity()));
 
@@ -160,10 +164,11 @@ public class DistributionService {
         }
 
         ClanVault vault = getOrCreateVaultWithLock();
-        long availableDiamonds = Math.max(0L, vault.getBalanceDiamonds() - transactionRepository.sumPendingDistributionAmount());
-        if (availableDiamonds < totalAmount) {
-            throw new IllegalArgumentException("클랜금고 가용 다이아가 부족합니다. 가용 다이아: " + availableDiamonds);
+        if (vault.getBalanceDiamonds() < totalAmount) {
+            throw new IllegalArgumentException("클랜금고 가용 다이아가 부족합니다. 가용 다이아: " + vault.getBalanceDiamonds());
         }
+        vault.setBalanceDiamonds(vault.getBalanceDiamonds() - totalAmount);
+        vaultRepository.save(vault);
 
         Map<Long, Member> memberMap = memberRepository.findByActiveTrueOrderByMemberIdAsc().stream()
                 .collect(Collectors.toMap(Member::getMemberId, Function.identity()));
@@ -187,8 +192,34 @@ public class DistributionService {
                                 .claimedAt(null)
                                 .build());
                     }
-                });
+        });
         return response;
+    }
+
+    private ParticipationResponseDto getParticipationForDistribution(DistributionRequestDto request) {
+        ParticipationPeriod period = resolveParticipationPeriod(request);
+        if (period == null) {
+            return participationService.getParticipation(null, null);
+        }
+        return participationService.getParticipation(period.getStartDate(), period.getEndDate());
+    }
+
+    private ParticipationPeriod resolveParticipationPeriod(DistributionRequestDto request) {
+        if (request != null && request.getPeriodId() != null) {
+            return participationPeriodRepository.findById(request.getPeriodId()).orElse(null);
+        }
+        if (request != null && request.getPeriodIndex() != null) {
+            return participationPeriodRepository.findByPeriodIndex(request.getPeriodIndex()).orElse(null);
+        }
+        List<ParticipationPeriod> periods = participationPeriodRepository.findAllByOrderByPeriodIndexAsc();
+        if (periods.isEmpty()) {
+            return null;
+        }
+        LocalDate today = LocalDate.now();
+        return periods.stream()
+                .filter(period -> !today.isBefore(period.getStartDate()) && !today.isAfter(period.getEndDate()))
+                .findFirst()
+                .orElse(periods.get(periods.size() - 1));
     }
 
     private DistributionResponseDto.ResultItemDto toBaseResult(
