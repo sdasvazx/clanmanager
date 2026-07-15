@@ -3209,7 +3209,7 @@ function DistributionAdminPage({ member }) {
   const rows = (result?.results ?? []).filter((row) => clanFilter === '전체보기' || row.clanName === clanFilter);
   const summaries = result?.clanSummaries ?? [];
 
-  return <><div className="page-title distribution-title"><div><h1>분배금 조회</h1><p>참여율과 투력점수 기준으로 분배금을 계산하고 금고 미수령 분배금으로 적립합니다.</p></div><div className="page-actions"><button className="dark-button" onClick={() => setBasisOpen(true)}>투력점수 산출근거</button><button className="green-button" onClick={deposit} disabled={loading}>분배금 적립</button><button className="purple-button" onClick={saveSnapshot} disabled={loading}>히스토리 저장</button><button className="primary-button" onClick={() => { setEditing(true); setHistoryId('current'); }}>✎ 편집</button></div></div>{message && <p className="vault-message">{message}</p>}<div className="distribution-toolbar"><label>히스토리 보기<select value={historyId} onChange={(e) => selectHistory(e.target.value)}><option value="current">현재</option>{history.map((item) => <option key={item.snapshotId} value={item.snapshotId}>{new Date(item.createdAt).toLocaleString('ko-KR')} · {item.mode === 'TOTAL' ? '전체' : '클랜별'} · {money(item.allocatedDiamonds)}</option>)}</select></label><label>클랜(소속) 필터<select value={clanFilter} onChange={(e) => setClanFilter(e.target.value)}><option>전체보기</option>{DISTRIBUTION_CLANS.map((clan) => <option key={clan}>{clan}</option>)}</select></label></div><section className="white-card distribution-settings-card"><div className="section-heading"><h2>분배 설정</h2><span className="admin-badge">관리자 전용</span></div><div className="distribution-settings-grid"><div><small>분배 모드</small><div className="segmented-control"><button className={settings.mode === 'CLAN' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'CLAN')}>클랜별 분배</button><button className={settings.mode === 'TOTAL' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'TOTAL')}>전체 분배</button></div></div><label>참여율 컷 <small>(백분율 %)</small><input disabled={!editing} type="number" min="0" value={settings.participationCut} onChange={(e) => update('participationCut', e.target.value)} /></label><label>투력점수 컷 <small>(값 입력)</small><input disabled={!editing} type="number" min="0" value={settings.powerScoreCut} onChange={(e) => update('powerScoreCut', e.target.value)} /></label></div><p className="info-box">참여분배 다이아는 참여율 컷을 넘은 사람끼리 참여점수 비율로, 투력분배 다이아는 투력점수 컷을 넘은 사람끼리 투력점수 비율로 각각 독립 배분합니다.</p>{settings.mode === 'TOTAL' ? <div className="distribution-clan-inputs"><label>전체 참여분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalParticipationDiamonds} onChange={(e) => update('totalParticipationDiamonds', e.target.value)} /></label><label>전체 투력분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalPowerDiamonds} onChange={(e) => update('totalPowerDiamonds', e.target.value)} /></label></div> : <div className="distribution-clan-inputs">{DISTRIBUTION_CLANS.map((clan) => <label key={`${clan}-participation`}>{clan} 참여분배 다이아<input disabled={!editing} type="number" min="0" value={settings.participationDiamonds[clan]} onChange={(e) => updateSplitClanDiamond('participation', clan, e.target.value)} /></label>)}{DISTRIBUTION_CLANS.map((clan) => <label key={`${clan}-power`}>{clan} 투력분배 다이아<input disabled={!editing} type="number" min="0" value={settings.powerDiamonds[clan]} onChange={(e) => updateSplitClanDiamond('power', clan, e.target.value)} /></label>)}</div>}<label className="distribution-memo">적립 메모<input disabled={!editing} value={settings.memo} onChange={(e) => update('memo', e.target.value)} placeholder="예: 7월 2주차 보스 분배" /></label></section><section className="white-card"><div className="section-heading"><h2>{settings.mode === 'TOTAL' ? '전체 분배 다이아' : '클랜별 분배 다이아'}</h2><span className="result-count">총 정산 {money(result?.allocatedDiamonds ?? 0)} · 잔여 {money(result?.remainingDiamonds ?? 0)}</span></div><div className="distribution-summary-list">{summaries.map((summary) => <div className="distribution-summary-card" key={summary.clanName}><div><b>{summary.clanName}</b><small>{summary.memberCount}명</small></div><div><span>총 분배</span><strong>{money(summary.totalDiamonds)}</strong></div><div><span>참여분배</span><strong>{money(summary.participationPool)}</strong><small>{summary.participationEligibleCount}명</small></div><div><span>투력분배</span><strong>{money(summary.powerPool)}</strong><small>{summary.powerEligibleCount}명</small></div><div><span>잔여</span><strong>{money(summary.remainingDiamonds)}</strong></div></div>)}</div></section><section className="white-card"><div className="section-heading"><h2>회원별 분배 결과</h2><span className="result-count">{rows.length}명</span></div><div className="table-wrap"><table className="data-table distribution-result-table"><thead><tr><th>클랜</th><th>닉네임</th><th>참여율</th><th>참여분배</th><th>현재투력</th><th>성장</th><th>투력점수</th><th>투력분배</th><th>최종 지급</th></tr></thead><tbody>{rows.map((row) => <tr key={row.memberId}><td><span className="clan-badge">{row.clanName}</span></td><td><b>{row.characterName}</b><small>{row.characterClass || '-'}</small></td><td className={row.participationEligible ? 'green-text' : 'red-text'}>{row.participationRate ?? 0}%</td><td>{money(row.participationAmount)}</td><td>{row.currentPowerMan}만</td><td>+{row.growthScore}</td><td className={row.powerEligible ? 'green-text' : 'red-text'}>{row.powerScore}</td><td>{money(row.powerAmount)}</td><td><b>{money(row.finalAmount)}</b></td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">분배 결과가 없습니다.</div>}</section>{basisOpen && <PowerScoreModal onClose={() => setBasisOpen(false)} />}</>;
+  return <><div className="page-title distribution-title"><div><h1>분배금 조회</h1><p>참여율과 투력점수 기준으로 분배금을 계산하고 금고 미수령 분배금으로 적립합니다.</p></div><div className="page-actions"><button className="dark-button" onClick={() => setBasisOpen(true)}>투력점수 산출근거</button><button className="green-button" onClick={deposit} disabled={loading}>분배금 적립</button><button className="purple-button" onClick={saveSnapshot} disabled={loading}>히스토리 저장</button><button className="primary-button" onClick={() => { setEditing(true); setHistoryId('current'); }}>✎ 편집</button></div></div>{message && <p className="vault-message">{message}</p>}<div className="distribution-toolbar"><label>히스토리 보기<select value={historyId} onChange={(e) => selectHistory(e.target.value)}><option value="current">현재</option>{history.map((item) => <option key={item.snapshotId} value={item.snapshotId}>{new Date(item.createdAt).toLocaleString('ko-KR')} · {item.mode === 'TOTAL' ? '전체' : '클랜별'} · {money(item.allocatedDiamonds)}</option>)}</select></label><label>클랜(소속) 필터<select value={clanFilter} onChange={(e) => setClanFilter(e.target.value)}><option>전체보기</option>{DISTRIBUTION_CLANS.map((clan) => <option key={clan}>{clan}</option>)}</select></label></div><section className="white-card distribution-settings-card"><div className="section-heading"><h2>분배 설정</h2><span className="admin-badge">관리자 전용</span></div><div className="distribution-settings-grid"><div><small>분배 모드</small><div className="segmented-control"><button className={settings.mode === 'CLAN' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'CLAN')}>클랜별 분배</button><button className={settings.mode === 'TOTAL' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'TOTAL')}>전체 분배</button></div></div><label>참여율 컷 <small>(백분율 %)</small><input disabled={!editing} type="number" min="0" value={settings.participationCut} onChange={(e) => update('participationCut', e.target.value)} /></label><label>투력점수 컷 <small>(값 입력)</small><input disabled={!editing} type="number" min="0" value={settings.powerScoreCut} onChange={(e) => update('powerScoreCut', e.target.value)} /></label></div><p className="info-box">참여분배 다이아는 참여율 컷을 넘은 사람끼리 참여점수 비율로, 투력분배 다이아는 투력점수 컷을 넘은 사람끼리 투력점수 비율로 각각 독립 배분합니다.</p>{settings.mode === 'TOTAL' ? <div className="distribution-clan-inputs"><label>전체 참여분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalParticipationDiamonds} onChange={(e) => update('totalParticipationDiamonds', e.target.value)} /></label><label>전체 투력분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalPowerDiamonds} onChange={(e) => update('totalPowerDiamonds', e.target.value)} /></label></div> : <div className="distribution-clan-inputs">{DISTRIBUTION_CLANS.map((clan) => <label key={`${clan}-participation`}>{clan} 참여분배 다이아<input disabled={!editing} type="number" min="0" value={settings.participationDiamonds[clan]} onChange={(e) => updateSplitClanDiamond('participation', clan, e.target.value)} /></label>)}{DISTRIBUTION_CLANS.map((clan) => <label key={`${clan}-power`}>{clan} 투력분배 다이아<input disabled={!editing} type="number" min="0" value={settings.powerDiamonds[clan]} onChange={(e) => updateSplitClanDiamond('power', clan, e.target.value)} /></label>)}</div>}<label className="distribution-memo">적립 메모<input disabled={!editing} value={settings.memo} onChange={(e) => update('memo', e.target.value)} placeholder="예: 7월 2주차 보스 분배" /></label></section><section className="white-card"><div className="section-heading"><h2>{settings.mode === 'TOTAL' ? '전체 분배 다이아' : '클랜별 분배 다이아'}</h2><span className="result-count">실제 지급 합계 {money(result?.allocatedDiamonds ?? 0)} · 미배분 {money(result?.remainingDiamonds ?? 0)}</span></div><div className="distribution-summary-list">{summaries.map((summary) => <div className="distribution-summary-card" key={summary.clanName}><div><b>{summary.clanName}</b><small>{summary.memberCount}명</small></div><div><span>총 분배</span><strong>{money(summary.totalDiamonds)}</strong></div><div><span>참여분배</span><strong>{money(summary.participationPool)}</strong><small>{summary.participationEligibleCount}명</small></div><div><span>투력분배</span><strong>{money(summary.powerPool)}</strong><small>{summary.powerEligibleCount}명</small></div><div><span>미배분</span><strong>{money(summary.remainingDiamonds)}</strong></div></div>)}</div></section><section className="white-card"><div className="section-heading"><h2>회원별 분배 결과</h2><span className="result-count">{rows.length}명</span></div><div className="table-wrap"><table className="data-table distribution-result-table"><thead><tr><th>클랜</th><th>닉네임</th><th>참여율</th><th>참여분배</th><th>현재투력</th><th>성장</th><th>투력점수</th><th>투력분배</th><th>최종 지급</th></tr></thead><tbody>{rows.map((row) => <tr key={row.memberId}><td><span className="clan-badge">{row.clanName}</span></td><td><b>{row.characterName}</b><small>{row.characterClass || '-'}</small></td><td className={row.participationEligible ? 'green-text' : 'red-text'}>{row.participationRate ?? 0}%</td><td>{money(row.participationAmount)}</td><td>{row.currentPowerMan}만</td><td>+{row.growthScore}</td><td className={row.powerEligible ? 'green-text' : 'red-text'}>{row.powerScore}</td><td>{money(row.powerAmount)}</td><td><b>{money(row.finalAmount)}</b></td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">분배 결과가 없습니다.</div>}</section>{basisOpen && <PowerScoreModal onClose={() => setBasisOpen(false)} />}</>;
 }
 
 function PowerScoreModal({ onClose }) {
@@ -3719,11 +3719,14 @@ function MyPage({ member, setPage, favoritePages = [], onMemberUpdate }) {
   const [info, setInfo] = useState(null);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordMessage, setPasswordMessage] = useState('');
-  const [nameForm, setNameForm] = useState({ characterName: member.characterName || '' });
+  const [nameForm, setNameForm] = useState({ characterName: member.characterName || '', guildName: member.guildName || '', characterClass: member.characterClass || '' });
   const [nameMessage, setNameMessage] = useState('');
+  const [rosterSettings] = useRosterSettings();
   const incompleteCollections = useIncompleteCollections(member.memberId);
   useEffect(() => { request(`/members/${member.memberId}/my-info`).then(setInfo).catch(() => {}); }, [member.memberId]);
-  useEffect(() => { setNameForm({ characterName: member.characterName || '' }); }, [member.characterName]);
+  useEffect(() => { setNameForm({ characterName: member.characterName || '', guildName: member.guildName || '', characterClass: member.characterClass || '' }); }, [member.characterName, member.guildName, member.characterClass]);
+  const selfClanOptions = Array.from(new Set([...(rosterSettings.clans || []).map((item) => item.name).filter(Boolean), member.guildName].filter(Boolean)));
+  const selfClassOptions = Array.from(new Set([...(rosterSettings.classes || []).map((item) => item.name).filter(Boolean), member.characterClass].filter(Boolean)));
   if (!info) return <LoadingCard />;
   const changeCharacterName = async (event) => {
     event.preventDefault();
@@ -3736,7 +3739,7 @@ function MyPage({ member, setPage, favoritePages = [], onMemberUpdate }) {
     try {
       const saved = await request(`/members/${member.memberId}/self-profile`, {
         method: 'PATCH',
-        body: JSON.stringify({ characterName }),
+        body: JSON.stringify({ characterName, guildName: nameForm.guildName, characterClass: nameForm.characterClass }),
       });
       onMemberUpdate?.(saved);
       setNameMessage('캐릭터명을 변경했습니다. 클랜원 정보에도 바로 반영됩니다.');
@@ -3758,7 +3761,7 @@ function MyPage({ member, setPage, favoritePages = [], onMemberUpdate }) {
       setPasswordMessage('비밀번호를 변경했습니다. 다음 로그인부터 새 비밀번호를 사용하세요.');
     } catch (err) { setPasswordMessage(err.message); }
   };
-  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><FavoriteLinks favorites={favoritePages} setPage={setPage} /><ProfileCard member={member} info={info} incompleteCollections={incompleteCollections} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div><form className="password-form profile-name-form" onSubmit={changeCharacterName}><label>캐릭터명 변경<input required maxLength="50" value={nameForm.characterName} onChange={(e) => setNameForm({ characterName: e.target.value })} /></label><button className="primary-button">캐릭터명 저장</button></form>{nameMessage && <p className="vault-message">{nameMessage}</p>}</section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
+  return <><div className="page-title"><h1>마이페이지</h1><p>내 계정과 활동 정보를 확인합니다.</p></div><FavoriteLinks favorites={favoritePages} setPage={setPage} /><ProfileCard member={member} info={info} incompleteCollections={incompleteCollections} /><section className="white-card"><h2>계정 정보</h2><div className="detail-grid"><div><small>캐릭터명</small><b>{member.characterName}</b></div><div><small>권한</small><b>{member.role === 'ADMIN' ? '운영자' : '클랜원'}</b></div><div><small>회원 번호</small><b>{member.memberId}</b></div></div><form className="password-form profile-name-form" onSubmit={changeCharacterName}><label>캐릭터명 변경<input required maxLength="50" value={nameForm.characterName} onChange={(e) => setNameForm({ ...nameForm, characterName: e.target.value })} /></label><button className="primary-button">캐릭터명 저장</button></form><form className="password-form profile-name-form" onSubmit={changeCharacterName}><label>클랜 변경<select value={nameForm.guildName} onChange={(e) => setNameForm({ ...nameForm, guildName: e.target.value })}><option value="">클랜 선택</option>{selfClanOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label><label>클래스 변경<select value={nameForm.characterClass} onChange={(e) => setNameForm({ ...nameForm, characterClass: e.target.value })}><option value="">클래스 선택</option>{selfClassOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label><button className="primary-button">클랜/클래스 저장</button></form>{nameMessage && <p className="vault-message">{nameMessage}</p>}</section><section className="white-card"><h2>비밀번호 변경</h2><form className="password-form" onSubmit={changePassword}><label>현재 비밀번호<input required type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} /></label><label>새 비밀번호<input required type="password" minLength="4" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} /></label><label>새 비밀번호 확인<input required type="password" minLength="4" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} /></label><button className="primary-button">비밀번호 변경</button></form>{passwordMessage && <p className="vault-message">{passwordMessage}</p>}</section></>;
 }
 
 function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites = [], toggleFavorite }) {
@@ -3864,6 +3867,41 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
     return matchesKeyword && matchesClan && matchesClass && matchesStatus && matchesRole;
   }), [members, memberFilters]);
   const resetMemberFilters = () => setMemberFilters({ keyword: '', clan: 'all', characterClass: 'all', status: 'all', role: 'all' });
+  const exportMembersToExcel = () => {
+    if (!filteredMembers.length) {
+      setMessage('내보낼 클랜원이 없습니다.');
+      return;
+    }
+    const escapeCsvCell = (value) => {
+      const text = String(value ?? '').replace(/\r?\n/g, ' ').trim();
+      const safeText = /^[=+\-@]/.test(text) ? `\t${text}` : text;
+      return /[",\n]/.test(safeText) ? `"${safeText.replace(/"/g, '""')}"` : safeText;
+    };
+    const headers = ['No.', '닉네임', '클랜', '클래스', '레벨', '전투력', '직급', '상태', '권한', '가입일'];
+    const rows = filteredMembers.map((row, index) => [
+      index + 1,
+      row.characterName,
+      row.guildName || '',
+      row.characterClass || '',
+      row.level ?? '',
+      row.combatPower ?? 0,
+      row.rank || '',
+      row.active ? (row.status || '활성') : '비활성',
+      row.role === 'ADMIN' ? '운영자' : '클랜원',
+      row.createdAt ? new Date(row.createdAt).toLocaleDateString('ko-KR') : '',
+    ]);
+    const csv = `\uFEFF${[headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')}`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `clan-members-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setMessage(`${filteredMembers.length}명 명단을 엑셀용 CSV로 내보냈습니다.`);
+  };
 
   const saveProfile = async (event) => {
     event.preventDefault();
@@ -3958,6 +3996,30 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
     } catch (err) { setMessage(err.message); } finally { setLoadingId(null); }
   };
 
+  const resetMemberRoster = async () => {
+    const resettableMembers = members.filter((row) => row.memberId !== member.memberId && row.role !== 'ADMIN');
+    if (!resettableMembers.length) {
+      setMessage('초기화할 일반 클랜원이 없습니다.');
+      return;
+    }
+    if (!window.confirm(`현재 활성 일반 클랜원 ${resettableMembers.length}명을 명단에서 제외할까요?\n본인 계정과 운영자 계정은 유지되고, 기존 출석/분배 이력은 삭제되지 않습니다.`)) return;
+    setLoadingId('reset-roster');
+    setMessage('');
+    try {
+      const result = await request(`/members/reset?adminMemberId=${member.memberId}`, { method: 'DELETE' });
+      await load();
+      setBulkEditing(false);
+      setBulkEdits({});
+      setEditId(null);
+      setResetTarget(null);
+      setMessage(`명단 초기화 완료: ${result.deactivated ?? resettableMembers.length}명을 현재 명단에서 제외했습니다.`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   if (!memberOnly) {
     return (
       <>
@@ -4020,7 +4082,11 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
                 <button className="outline-button no-margin" disabled={loadingId === 'bulk'} onClick={cancelBulkEdit}>취소</button>
               </>
             ) : (
-              <button className="outline-button no-margin" onClick={startBulkEdit}>전체수정</button>
+              <>
+                <button className="primary-button no-margin" disabled={!filteredMembers.length} onClick={exportMembersToExcel}>📊 엑셀 내보내기</button>
+                <button className="role-button danger" disabled={loadingId === 'reset-roster'} onClick={resetMemberRoster}>{loadingId === 'reset-roster' ? '초기화 중...' : '명단 초기화'}</button>
+                <button className="outline-button no-margin" onClick={startBulkEdit}>전체수정</button>
+              </>
             )}
           </div>
         </div>

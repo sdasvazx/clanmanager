@@ -215,6 +215,8 @@ public class MemberController {
         String previousStatus = member.getStatus();
 
         member.setCharacterName(characterName);
+        member.setGuildName(blankToNull(request.getGuildName()));
+        member.setCharacterClass(blankToNull(request.getCharacterClass()));
         Member saved = memberRepository.save(member);
         saveSpecHistoryIfChanged(
                 saved,
@@ -364,6 +366,31 @@ public class MemberController {
         );
     }
 
+    @DeleteMapping("/reset")
+    public Map<String, Object> resetMemberRoster(@RequestParam Long adminMemberId) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 클랜원 명단을 초기화할 수 있습니다.");
+        }
+
+        List<Member> targets = memberRepository.findByActiveTrueOrderByMemberIdAsc()
+                .stream()
+                .filter(member -> !Objects.equals(member.getMemberId(), adminMemberId))
+                .filter(member -> member.getRole() != MemberRole.ADMIN)
+                .toList();
+
+        targets.forEach(member -> {
+            member.setActive(false);
+            member.setStatus("삭제됨");
+        });
+        memberRepository.saveAll(targets);
+
+        return Map.of(
+                "message", "클랜원 명단 초기화 완료",
+                "deactivated", targets.size()
+        );
+    }
+
     @PatchMapping("/{memberId}/role")
     public Map<String, Object> updateRole(
             @PathVariable Long memberId,
@@ -481,6 +508,10 @@ public class MemberController {
         @NotBlank(message = "캐릭터 이름을 입력해 주세요.")
         @Size(max = 50, message = "캐릭터 이름은 50자 이하여야 합니다.")
         private String characterName;
+        @Size(max = 30)
+        private String guildName;
+        @Size(max = 50)
+        private String characterClass;
     }
 
     @Getter
