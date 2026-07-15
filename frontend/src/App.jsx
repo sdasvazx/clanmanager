@@ -3351,6 +3351,7 @@ function CollectionPage({ member }) {
   const [savingCell, setSavingCell] = useState('');
   const [showLogs, setShowLogs] = useState(false);
   const [filters, setFilters] = useState({ keyword: '', clan: 'all', characterClass: 'all', itemKeyword: '', state: 'all' });
+  const [rosterSettings] = useRosterSettings();
   const load = () => request('/management/collection-dashboard').then(setData).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
   const statusMap = useMemo(() => {
@@ -3451,7 +3452,10 @@ function CollectionPage({ member }) {
     updateStatus(targetMember, item, state === '완료' ? '미완료' : '완료');
   };
   const collectionClanOptions = useMemo(() => Array.from(new Set(data.members.map((row) => canonicalClanName(row.guildName)).filter(Boolean))).sort(), [data.members]);
-  const collectionClassOptions = useMemo(() => Array.from(new Set(data.members.map((row) => row.characterClass || '').filter(Boolean))).sort(), [data.members]);
+  const collectionClassOptions = useMemo(() => Array.from(new Set([
+    ...rosterSettings.classes.map((item) => item.name),
+    ...data.members.map((row) => row.characterClass || ''),
+  ].filter(Boolean))).sort(), [data.members, rosterSettings.classes]);
   const visibleItems = useMemo(() => data.items.filter((item) => normalize(item.itemName).includes(normalize(filters.itemKeyword))), [data.items, filters.itemKeyword]);
   const visibleMembers = useMemo(() => data.members.filter((targetMember) => {
     const keyword = normalize(filters.keyword);
@@ -3858,7 +3862,10 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
     return edited && !isSameProfile(formFromMember(row), edited);
   });
   const memberClanOptions = useMemo(() => Array.from(new Set(members.map((row) => canonicalClanName(row.guildName)).filter(Boolean))).sort(), [members]);
-  const memberClassOptions = useMemo(() => Array.from(new Set(members.map((row) => row.characterClass || '').filter(Boolean))).sort(), [members]);
+  const memberClassOptions = useMemo(() => Array.from(new Set([
+    ...rosterSettings.classes.map((item) => item.name),
+    ...members.map((row) => row.characterClass || ''),
+  ].filter(Boolean))).sort(), [members, rosterSettings.classes]);
   const memberStatusOptions = useMemo(() => Array.from(new Set(members.map((row) => row.active ? (row.status || '활성') : '비활성').filter(Boolean))).sort(), [members]);
   const filteredMembers = useMemo(() => members.filter((row) => {
     const keyword = normalize(memberFilters.keyword);
@@ -4285,7 +4292,7 @@ function GeneralSettingsPage({ setPage }) {
       </div>
     </section>
   );
-  return <><div className="general-settings-title"><div><h1>기타 설정</h1><p>클랜과 클래스를 보기 쉽게 관리합니다. 변경한 항목은 클랜원 관리 선택지에 바로 반영됩니다.</p></div><button type="button" className="admin-back-button" onClick={() => setPage('admin')}>←</button></div>{message && <p className="vault-message">{message}</p>}<div className="roster-settings-grid">{card('clans', '클랜 목록', '클랜명 입력')}{card('classes', '클래스 목록', '클래스명 입력')}</div></>;
+  return <><div className="general-settings-title"><div><h1>기타 설정</h1><p>클랜과 클래스를 보기 쉽게 관리합니다. 여기서 등록한 항목은 클랜원 관리, 마이페이지, 컬렉템 필터의 선택창에 바로 반영됩니다.</p></div><button type="button" className="admin-back-button" onClick={() => setPage('admin')}>←</button></div>{message && <p className="vault-message">{message}</p>}<div className="info-banner">기타설정은 선택 화면이 아니라 목록 관리 화면입니다. 클래스는 아래에서 추가/수정한 뒤 클랜원 관리나 마이페이지의 클래스 선택창에서 고르면 됩니다.</div><div className="roster-settings-grid">{card('clans', '클랜 목록', '클랜명 입력')}{card('classes', '클래스 목록', '클래스명 입력')}</div></>;
 }
 
 function RosterScanAdmin({ setPage }) { return <><AdminBackButton setPage={setPage} /><RosterScan /></>; }
