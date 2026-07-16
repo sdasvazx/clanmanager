@@ -14,6 +14,8 @@ import lombok.Setter;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @RestController
@@ -21,14 +23,40 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ParticipationPeriodController {
 
+    private static final LocalDate AUTO_PERIOD_START = LocalDate.of(2026, 7, 8);
+    private static final int AUTO_PERIOD_DAYS = 14;
+    private static final int AUTO_PERIOD_LOOKAHEAD = 6;
+    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+
     private final ParticipationPeriodRepository periodRepository;
     private final MemberRepository memberRepository;
 
     @GetMapping
     public List<ParticipationPeriodResponse> getPeriods() {
+        ensureAutoPeriods();
         return periodRepository.findAllByOrderByPeriodIndexAsc().stream()
                 .map(ParticipationPeriodResponse::from)
                 .toList();
+    }
+
+    private void ensureAutoPeriods() {
+        int currentIndex = Math.max(0, (int) (ChronoUnit.DAYS.between(AUTO_PERIOD_START, LocalDate.now(SEOUL_ZONE)) / AUTO_PERIOD_DAYS));
+        int maxIndex = currentIndex + AUTO_PERIOD_LOOKAHEAD;
+        for (int index = 0; index <= maxIndex; index++) {
+            int periodIndex = index;
+            if (periodRepository.findByPeriodIndex(periodIndex).isPresent()) {
+                continue;
+            }
+            int displayIndex = index + 1;
+            LocalDate startDate = AUTO_PERIOD_START.plusDays((long) index * AUTO_PERIOD_DAYS);
+            LocalDate endDate = startDate.plusDays(AUTO_PERIOD_DAYS);
+            periodRepository.save(ParticipationPeriod.builder()
+                    .periodIndex(periodIndex)
+                    .startDate(startDate)
+                    .endDate(endDate)
+                    .periodName(displayIndex + "회차 (" + startDate + " ~ " + endDate + ")")
+                    .build());
+        }
     }
 
     @PutMapping("/{periodIndex}")

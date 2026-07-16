@@ -235,7 +235,7 @@ public class DistributionService {
         double currentPowerScore = scoreBetween(0.0, currentPower);
         double powerScore = round1(growthScore + currentPowerScore);
         boolean participationEligible = nullToZero(row.getParticipationRate()) >= settings.participationCut();
-        boolean powerEligible = powerScore >= settings.powerScoreCut();
+        boolean powerEligible = powerCutEligible(currentPower, settings.powerScoreCut());
 
         return DistributionResponseDto.ResultItemDto.builder()
                 .memberId(member.getMemberId())
@@ -414,6 +414,14 @@ public class DistributionService {
                 .findFirst()
                 .map(this::toMan)
                 .orElse(currentPower);
+    }
+
+    private boolean powerCutEligible(double currentPowerMan, double powerCut) {
+        if (powerCut <= 0) {
+            return true;
+        }
+        double thresholdMan = powerCut > 1000 ? powerCut / 10000.0 : powerCut;
+        return currentPowerMan >= thresholdMan;
     }
 
     private double scoreBetween(double fromPower, double toPower) {
