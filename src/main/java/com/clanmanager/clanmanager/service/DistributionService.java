@@ -23,6 +23,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -283,22 +285,20 @@ public class DistributionService {
         List<DistributionResponseDto.ResultItemDto> powerEligible = rows.stream()
                 .filter(row -> Boolean.TRUE.equals(row.getPowerEligible()))
                 .toList();
-        double totalParticipationScore = participationEligible.stream()
-                .mapToDouble(row -> nullToZero(row.getFinalParticipationScore()))
-                .sum();
-        double totalPowerScore = powerEligible.stream()
-                .mapToDouble(row -> nullToZero(row.getPowerScore()))
-                .sum();
-        double participationDiamondsPerPoint = totalParticipationScore <= 0.0 ? 0.0 : participationPool / totalParticipationScore;
-        double powerDiamondsPerPoint = totalPowerScore <= 0.0 ? 0.0 : powerPool / totalPowerScore;
+        BigDecimal totalParticipationScore = participationEligible.stream()
+                .map(row -> decimal(row.getFinalParticipationScore()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalPowerScore = powerEligible.stream()
+                .map(row -> decimal(row.getPowerScore()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         List<DistributionResponseDto.ResultItemDto> allocatedRows = rows.stream()
                 .map(row -> {
                     long participationAmount = Boolean.TRUE.equals(row.getParticipationEligible())
-                            ? (long) Math.floor(nullToZero(row.getFinalParticipationScore()) * participationDiamondsPerPoint)
+                            ? allocateByScore(row.getFinalParticipationScore(), participationPool, totalParticipationScore)
                             : 0L;
                     long powerAmount = Boolean.TRUE.equals(row.getPowerEligible())
-                            ? (long) Math.floor(nullToZero(row.getPowerScore()) * powerDiamondsPerPoint)
+                            ? allocateByScore(row.getPowerScore(), powerPool, totalPowerScore)
                             : 0L;
                     return copyWithAmounts(row, participationAmount, powerAmount);
                 })
@@ -470,6 +470,20 @@ public class DistributionService {
 
     private double nullToZero(Number value) {
         return value == null ? 0.0 : value.doubleValue();
+    }
+
+    private BigDecimal decimal(Number value) {
+        return value == null ? BigDecimal.ZERO : BigDecimal.valueOf(value.doubleValue());
+    }
+
+    private long allocateByScore(Number score, long pool, BigDecimal totalScore) {
+        if (pool <= 0 || totalScore.compareTo(BigDecimal.ZERO) <= 0) {
+            return 0L;
+        }
+        return decimal(score)
+                .multiply(BigDecimal.valueOf(pool))
+                .divide(totalScore, 0, RoundingMode.FLOOR)
+                .longValue();
     }
 
     private double round1(double value) {

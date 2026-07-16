@@ -35,7 +35,7 @@ public class BossParticipationRecord {
     @Column(nullable = false)
     private Integer score;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
     private Boolean penaltyApplied = false;
 
