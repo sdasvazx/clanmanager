@@ -241,6 +241,7 @@ const activitySettingToBossSlot = (activity, index) => {
     cutTime: inferActivityCutTime(activityName),
     bossName: activityName,
     score: activity.participationScore ?? activity.score ?? 1,
+    penaltyEnabled: activity.penaltyEnabled,
   };
 };
 const createBatchRowFromSlot = (slot, previous = {}) => ({
@@ -253,7 +254,9 @@ const createBatchRowFromSlot = (slot, previous = {}) => ({
   cutInput: previous.cutInput ?? slot.cutTime,
   longTerm: previous.longTerm || false,
   doubleScore: previous.doubleScore || false,
-  penaltyApplied: previous.penaltyApplied || false,
+  penaltyApplied: Object.prototype.hasOwnProperty.call(previous, 'penaltyApplied')
+    ? Boolean(previous.penaltyApplied)
+    : Boolean(slot.penaltyEnabled ?? true),
   scanning: false,
   progress: previous.progress || 0,
   savedRecord: previous.savedRecord || null,
