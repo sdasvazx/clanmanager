@@ -295,10 +295,10 @@ public class DistributionService {
         List<DistributionResponseDto.ResultItemDto> allocatedRows = rows.stream()
                 .map(row -> {
                     long participationAmount = Boolean.TRUE.equals(row.getParticipationEligible())
-                            ? Math.round(nullToZero(row.getFinalParticipationScore()) * participationDiamondsPerPoint)
+                            ? (long) Math.floor(nullToZero(row.getFinalParticipationScore()) * participationDiamondsPerPoint)
                             : 0L;
                     long powerAmount = Boolean.TRUE.equals(row.getPowerEligible())
-                            ? Math.round(nullToZero(row.getPowerScore()) * powerDiamondsPerPoint)
+                            ? (long) Math.floor(nullToZero(row.getPowerScore()) * powerDiamondsPerPoint)
                             : 0L;
                     return copyWithAmounts(row, participationAmount, powerAmount);
                 })
