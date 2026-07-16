@@ -31,7 +31,7 @@ public class ClanVault {
     private Long balanceDiamonds;
 
     @Version
-    private Long version;
+    private long version;
 
     private LocalDateTime createdAt;
 
