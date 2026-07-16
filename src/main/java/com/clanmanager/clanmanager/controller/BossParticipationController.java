@@ -98,6 +98,7 @@ public class BossParticipationController {
                 .cutTime(request.getCutTime() == null ? LocalTime.now().withSecond(0).withNano(0) : request.getCutTime())
                 .bossName(bossName)
                 .score(request.getScore() == null ? 1 : request.getScore())
+                .penaltyApplied(Boolean.TRUE.equals(request.getPenaltyApplied()))
                 .activityType(activityType)
                 .memo(clean(request.getMemo()))
                 .createdBy(admin)

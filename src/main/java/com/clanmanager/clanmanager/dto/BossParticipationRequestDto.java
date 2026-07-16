@@ -28,6 +28,8 @@ public class BossParticipationRequestDto {
     @Min(value = 0, message = "점수는 0 이상으로 입력해 주세요.")
     private Integer score;
 
+    private Boolean penaltyApplied;
+
     @Size(max = 500, message = "메모는 500자 이하로 입력해 주세요.")
     private String memo;
 

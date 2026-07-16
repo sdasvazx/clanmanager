@@ -5,6 +5,7 @@ import com.clanmanager.clanmanager.entity.ActivityType;
 import com.clanmanager.clanmanager.entity.Member;
 import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
 import com.clanmanager.clanmanager.repository.ActivityTypeRepository;
+import com.clanmanager.clanmanager.repository.BossParticipationRecordRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ public class ParticipationService {
     private final MemberRepository memberRepository;
     private final ActivityAttendanceRepository attendanceRepository;
     private final ActivityTypeRepository activityTypeRepository;
+    private final BossParticipationRecordRepository bossParticipationRecordRepository;
 
     @Transactional(readOnly = true)
     public ParticipationResponseDto getParticipation(LocalDate startDate, LocalDate endDate) {
@@ -37,6 +39,12 @@ public class ParticipationService {
                         ActivityAttendanceRepository.ActivityOccurrenceCountProjection::getActivityTypeId,
                         ActivityAttendanceRepository.ActivityOccurrenceCountProjection::getTotalCount
                 ));
+        Map<Long, Long> penaltyTotalByActivityId = bossParticipationRecordRepository.findPenaltyActivityOccurrenceCountsByPeriod(startDate, endDate)
+                .stream()
+                .collect(Collectors.toMap(
+                        BossParticipationRecordRepository.ActivityOccurrenceCountProjection::getActivityTypeId,
+                        BossParticipationRecordRepository.ActivityOccurrenceCountProjection::getTotalCount
+                ));
         int totalActivityCount = activeActivities.stream()
                 .mapToInt(activity -> totalByActivityId.getOrDefault(activity.getActivityTypeId(), 0L).intValue())
                 .sum();
@@ -47,9 +55,24 @@ public class ParticipationService {
                         .computeIfAbsent(row.getMemberId(), ignored -> new HashMap<>())
                         .put(row.getActivityTypeId(), row.getAttendanceCount())
         );
+        Map<Long, Map<Long, Long>> memberPenaltyActivityCounts = new HashMap<>();
+        attendanceRepository.findMemberPenaltyActivityCountsByPeriod(startDate, endDate).forEach(row ->
+                memberPenaltyActivityCounts
+                        .computeIfAbsent(row.getMemberId(), ignored -> new HashMap<>())
+                        .put(row.getActivityTypeId(), row.getAttendanceCount())
+        );
 
         List<ParticipationResponseDto.ParticipationMemberDto> rawRows = members.stream()
-                .map(member -> toMemberDto(member, activeActivities, totalByActivityId, memberActivityCounts.getOrDefault(member.getMemberId(), Map.of()), totalActivityCount, 0))
+                .map(member -> toMemberDto(
+                        member,
+                        activeActivities,
+                        totalByActivityId,
+                        penaltyTotalByActivityId,
+                        memberActivityCounts.getOrDefault(member.getMemberId(), Map.of()),
+                        memberPenaltyActivityCounts.getOrDefault(member.getMemberId(), Map.of()),
+                        totalActivityCount,
+                        0
+                ))
                 .toList();
 
         int topFinalScore = rawRows.stream()
@@ -94,7 +117,9 @@ public class ParticipationService {
             Member member,
             List<ActivityType> activeActivities,
             Map<Long, Long> totalByActivityId,
+            Map<Long, Long> penaltyTotalByActivityId,
             Map<Long, Long> counts,
+            Map<Long, Long> penaltyCounts,
             int totalActivityCount,
             int minorityBonusScore
     ) {
@@ -111,7 +136,9 @@ public class ParticipationService {
             orderedCounts.put(activityTypeId, attended);
             baseScore += Math.toIntExact(attended * participationScore);
             if (Boolean.TRUE.equals(activity.getPenaltyEnabled())) {
-                long missed = Math.max(0L, total - attended);
+                long penaltyTotal = penaltyTotalByActivityId.getOrDefault(activityTypeId, 0L);
+                long penaltyAttended = penaltyCounts.getOrDefault(activityTypeId, 0L);
+                long missed = Math.max(0L, penaltyTotal - penaltyAttended);
                 penaltyScore += Math.toIntExact(missed * (long) absencePenaltyScore(activity));
             }
         }

@@ -224,7 +224,7 @@ const createBatchRowFromSlot = (slot, previous = {}) => ({
   cutInput: previous.cutInput ?? slot.cutTime,
   longTerm: previous.longTerm || false,
   doubleScore: previous.doubleScore || false,
-  precise: previous.precise || false,
+  penaltyApplied: previous.penaltyApplied || false,
   scanning: false,
   progress: previous.progress || 0,
   savedRecord: previous.savedRecord || null,
@@ -2117,6 +2117,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
           cutTime: row.cutInput || row.cutTime,
           bossName: row.bossName,
           score: Number(row.score || 1) * (row.doubleScore ? 2 : 1),
+          penaltyApplied: Boolean(row.penaltyApplied),
           memo: [row.longTerm ? '장기전' : '', row.doubleScore ? '새벽/쟁 일정 2배' : ''].filter(Boolean).join(', '),
           members: confirmedNames.map((item) => ({ characterName: item.name, clanName: item.clanName })),
         }),
@@ -2461,9 +2462,9 @@ function Attendance({ member, setPage, mode = 'check' }) {
                   <input className="batch-time-input" value={row.cutInput} maxLength="5" onChange={(event) => updateBatchRow(row.key, { cutInput: event.target.value })} placeholder="컷 시간" />
                   <label className="batch-check"><input type="checkbox" checked={row.doubleScore} onChange={(event) => updateBatchRow(row.key, { doubleScore: event.target.checked })} /> 새벽/쟁 일정(2배)</label>
                   <label className="batch-check"><input type="checkbox" checked={row.longTerm} onChange={(event) => updateBatchRow(row.key, { longTerm: event.target.checked })} /> 장기전</label>
-                  <label className="batch-check precision-check"><input type="checkbox" checked={row.precise} onChange={(event) => updateBatchRow(row.key, { precise: event.target.checked })} /> 정밀인식</label>
+                  <label className="batch-check penalty-check"><input type="checkbox" checked={row.penaltyApplied} onChange={(event) => updateBatchRow(row.key, { penaltyApplied: event.target.checked })} /> 패널티</label>
                   <div className="batch-actions">
-                    <button type="button" className="outline-button no-margin" disabled={!row.files.length || row.scanning} onClick={() => scanBatchRow(row.key)}>{row.scanning ? `인식 ${row.progress}%` : row.precise ? '정밀인식' : '글자인식'}</button>
+                    <button type="button" className="outline-button no-margin" disabled={!row.files.length || row.scanning} onClick={() => scanBatchRow(row.key)}>{row.scanning ? `인식 ${row.progress}%` : '글자인식'}</button>
                     <button type="button" className="primary-button no-margin" disabled={row.scanning} onClick={() => saveBatchRow(row.key)}>인원체크 완료</button>
                     {row.savedRecord && <button type="button" className="roster-button roulette-button" onClick={() => copyRouletteNames(row.savedRecord)}>핀볼복사</button>}
                   </div>

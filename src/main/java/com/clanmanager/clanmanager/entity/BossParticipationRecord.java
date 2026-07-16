@@ -35,6 +35,10 @@ public class BossParticipationRecord {
     @Column(nullable = false)
     private Integer score;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean penaltyApplied = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "activity_type_id")
     private ActivityType activityType;
@@ -52,6 +56,7 @@ public class BossParticipationRecord {
     @PrePersist
     public void prePersist() {
         this.score = this.score == null ? 1 : this.score;
+        this.penaltyApplied = this.penaltyApplied == null ? false : this.penaltyApplied;
         this.submittedAt = this.submittedAt == null ? LocalDateTime.now() : this.submittedAt;
         this.createdAt = LocalDateTime.now();
     }

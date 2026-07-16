@@ -68,6 +68,28 @@ public interface ActivityAttendanceRepository extends JpaRepository<ActivityAtte
     );
 
     @Query("""
+            select a.member.memberId as memberId, a.activityType.activityTypeId as activityTypeId, count(a) as attendanceCount
+            from ActivityAttendance a
+            where a.status = com.clanmanager.clanmanager.entity.AttendanceStatus.ATTENDED
+            and a.member.active = true
+            and a.activityType.active = true
+            and exists (
+                select 1
+                from BossParticipationRecord r
+                where r.activityType = a.activityType
+                and r.bossDate = a.attendanceDate
+                and r.penaltyApplied = true
+            )
+            and (:startDate is null or a.attendanceDate >= :startDate)
+            and (:endDate is null or a.attendanceDate < :endDate)
+            group by a.member.memberId, a.activityType.activityTypeId
+            """)
+    List<MemberActivityAttendanceCountProjection> findMemberPenaltyActivityCountsByPeriod(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
+
+    @Query("""
             select a.activityType.activityTypeId as activityTypeId, count(distinct a.attendanceDate) as totalCount
             from ActivityAttendance a
             where a.status = com.clanmanager.clanmanager.entity.AttendanceStatus.ATTENDED
