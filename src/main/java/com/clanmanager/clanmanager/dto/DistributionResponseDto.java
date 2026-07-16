@@ -50,6 +50,8 @@ public class DistributionResponseDto {
         private Integer powerEligibleCount;
         private Long allocatedDiamonds;
         private Long remainingDiamonds;
+        private Double participationDiamondsPerPoint;
+        private Double powerDiamondsPerPoint;
     }
 
     @Getter

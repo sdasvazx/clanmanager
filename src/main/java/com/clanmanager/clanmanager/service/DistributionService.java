@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -169,15 +170,13 @@ public class DistributionService {
         if (vault.getBalanceDiamonds() < totalAmount) {
             throw new IllegalArgumentException("클랜금고 가용 다이아가 부족합니다. 가용 다이아: " + vault.getBalanceDiamonds());
         }
-        vault.setBalanceDiamonds(vault.getBalanceDiamonds() - totalAmount);
-        vaultRepository.save(vault);
-
         Map<Long, Member> memberMap = memberRepository.findByActiveTrueOrderByMemberIdAsc().stream()
                 .collect(Collectors.toMap(Member::getMemberId, Function.identity()));
         String memo = request.getMemo() == null || request.getMemo().isBlank()
                 ? "분배금 자동 적립"
                 : request.getMemo().trim();
 
+        AtomicLong runningBalance = new AtomicLong(vault.getBalanceDiamonds());
         response.getResults().stream()
                 .filter(row -> row.getFinalAmount() != null && row.getFinalAmount() > 0)
                 .forEach(row -> {
@@ -186,7 +185,7 @@ public class DistributionService {
                         transactionRepository.save(VaultTransaction.builder()
                                 .type(VaultTransactionType.DISTRIBUTION)
                                 .amountDiamonds(row.getFinalAmount())
-                                .balanceAfter(vault.getBalanceDiamonds())
+                                .balanceAfter(runningBalance.addAndGet(-row.getFinalAmount()))
                                 .targetMember(target)
                                 .createdBy(admin)
                                 .memo(memo + " · " + row.getCharacterName())
@@ -195,6 +194,8 @@ public class DistributionService {
                                 .build());
                     }
         });
+        vault.setBalanceDiamonds(runningBalance.get());
+        vaultRepository.save(vault);
         return response;
     }
 
@@ -317,6 +318,8 @@ public class DistributionService {
                         .powerEligibleCount(powerEligible.size())
                         .allocatedDiamonds(allocated)
                         .remainingDiamonds(Math.max(0L, totalDiamonds - allocated))
+                        .participationDiamondsPerPoint(diamondsPerPoint(participationPool, totalParticipationScore))
+                        .powerDiamondsPerPoint(diamondsPerPoint(powerPool, totalPowerScore))
                         .build(),
                 allocatedRows
         );
@@ -492,6 +495,15 @@ public class DistributionService {
                 .multiply(BigDecimal.valueOf(pool))
                 .divide(totalScore, 0, RoundingMode.FLOOR)
                 .longValue();
+    }
+
+    private double diamondsPerPoint(long pool, BigDecimal totalScore) {
+        if (pool <= 0 || totalScore.compareTo(BigDecimal.ZERO) <= 0) {
+            return 0.0;
+        }
+        return BigDecimal.valueOf(pool)
+                .divide(totalScore, 2, RoundingMode.FLOOR)
+                .doubleValue();
     }
 
     private double round1(double value) {
