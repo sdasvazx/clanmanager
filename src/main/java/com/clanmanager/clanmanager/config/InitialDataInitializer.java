@@ -13,6 +13,7 @@ import com.clanmanager.clanmanager.service.ActivitySettingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ public class InitialDataInitializer implements ApplicationRunner {
     private final ClanVaultRepository clanVaultRepository;
     private final MemberRepository memberRepository;
     private final ActivitySettingService activitySettingService;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
     @Transactional
@@ -49,6 +51,7 @@ public class InitialDataInitializer implements ApplicationRunner {
 
         deactivateObsoleteTimedTypes();
         deactivateInvalidSchedules();
+        normalizeVaultVersionColumns();
         createClanVault();
         promoteFirstMemberToAdminIfNeeded();
     }
@@ -88,6 +91,11 @@ public class InitialDataInitializer implements ApplicationRunner {
     private void deactivateInvalidSchedules() {
         activityScheduleRepository.findByDayOfWeekIsNullAndActivityDateIsNull()
                 .forEach(schedule -> schedule.setActive(false));
+    }
+
+    private void normalizeVaultVersionColumns() {
+        jdbcTemplate.update("UPDATE clan_vault SET version = 0 WHERE version IS NULL");
+        jdbcTemplate.update("UPDATE vault_transactions SET version = 0 WHERE version IS NULL");
     }
 
     private void createClanVault() {

@@ -186,6 +186,35 @@ function useRosterSettings() {
   }, []);
   return [settings, saveSettings];
 }
+
+const normalizeRosterSettingName = (value) => String(value || '')
+  .trim()
+  .replace(/\s+/g, '')
+  .replace(/사람들/g, '')
+  .toLowerCase();
+
+const getRosterSettingColor = (settings, type, name) => {
+  const target = normalizeRosterSettingName(name);
+  if (!target) return null;
+  const item = (settings?.[type] || []).find((row) => normalizeRosterSettingName(row.name) === target);
+  return item?.color || null;
+};
+
+const getReadableTextColor = (hex) => {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!match) return '#ffffff';
+  const value = match[1];
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  return ((r * 299 + g * 587 + b * 114) / 1000) > 155 ? '#111827' : '#ffffff';
+};
+
+const rosterBadgeStyle = (settings, type, name) => {
+  const color = getRosterSettingColor(settings, type, name);
+  if (!color) return undefined;
+  return { backgroundColor: color, borderColor: color, color: getReadableTextColor(color) };
+};
 const bossOptions = ['13시 보스', '17시 보스', '21시 보스', '정예던전보스', '에노크', '마슈미드', '클랜임무', '수호', '쟁탈전'];
 const bossCheckSlots = [
   { key: '01', title: '01시 (1성)', cutTime: '01:00', bossName: '01시 보스', score: 1 },
@@ -933,6 +962,8 @@ function splitKoreanTime(value) {
 
 function splitDateTimeKoreanTime(value) {
   if (!value) return { period: '', time: '-' };
+  const match = String(value).match(/T(\d{2}:\d{2})/);
+  if (match) return splitKoreanTime(match[1]);
   return splitKoreanTime(new Date(value).toTimeString().slice(0, 5));
 }
 
@@ -1319,6 +1350,7 @@ function MyInfo({ member, setPage }) {
 
 function ProfileCard({ member, info, incompleteCollections = [], participationSummary, bossRecords = [], bossHistory = [], period = getParticipationPeriod(getCurrentParticipationPeriodIndex()), periodHistory = [], setPage }) {
   const canSeeCombatPower = member?.role === 'ADMIN';
+  const [rosterSettings] = useRosterSettings();
   const currentRow = useMemo(() => (participationSummary?.rows || []).find((row) => Number(row.memberId) === Number(info.memberId)), [participationSummary, info.memberId]);
   const activityColumns = participationSummary?.activityColumns || [];
   const attendanceCount = Number(currentRow?.attendanceCount ?? currentRow?.count ?? info.myAttendanceCount ?? 0);
@@ -1378,8 +1410,8 @@ function ProfileCard({ member, info, incompleteCollections = [], participationSu
         <div className="my-info-hero-main">
           <h2>{info.characterName}</h2>
           <div className="pills my-info-pills">
-            <span>클랜 {info.guildName || '-'}</span>
-            <span>클래스 {info.characterClass || '-'}</span>
+            <span style={rosterBadgeStyle(rosterSettings, 'clans', info.guildName)}>클랜 {info.guildName || '-'}</span>
+            <span style={rosterBadgeStyle(rosterSettings, 'classes', info.characterClass)}>클래스 {info.characterClass || '-'}</span>
             <span>Lv.{info.level || 0}</span>
             {canSeeCombatPower && <span>전투력 {formatNumber(info.combatPower)}</span>}
           </div>
@@ -1486,6 +1518,7 @@ function Participation({ member, setPage }) {
   const [detailPeriodIndex, setDetailPeriodIndex] = useState(getCurrentParticipationPeriodIndex());
   const [detailHistory, setDetailHistory] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [rosterSettings] = useRosterSettings();
 
   useEffect(() => {
     Promise.allSettled([request('/members'), request('/participation-periods')]).then(([memberResult, periodResult]) => {
@@ -1680,7 +1713,7 @@ function Participation({ member, setPage }) {
             <div className="table-wrap">
               <table className="data-table participation-ranking-table wide">
                 <thead><tr><th>순위</th><th>닉네임</th><th>클랜</th><th>클래스</th><th>참여율</th><th>참여횟수</th>{activityColumns.map((activity) => <th key={activity.activityTypeId}><span>{activity.activityName}</span><small className="activity-total-count">총 {activity.totalCount ?? 0}회</small></th>)}<th>기본점수</th><th>미참여 페널티</th></tr></thead>
-                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td><button type="button" className="link-button participation-name-button" onClick={() => openParticipationDetail(m)}>{m.characterName}</button></td><td><span className="mini-clan-pill">{m.guildName || '-'}</span></td><td>{m.characterClass || '-'}</td><td className="blue-text">{m.rate}%</td><td>{m.count}회</td>{activityColumns.map((activity) => <td key={activity.activityTypeId} className="blue-text">{m.activityCounts?.[activity.activityTypeId] || 0}회</td>)}<td>{m.baseParticipationScore}점</td><td className="red-text">-{m.absencePenaltyScore}점</td></tr>)}</tbody>
+                <tbody>{list.map((m, i) => <tr key={m.memberId}><td>{i + 1}</td><td><button type="button" className="link-button participation-name-button" onClick={() => openParticipationDetail(m)}>{m.characterName}</button></td><td><span className="mini-clan-pill" style={rosterBadgeStyle(rosterSettings, 'clans', m.guildName)}>{m.guildName || '-'}</span></td><td><span className="mini-clan-pill" style={rosterBadgeStyle(rosterSettings, 'classes', m.characterClass)}>{m.characterClass || '-'}</span></td><td className="blue-text">{m.rate}%</td><td>{m.count}회</td>{activityColumns.map((activity) => <td key={activity.activityTypeId} className="blue-text">{m.activityCounts?.[activity.activityTypeId] || 0}회</td>)}<td>{m.baseParticipationScore}점</td><td className="red-text">-{m.absencePenaltyScore}점</td></tr>)}</tbody>
               </table>
             </div>
           </div>
@@ -3293,8 +3326,11 @@ function AllItemsPage({ member, setPage }) {
   const [rows, setRows] = useState([]);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  const load = () => request('/management/all-items').then((data) => setRows(Array.isArray(data) ? data : [])).catch((err) => setMessage(err.message));
-  useEffect(() => { load(); }, []);
+  const allItemTabs = ['귀신', '운좋은', '귀신Z', '로망', '총합'];
+  const [selectedClan, setSelectedClan] = useState('귀신');
+  const readOnly = selectedClan === '총합';
+  const load = () => request(`/management/all-items?clanName=${encodeURIComponent(readOnly ? '총합' : selectedClan)}`).then((data) => setRows(Array.isArray(data) ? data : [])).catch((err) => setMessage(err.message));
+  useEffect(() => { load(); }, [selectedClan]);
   const grouped = useMemo(() => {
     const tierMap = new Map();
     rows.forEach((row) => {
@@ -3309,9 +3345,14 @@ function AllItemsPage({ member, setPage }) {
     }));
   }, [rows]);
   const updateRow = (target, patch) => {
+    if (readOnly) return;
     setRows((prev) => prev.map((row) => (row.allItemStockId === target.allItemStockId && row.displayOrder === target.displayOrder ? { ...row, ...patch } : row)));
   };
   const save = async () => {
+    if (readOnly) {
+      setMessage('총합 탭은 4개 클랜 재고를 합산해서 보여주는 읽기 전용 화면입니다.');
+      return;
+    }
     setSaving(true);
     setMessage('');
     try {
@@ -3319,6 +3360,7 @@ function AllItemsPage({ member, setPage }) {
         method: 'PUT',
         body: JSON.stringify({
           adminMemberId: member.memberId,
+          clanName: selectedClan,
           rows: rows.map((row) => ({
             tierName: row.tierName,
             categoryName: row.categoryName,
@@ -3336,7 +3378,58 @@ function AllItemsPage({ member, setPage }) {
       setSaving(false);
     }
   };
-  return <><div className="page-title with-actions"><div><h1>전체아이템</h1><p>T2/T3 아이템 재고와 지급 수량을 직접 입력해 관리합니다.</p></div><div className="page-actions"><AdminBackButton setPage={setPage} /><button className="primary-button" onClick={save} disabled={saving}>{saving ? '저장중...' : '저장'}</button></div></div>{message && <p className="vault-message">{message}</p>}<section className="white-card all-items-card">{grouped.map((tier) => <div className="all-items-tier" key={tier.tierName}><h2>{tier.tierName}</h2><div className="all-items-table-wrap"><table className="all-items-table"><tbody>{tier.categories.map((category) => <React.Fragment key={`${tier.tierName}-${category.categoryName}`}><tr><th className="all-items-category" rowSpan={category.items.length + 1}>{category.categoryName}</th><th className="all-items-label">목록</th><th>재고</th><th>지급</th><th className="remaining-head">남은 재고</th></tr>{category.items.map((item) => { const remaining = Math.max(Number(item.stockQuantity || 0) - Number(item.paidQuantity || 0), 0); return <tr key={`${item.tierName}-${item.categoryName}-${item.itemName}`}><td className="all-items-label">{item.itemName}</td><td><input type="number" min="0" value={item.stockQuantity ?? 0} onChange={(e) => updateRow(item, { stockQuantity: e.target.value })} /></td><td><input type="number" min="0" value={item.paidQuantity ?? 0} onChange={(e) => updateRow(item, { paidQuantity: e.target.value })} /></td><td className="remaining-cell">{remaining}</td></tr>; })}</React.Fragment>)}</tbody></table></div></div>)}</section></>;
+  return <>
+    <div className="page-title with-actions">
+      <div>
+        <h1>전체아이템</h1>
+        <p>T2/T3 아이템 재고와 지급 수량을 클랜별로 직접 입력해 관리합니다.</p>
+      </div>
+      <div className="page-actions">
+        <AdminBackButton setPage={setPage} />
+        <button className="primary-button" onClick={save} disabled={saving || readOnly}>{saving ? '저장중...' : '저장'}</button>
+      </div>
+    </div>
+    <section className="white-card all-items-toolbar">
+      <div className="tab-row">
+        {allItemTabs.map((tab) => (
+          <button key={tab} className={`tab-button ${selectedClan === tab ? 'active' : ''}`} onClick={() => { setSelectedClan(tab); setMessage(''); }}>
+            {tab}
+          </button>
+        ))}
+      </div>
+      <p className="muted-text">{readOnly ? '총합 탭은 귀신/운좋은/귀신Z/로망 재고와 지급 수량을 합산해서 보여주는 읽기 전용 화면입니다.' : `${selectedClan} 클랜의 재고와 지급 수량만 저장됩니다.`}</p>
+    </section>
+    {message && <p className="vault-message">{message}</p>}
+    <section className="white-card all-items-card">
+      {grouped.map((tier) => <div className="all-items-tier" key={tier.tierName}>
+        <h2>{tier.tierName}</h2>
+        <div className="all-items-table-wrap">
+          <table className="all-items-table">
+            <tbody>
+              {tier.categories.map((category) => <React.Fragment key={`${tier.tierName}-${category.categoryName}`}>
+                <tr>
+                  <th className="all-items-category" rowSpan={category.items.length + 1}>{category.categoryName}</th>
+                  <th className="all-items-label">목록</th>
+                  <th>재고</th>
+                  <th>지급</th>
+                  <th className="remaining-head">남은 재고</th>
+                </tr>
+                {category.items.map((item) => {
+                  const remaining = Math.max(Number(item.stockQuantity || 0) - Number(item.paidQuantity || 0), 0);
+                  return <tr key={`${item.tierName}-${item.categoryName}-${item.itemName}`}>
+                    <td className="all-items-label">{item.itemName}</td>
+                    <td><input type="number" min="0" value={item.stockQuantity ?? 0} onChange={(e) => updateRow(item, { stockQuantity: e.target.value })} disabled={readOnly} /></td>
+                    <td><input type="number" min="0" value={item.paidQuantity ?? 0} onChange={(e) => updateRow(item, { paidQuantity: e.target.value })} disabled={readOnly} /></td>
+                    <td className="remaining-cell">{remaining}</td>
+                  </tr>;
+                })}
+              </React.Fragment>)}
+            </tbody>
+          </table>
+        </div>
+      </div>)}
+    </section>
+  </>;
 }
 
 function BiddingPage({ member }) {
@@ -4313,7 +4406,7 @@ function ActivitySettingsPage({ member, setPage }) {
     activityTypeId: null,
     activityName: '',
     participationScore: 1,
-    penaltyEnabled: false,
+    penaltyEnabled: true,
     absencePenaltyScore: 0,
     displayOrder: 1,
     active: true,

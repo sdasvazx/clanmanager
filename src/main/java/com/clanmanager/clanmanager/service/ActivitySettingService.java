@@ -126,7 +126,7 @@ public class ActivitySettingService {
                         .category(resolveCategory(name))
                         .score(1)
                         .participationScore(1)
-                        .penaltyEnabled(false)
+                        .penaltyEnabled(true)
                         .absencePenaltyScore(0)
                         .displayOrder(999)
                         .active(true)

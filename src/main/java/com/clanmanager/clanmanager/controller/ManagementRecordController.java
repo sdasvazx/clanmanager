@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -32,6 +33,8 @@ public class ManagementRecordController {
     private final CollectionHistoryRepository collectionHistoryRepository;
     private final ItemRequestRepository itemRequestRepository;
     private final MemberRepository memberRepository;
+
+    private static final List<String> ALL_ITEM_CLANS = List.of("귀신", "운좋은", "귀신Z", "로망");
 
     private static final List<DefaultAllItem> DEFAULT_ALL_ITEMS = List.of(
             new DefaultAllItem("T2", "무기", "오브"),
@@ -107,20 +110,27 @@ public class ManagementRecordController {
     }
 
     @GetMapping("/all-items")
-    public List<AllItemStock> getAllItems() {
-        seedDefaultAllItems();
-        return allItemStockRepository.findAllByOrderByDisplayOrderAscAllItemStockIdAsc();
+    public List<AllItemStock> getAllItems(@RequestParam(required = false) String clanName) {
+        if (clanName == null || clanName.isBlank() || "총합".equals(clanName)) {
+            ALL_ITEM_CLANS.forEach(this::seedDefaultAllItems);
+            return aggregateAllItemStocks();
+        }
+        String targetClanName = requireAllItemClanName(clanName);
+        seedDefaultAllItems(targetClanName);
+        return allItemStockRepository.findAllByClanNameOrderByDisplayOrderAscAllItemStockIdAsc(targetClanName);
     }
 
     @PutMapping("/all-items")
     @Transactional
     public List<AllItemStock> saveAllItems(@Valid @RequestBody AllItemStockSaveRequest request) {
         validateAdmin(request.getAdminMemberId());
-        allItemStockRepository.deleteAll();
+        String targetClanName = requireAllItemClanName(request.getClanName());
+        allItemStockRepository.deleteAllByClanName(targetClanName);
         List<AllItemStock> rows = new ArrayList<>();
         int order = 1;
         for (AllItemStockRow row : request.getRows()) {
             rows.add(AllItemStock.builder()
+                    .clanName(targetClanName)
                     .tierName(cleanRequired(row.getTierName(), "티어를 입력해 주세요."))
                     .categoryName(cleanRequired(row.getCategoryName(), "분류를 입력해 주세요."))
                     .itemName(cleanRequired(row.getItemName(), "아이템명을 입력해 주세요."))
@@ -130,7 +140,7 @@ public class ManagementRecordController {
                     .build());
         }
         allItemStockRepository.saveAll(rows);
-        return allItemStockRepository.findAllByOrderByDisplayOrderAscAllItemStockIdAsc();
+        return allItemStockRepository.findAllByClanNameOrderByDisplayOrderAscAllItemStockIdAsc(targetClanName);
     }
 
     @GetMapping("/bids")
@@ -395,14 +405,15 @@ public class ManagementRecordController {
         return Math.max(value, 0);
     }
 
-    private void seedDefaultAllItems() {
-        if (allItemStockRepository.count() > 0) {
+    private void seedDefaultAllItems(String clanName) {
+        if (allItemStockRepository.countByClanName(clanName) > 0) {
             return;
         }
         List<AllItemStock> defaults = new ArrayList<>();
         for (int index = 0; index < DEFAULT_ALL_ITEMS.size(); index += 1) {
             DefaultAllItem item = DEFAULT_ALL_ITEMS.get(index);
             defaults.add(AllItemStock.builder()
+                    .clanName(clanName)
                     .tierName(item.tierName())
                     .categoryName(item.categoryName())
                     .itemName(item.itemName())
@@ -412,6 +423,43 @@ public class ManagementRecordController {
                     .build());
         }
         allItemStockRepository.saveAll(defaults);
+    }
+
+    private List<AllItemStock> aggregateAllItemStocks() {
+        Map<String, AllItemStock> aggregateMap = new LinkedHashMap<>();
+        for (String clanName : ALL_ITEM_CLANS) {
+            List<AllItemStock> rows = allItemStockRepository.findAllByClanNameOrderByDisplayOrderAscAllItemStockIdAsc(clanName);
+            for (AllItemStock row : rows) {
+                String key = row.getTierName() + "\u0000" + row.getCategoryName() + "\u0000" + row.getItemName();
+                AllItemStock aggregate = aggregateMap.computeIfAbsent(key, ignored -> AllItemStock.builder()
+                        .clanName("총합")
+                        .tierName(row.getTierName())
+                        .categoryName(row.getCategoryName())
+                        .itemName(row.getItemName())
+                        .stockQuantity(0)
+                        .paidQuantity(0)
+                        .displayOrder(row.getDisplayOrder())
+                        .build());
+                aggregate.setStockQuantity(number(aggregate.getStockQuantity()) + number(row.getStockQuantity()));
+                aggregate.setPaidQuantity(number(aggregate.getPaidQuantity()) + number(row.getPaidQuantity()));
+                aggregate.setDisplayOrder(Math.min(number(aggregate.getDisplayOrder()), number(row.getDisplayOrder())));
+            }
+        }
+        return aggregateMap.values().stream()
+                .sorted(Comparator
+                        .comparing(AllItemStock::getDisplayOrder)
+                        .thenComparing(AllItemStock::getTierName)
+                        .thenComparing(AllItemStock::getCategoryName)
+                        .thenComparing(AllItemStock::getItemName))
+                .toList();
+    }
+
+    private String requireAllItemClanName(String clanName) {
+        String cleaned = cleanRequired(clanName, "클랜을 선택해 주세요.");
+        if (!ALL_ITEM_CLANS.contains(cleaned)) {
+            throw new IllegalArgumentException("전체아이템은 귀신/운좋은/귀신Z/로망 클랜별 탭에서만 저장할 수 있습니다.");
+        }
+        return cleaned;
     }
 
     private void seedDefaultCollectionItems() {
@@ -457,6 +505,10 @@ public class ManagementRecordController {
     public static class AllItemStockSaveRequest {
         @NotNull(message = "운영자 정보가 필요합니다.")
         private Long adminMemberId;
+
+        @NotBlank(message = "클랜을 선택해 주세요.")
+        @Size(max = 20, message = "클랜명은 20자 이하로 입력해 주세요.")
+        private String clanName;
 
         @NotNull(message = "저장할 아이템 목록이 필요합니다.")
         private List<AllItemStockRow> rows = new ArrayList<>();

@@ -18,6 +18,9 @@ public class AllItemStock {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long allItemStockId;
 
+    @Column(nullable = false, length = 20, columnDefinition = "varchar(20) default ''")
+    private String clanName;
+
     @Column(nullable = false, length = 20)
     private String tierName;
 
@@ -41,6 +44,7 @@ public class AllItemStock {
     @PrePersist
     @PreUpdate
     public void touch() {
+        this.clanName = this.clanName == null ? "" : this.clanName;
         this.stockQuantity = this.stockQuantity == null ? 0 : this.stockQuantity;
         this.paidQuantity = this.paidQuantity == null ? 0 : this.paidQuantity;
         this.displayOrder = this.displayOrder == null ? 0 : this.displayOrder;
