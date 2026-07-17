@@ -37,7 +37,6 @@ public interface BossParticipationRecordRepository extends JpaRepository<BossPar
             where r.activityType is not null
             and r.activityType.active = true
             and (r.attendanceApplied is null or r.attendanceApplied = true)
-            and r.penaltyApplied = true
             and (:startDate is null or r.bossDate >= :startDate)
             and (:endDate is null or r.bossDate < :endDate)
             group by r.activityType.activityTypeId

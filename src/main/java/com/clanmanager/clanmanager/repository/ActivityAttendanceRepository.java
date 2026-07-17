@@ -79,7 +79,6 @@ public interface ActivityAttendanceRepository extends JpaRepository<ActivityAtte
                 where r.activityType = a.activityType
                 and r.bossDate = a.attendanceDate
                 and (r.attendanceApplied is null or r.attendanceApplied = true)
-                and r.penaltyApplied = true
             )
             and (:startDate is null or a.attendanceDate >= :startDate)
             and (:endDate is null or a.attendanceDate < :endDate)
