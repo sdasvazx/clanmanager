@@ -33,12 +33,19 @@ public class ParticipationService {
         var members = memberRepository.findByActiveTrueOrderByMemberIdAsc();
         var activeActivities = activityTypeRepository.findByActiveTrueOrderByDisplayOrderAscActivityTypeIdAsc();
 
-        Map<Long, Long> totalByActivityId = bossParticipationRecordRepository.findAppliedActivityOccurrenceCountsByPeriod(startDate, endDate)
+        Map<Long, Long> appliedRecordTotalByActivityId = bossParticipationRecordRepository.findAppliedActivityOccurrenceCountsByPeriod(startDate, endDate)
                 .stream()
                 .collect(Collectors.toMap(
                         BossParticipationRecordRepository.ActivityOccurrenceCountProjection::getActivityTypeId,
                         BossParticipationRecordRepository.ActivityOccurrenceCountProjection::getTotalCount
                 ));
+        Map<Long, Long> attendanceTotalByActivityId = attendanceRepository.findActivityOccurrenceCountsByPeriod(startDate, endDate)
+                .stream()
+                .collect(Collectors.toMap(
+                        ActivityAttendanceRepository.ActivityOccurrenceCountProjection::getActivityTypeId,
+                        ActivityAttendanceRepository.ActivityOccurrenceCountProjection::getTotalCount
+                ));
+        Map<Long, Long> totalByActivityId = mergeActivityTotals(appliedRecordTotalByActivityId, attendanceTotalByActivityId);
         Map<Long, Long> penaltyTotalByActivityId = bossParticipationRecordRepository.findPenaltyActivityOccurrenceCountsByPeriod(startDate, endDate)
                 .stream()
                 .collect(Collectors.toMap(
@@ -208,6 +215,14 @@ public class ParticipationService {
                         .totalCount(totals.getOrDefault(activity.getActivityTypeId(), 0L).intValue())
                         .build())
                 .toList();
+    }
+
+    private Map<Long, Long> mergeActivityTotals(Map<Long, Long> bossRecordTotals, Map<Long, Long> attendanceTotals) {
+        Map<Long, Long> merged = new HashMap<>(bossRecordTotals);
+        attendanceTotals.forEach((activityTypeId, attendanceTotal) ->
+                merged.merge(activityTypeId, attendanceTotal, Math::max)
+        );
+        return merged;
     }
 
     private int participationScore(ActivityType activity) {
