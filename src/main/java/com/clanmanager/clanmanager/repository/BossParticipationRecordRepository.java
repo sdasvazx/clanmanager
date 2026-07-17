@@ -1,6 +1,8 @@
 package com.clanmanager.clanmanager.repository;
 
 import com.clanmanager.clanmanager.entity.BossParticipationRecord;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +13,8 @@ import java.util.List;
 public interface BossParticipationRecordRepository extends JpaRepository<BossParticipationRecord, Long> {
 
     List<BossParticipationRecord> findAllByOrderByBossDateDescCutTimeDescCreatedAtDesc();
+
+    Page<BossParticipationRecord> findAllByOrderByBossDateDescCutTimeDescCreatedAtDesc(Pageable pageable);
 
     @Query("""
             select r.activityType.activityTypeId as activityTypeId, count(r) as totalCount

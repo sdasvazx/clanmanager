@@ -1,6 +1,7 @@
 package com.clanmanager.clanmanager.controller;
 
 import com.clanmanager.clanmanager.dto.BossParticipationMemberDto;
+import com.clanmanager.clanmanager.dto.BossParticipationPageResponseDto;
 import com.clanmanager.clanmanager.dto.BossParticipationRequestDto;
 import com.clanmanager.clanmanager.dto.BossParticipationResponseDto;
 import com.clanmanager.clanmanager.entity.ActivityAttendance;
@@ -17,6 +18,8 @@ import com.clanmanager.clanmanager.repository.BossParticipationRecordRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,6 +45,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class BossParticipationController {
 
+    private static final int HISTORY_PAGE_SIZE = 50;
+    private static final int MAX_HISTORY_PAGES = 10;
+
     private final BossParticipationRecordRepository recordRepository;
     private final BossParticipationMemberRepository participationMemberRepository;
     private final MemberRepository memberRepository;
@@ -54,6 +60,22 @@ public class BossParticipationController {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @GetMapping("/page")
+    public BossParticipationPageResponseDto getRecordPage(@RequestParam(defaultValue = "1") int page) {
+        int safePage = normalizeHistoryPage(page);
+        Page<BossParticipationRecord> result = recordRepository.findAllByOrderByBossDateDescCutTimeDescCreatedAtDesc(
+                PageRequest.of(safePage - 1, HISTORY_PAGE_SIZE)
+        );
+
+        return new BossParticipationPageResponseDto(
+                result.getContent().stream().map(this::toResponse).toList(),
+                safePage,
+                HISTORY_PAGE_SIZE,
+                Math.min(Math.max(result.getTotalPages(), 1), MAX_HISTORY_PAGES),
+                Math.min(result.getTotalElements(), (long) HISTORY_PAGE_SIZE * MAX_HISTORY_PAGES)
+        );
     }
 
     @GetMapping("/{recordId}/members")
@@ -213,6 +235,10 @@ public class BossParticipationController {
                 activityType != null,
                 activityType == null ? null : activityType.getTypeName()
         );
+    }
+
+    private int normalizeHistoryPage(int page) {
+        return Math.max(1, Math.min(page, MAX_HISTORY_PAGES));
     }
 
     private NormalizedEntry normalizeEntry(BossParticipationRequestDto.MemberEntry entry) {

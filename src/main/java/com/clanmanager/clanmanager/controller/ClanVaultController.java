@@ -1,6 +1,7 @@
 package com.clanmanager.clanmanager.controller;
 
 import com.clanmanager.clanmanager.dto.VaultSummaryResponseDto;
+import com.clanmanager.clanmanager.dto.VaultTransactionPageResponseDto;
 import com.clanmanager.clanmanager.dto.VaultTransactionRequestDto;
 import com.clanmanager.clanmanager.dto.VaultTransactionResponseDto;
 import com.clanmanager.clanmanager.entity.ClanVault;
@@ -14,6 +15,9 @@ import com.clanmanager.clanmanager.repository.VaultTransactionRepository;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,6 +36,8 @@ import java.util.List;
 public class ClanVaultController {
 
     private static final Long VAULT_ID = 1L;
+    private static final int HISTORY_PAGE_SIZE = 50;
+    private static final int MAX_HISTORY_PAGES = 10;
 
     private final ClanVaultRepository vaultRepository;
     private final VaultTransactionRepository transactionRepository;
@@ -53,8 +59,21 @@ public class ClanVaultController {
     }
 
     @GetMapping("/transactions")
-    public List<VaultTransactionResponseDto> getTransactions() {
-        return findRecentTransactions();
+    public VaultTransactionPageResponseDto getTransactions(@RequestParam(defaultValue = "1") int page) {
+        int safePage = normalizeHistoryPage(page);
+        Page<VaultTransaction> result = transactionRepository.findAll(PageRequest.of(
+                safePage - 1,
+                HISTORY_PAGE_SIZE,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        ));
+
+        return new VaultTransactionPageResponseDto(
+                result.getContent().stream().map(VaultTransactionResponseDto::from).toList(),
+                safePage,
+                HISTORY_PAGE_SIZE,
+                Math.min(Math.max(result.getTotalPages(), 1), MAX_HISTORY_PAGES),
+                Math.min(result.getTotalElements(), (long) HISTORY_PAGE_SIZE * MAX_HISTORY_PAGES)
+        );
     }
 
     @GetMapping("/distributions/member/{memberId}")
@@ -167,6 +186,10 @@ public class ClanVaultController {
         return transactionRepository.findTop50ByOrderByCreatedAtDesc().stream()
                 .map(VaultTransactionResponseDto::from)
                 .toList();
+    }
+
+    private int normalizeHistoryPage(int page) {
+        return Math.max(1, Math.min(page, MAX_HISTORY_PAGES));
     }
 
     private ClanVault getOrCreateVault() {

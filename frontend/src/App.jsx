@@ -1519,6 +1519,28 @@ function ProfileCard({ member, info, incompleteCollections = [], participationSu
 
 function Metric({ label, value, caption, tone }) { return <div className={`metric ${tone}`}><p>{label}</p><strong>{value}</strong><small>{caption}</small></div>; }
 
+function PaginationControls({ page, totalPages, totalElements, pageSize = 50, onChange }) {
+  const safeTotalPages = Math.max(1, Math.min(Number(totalPages || 1), 10));
+  const safePage = Math.max(1, Math.min(Number(page || 1), safeTotalPages));
+  const total = Number(totalElements || 0);
+  const size = Number(pageSize || 50);
+  const start = total ? ((safePage - 1) * size) + 1 : 0;
+  const end = total ? Math.min(safePage * size, total) : 0;
+  const pages = Array.from({ length: safeTotalPages }, (_, index) => index + 1);
+  return (
+    <div className="history-pagination">
+      <span>{total ? `${start}-${end} / ${total}건` : '0건'} · 최대 500건</span>
+      <div>
+        <button type="button" disabled={safePage <= 1} onClick={() => onChange(safePage - 1)}>이전</button>
+        {pages.map((item) => (
+          <button type="button" key={item} className={item === safePage ? 'active' : ''} onClick={() => onChange(item)}>{item}</button>
+        ))}
+        <button type="button" disabled={safePage >= safeTotalPages} onClick={() => onChange(safePage + 1)}>다음</button>
+      </div>
+    </div>
+  );
+}
+
 function Participation({ member, setPage }) {
   const [members, setMembers] = useState([]);
   const [participationSummary, setParticipationSummary] = useState(null);
@@ -1796,6 +1818,8 @@ function Participation({ member, setPage }) {
 
 function Attendance({ member, setPage, mode = 'check' }) {
   const [records, setRecords] = useState([]);
+  const [recordPage, setRecordPage] = useState(1);
+  const [recordPageInfo, setRecordPageInfo] = useState({ page: 1, pageSize: 50, totalPages: 1, totalElements: 0 });
   const [members, setMembers] = useState([]);
   const [batchRows, setBatchRows] = useState(() => buildBatchRowsFromActivitySettings());
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -2173,7 +2197,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
       });
       updateBatchRow(key, { savedRecord: saved, message: `${saved.bossName} ${saved.totalCount}명 저장 완료${skippedCount ? ` · 주황색 ${skippedCount}개 제외` : ''}` });
       setMessage(`${saved.bossName} 사진 등록이 완료되었습니다. 참여율 조회에 반영됩니다.${skippedCount ? ` 주황색 ${skippedCount}개는 제외했습니다.` : ''}`);
-      await load();
+      await load(1);
     } catch (err) {
       updateBatchRow(key, { message: err.message });
     }
@@ -2231,10 +2255,10 @@ function Attendance({ member, setPage, mode = 'check' }) {
     setReviewEdit(null);
   };
 
-  const load = () => {
+  const load = (nextPage = recordPage) => {
     const jobs = showCheck
       ? [request('/members'), request('/activities/settings')]
-      : [request('/boss-participations'), request('/members')];
+      : [request(`/boss-participations/page?page=${nextPage}`), request('/members')];
     return Promise.all(jobs)
       .then((rows) => {
         if (showCheck) {
@@ -2245,14 +2269,27 @@ function Attendance({ member, setPage, mode = 'check' }) {
           setSelectedRecord(null);
           return;
         }
-        const [recordRows, memberRows] = rows;
+        const [recordPageData, memberRows] = rows;
+        const recordRows = Array.isArray(recordPageData) ? recordPageData : (recordPageData.records ?? []);
         setRecords(recordRows);
+        setRecordPageInfo(Array.isArray(recordPageData) ? {
+          page: 1,
+          pageSize: 50,
+          totalPages: 1,
+          totalElements: recordRows.length,
+        } : {
+          page: recordPageData.page ?? nextPage,
+          pageSize: recordPageData.pageSize ?? 50,
+          totalPages: recordPageData.totalPages ?? 1,
+          totalElements: recordPageData.totalElements ?? recordRows.length,
+        });
+        setRecordPage(Array.isArray(recordPageData) ? 1 : (recordPageData.page ?? nextPage));
         setMembers(memberRows);
       })
       .catch((err) => setMessage(err.message));
   };
 
-  useEffect(() => { load(); }, [mode]);
+  useEffect(() => { load(1); }, [mode]);
 
   const selectFile = (event) => {
     const nextFile = event.target.files?.[0];
@@ -2309,7 +2346,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
       setFile(null);
       setPreview('');
       setOcrStatus('');
-      await load();
+      await load(1);
       setMessage('보스 참여내역을 저장했습니다.');
     } catch (err) {
       setMessage(err.message);
@@ -2349,7 +2386,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
       setSelectedMembers(rows);
       setSelectedDraftByClan(rowsToDraftByClan(rows));
       setReviewEdit(null);
-      await load();
+      await load(recordPage);
       setMessage(`${selectedRecord.bossName} 참여명단을 수정했습니다.`);
     } catch (err) {
       setMessage(err.message);
@@ -2384,7 +2421,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
     matched: isRegisteredDraftName(name, form.clanName),
   })), [currentDraftNames, form.clanName, members]);
 
-  const visibleRecords = records.slice(0, 100);
+  const visibleRecords = records;
   const NicknameSuggestionList = ({ value, onPick, className = '' }) => {
     const suggestions = memberNameSuggestions(value);
     if (!String(value || '').trim() || !suggestions.length) return null;
@@ -2764,7 +2801,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
           <input placeholder="보스명" />
           <button className="dark-button">조회</button>
         </div>
-        <p className="subtle">조회 결과 {records.length}건 · 1/{Math.max(1, Math.ceil(records.length / 30))}페이지</p>
+        <p className="subtle">조회 결과 {recordPageInfo.totalElements}건 · {recordPageInfo.page}/{recordPageInfo.totalPages}페이지</p>
         <div className="boss-table-scroll">
           <table className="data-table boss-history-table">
             <thead>
@@ -2796,6 +2833,13 @@ function Attendance({ member, setPage, mode = 'check' }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={recordPageInfo.page}
+          totalPages={recordPageInfo.totalPages}
+          totalElements={recordPageInfo.totalElements}
+          pageSize={recordPageInfo.pageSize}
+          onChange={(nextPage) => load(nextPage)}
+        />
         {!records.length && <div className="empty-state">아직 등록된 보스 참여내역이 없습니다.</div>}
       </section>}
 
@@ -2888,14 +2932,31 @@ function TimeBadge({ value, dateTime = false }) {
 
 function PinballPage({ setPage }) {
   const [records, setRecords] = useState([]);
+  const [recordPage, setRecordPage] = useState(1);
+  const [recordPageInfo, setRecordPageInfo] = useState({ page: 1, pageSize: 50, totalPages: 1, totalElements: 0 });
   const [message, setMessage] = useState('');
   const [loadingId, setLoadingId] = useState(null);
   const [pinballDraft, setPinballDraft] = useState(null);
   const [pinballWinner, setPinballWinner] = useState('');
   const [pinballSpinning, setPinballSpinning] = useState(false);
 
-  const load = () => request('/boss-participations')
-    .then(setRecords)
+  const load = (nextPage = recordPage) => request(`/boss-participations/page?page=${nextPage}`)
+    .then((data) => {
+      const nextRecords = Array.isArray(data) ? data : (data.records ?? []);
+      setRecords(nextRecords);
+      setRecordPageInfo(Array.isArray(data) ? {
+        page: 1,
+        pageSize: 50,
+        totalPages: 1,
+        totalElements: nextRecords.length,
+      } : {
+        page: data.page ?? nextPage,
+        pageSize: data.pageSize ?? 50,
+        totalPages: data.totalPages ?? 1,
+        totalElements: data.totalElements ?? nextRecords.length,
+      });
+      setRecordPage(Array.isArray(data) ? 1 : (data.page ?? nextPage));
+    })
     .catch((err) => setMessage(err.message));
 
   useEffect(() => { load(); }, []);
@@ -3002,7 +3063,7 @@ function PinballPage({ setPage }) {
               </tr>
             </thead>
             <tbody>
-              {records.slice(0, 100).map((record) => (
+              {records.map((record) => (
                 <tr key={record.recordId}>
                   <td>{record.bossDate}</td>
                   <td><TimeBadge value={record.cutTime} /></td>
@@ -3015,6 +3076,13 @@ function PinballPage({ setPage }) {
             </tbody>
           </table>
         </div>
+        <PaginationControls
+          page={recordPageInfo.page}
+          totalPages={recordPageInfo.totalPages}
+          totalElements={recordPageInfo.totalElements}
+          pageSize={recordPageInfo.pageSize}
+          onChange={(nextPage) => load(nextPage)}
+        />
         {!records.length && <div className="empty-state">등록된 보스 참여내역이 없습니다.</div>}
       </section>
     </>
@@ -3052,9 +3120,34 @@ function ClanVaultPage({ member, readonly = false }) {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [confirmVaultAction, setConfirmVaultAction] = useState(null);
+  const [transactionPage, setTransactionPage] = useState(1);
+  const [transactionPageInfo, setTransactionPageInfo] = useState({ transactions: [], page: 1, pageSize: 50, totalPages: 1, totalElements: 0 });
   const typeText = { DEPOSIT: '입금', DISTRIBUTION: '분배', WITHDRAW: '차감', ADJUSTMENT: '잔액수정' };
   const typeTone = { DEPOSIT: 'green', DISTRIBUTION: 'blue', WITHDRAW: 'red', ADJUSTMENT: 'purple' };
-  const load = async () => { const [vault, memberRows] = await Promise.all([request('/vault'), request('/members')]); setSummary(vault); setMembers(memberRows); };
+  const load = async (nextPage = transactionPage) => {
+    const [vault, memberRows, transactionRows] = await Promise.all([
+      request('/vault'),
+      request('/members'),
+      request(`/vault/transactions?page=${nextPage}`),
+    ]);
+    const nextTransactions = Array.isArray(transactionRows) ? transactionRows : (transactionRows.transactions ?? []);
+    setSummary(vault);
+    setMembers(memberRows);
+    setTransactionPageInfo(Array.isArray(transactionRows) ? {
+      transactions: nextTransactions,
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+      totalElements: nextTransactions.length,
+    } : {
+      transactions: nextTransactions,
+      page: transactionRows.page ?? nextPage,
+      pageSize: transactionRows.pageSize ?? 50,
+      totalPages: transactionRows.totalPages ?? 1,
+      totalElements: transactionRows.totalElements ?? nextTransactions.length,
+    });
+    setTransactionPage(Array.isArray(transactionRows) ? 1 : (transactionRows.page ?? nextPage));
+  };
   useEffect(() => { load().catch((err) => setMessage(err.message)); }, []);
   const filteredTargets = members.filter((target) => {
     const query = normalize(targetSearch);
@@ -3113,7 +3206,7 @@ function ClanVaultPage({ member, readonly = false }) {
       setForm({ amountDiamonds: '', balanceDiamonds: '', targetMemberId: '', memo: '' });
       setSelectedTargetIds([]);
       setTargetSearch('');
-      await load();
+      await load(1);
       setMessage(actionMode === 'distribute' ? `${confirmVaultAction.selectedTargetIds.length}명 분배 기록을 저장했습니다.` : '금고 내용을 저장했습니다.');
       setConfirmVaultAction(null);
     } catch (err) { setMessage(err.message); } finally { setLoading(false); }
@@ -3124,7 +3217,7 @@ function ClanVaultPage({ member, readonly = false }) {
     setMessage('');
     try {
       await request(`/vault/distributions/${row.transactionId}/cancel-claim?adminMemberId=${member.memberId}`, { method: 'PATCH' });
-      await load();
+      await load(transactionPage);
       setMessage('분배금 수령완료를 취소했습니다.');
     } catch (err) {
       setMessage(err.message);
@@ -3132,8 +3225,8 @@ function ClanVaultPage({ member, readonly = false }) {
       setLoading(false);
     }
   };
-  const transactions = summary?.recentTransactions ?? [];
-  return <><div className="page-title"><h1>{readonly ? '장부 조회' : '통장현황'}</h1><p>클랜 금고의 다이아 잔액과 입금·분배·차감 기록을 관리합니다.</p></div><div className="vault-grid"><section className="white-card vault-balance"><span className="vault-icon">💎</span><p>현재 클랜금고 잔액</p><strong>{money(summary?.balanceDiamonds)}</strong><small>입금 {summary?.depositCount ?? 0}건 · 분배 {summary?.distributionCount ?? 0}건</small></section>{!readonly && <section className="white-card vault-form-card"><div className="section-heading"><h2>금고 기록 추가</h2></div><div className="vault-tabs"><button type="button" className={mode === 'deposit' ? 'active' : ''} onClick={() => setMode('deposit')}>입금</button><button type="button" className={mode === 'distribute' ? 'active' : ''} onClick={() => setMode('distribute')}>분배</button><button type="button" className={mode === 'withdraw' ? 'active' : ''} onClick={() => setMode('withdraw')}>차감</button><button type="button" className={mode === 'adjust' ? 'active' : ''} onClick={() => setMode('adjust')}>잔액수정</button></div><form className="vault-form" onSubmit={submit}>{mode === 'distribute' && <div className="vault-target-picker"><label>받는 클랜원 검색<input value={targetSearch} onChange={(e) => setTargetSearch(e.target.value)} placeholder="닉네임/클랜명으로 필터링" /></label><div className="vault-target-actions"><button type="button" className="mini-button" onClick={selectFilteredTargets}>현재 필터 전체선택</button><button type="button" className="mini-button" onClick={() => setSelectedTargetIds([])}>선택해제</button><span>{selectedTargetIds.length}명 선택됨</span></div><div className="vault-selected-targets">{selectedTargets.map((target) => <span key={target.memberId}>{target.characterName}<button type="button" onClick={() => toggleTarget(target.memberId)}>×</button></span>)}</div><div className="vault-target-list">{filteredTargets.map((target) => <label key={target.memberId} className={selectedTargetIds.includes(String(target.memberId)) ? 'selected' : ''}><input type="checkbox" checked={selectedTargetIds.includes(String(target.memberId))} onChange={() => toggleTarget(target.memberId)} /><b>{target.characterName}</b><small>{canonicalClanName(target.guildName)}</small></label>)}</div></div>}{mode === 'adjust' ? <label>새 금고 잔액<input required min="0" type="number" value={form.balanceDiamonds} onChange={(e) => setForm({ ...form, balanceDiamonds: e.target.value })} placeholder="현재 총 다이아 개수" /></label> : <label>다이아 수량<input required min="1" type="number" value={form.amountDiamonds} onChange={(e) => setForm({ ...form, amountDiamonds: e.target.value })} placeholder="기록할 다이아 수량" /></label>}<label>메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 에노크 분배, 보스 수익 입금" /></label><button className="primary-button" disabled={loading}>{loading ? '저장 중...' : '금고 기록 저장'}</button>{message && <p className="vault-message">{message}</p>}</form></section>}</div><section className="white-card"><div className="section-heading"><h2>거래내역</h2><span className="result-count">{transactions.length}건</span></div><div className="table-wrap"><table className="data-table vault-table"><thead><tr><th>시간</th><th>종류</th><th>대상</th><th>수량</th><th>처리 후 잔액</th><th>메모</th><th>기록자</th>{!readonly && <th>처리</th>}</tr></thead><tbody>{transactions.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td><span className={`vault-type ${typeTone[row.type]}`}>{typeText[row.type] ?? row.type}</span></td><td>{row.targetMemberName ?? '-'}</td><td>{money(row.amountDiamonds)}</td><td><b>{money(row.balanceAfter)}</b></td><td>{row.memo || '-'}</td><td>{row.createdByMemberName ?? '-'}</td>{!readonly && <td>{row.type === 'DISTRIBUTION' && row.claimed ? <button type="button" className="mini-button" disabled={loading} onClick={() => cancelClaim(row)}>수령취소</button> : '-'}</td>}</tr>)}</tbody></table></div>{!transactions.length && <div className="empty-state">아직 금고 거래내역이 없습니다.</div>}</section>{confirmVaultAction && <div className="confirm-modal-backdrop" role="dialog" aria-modal="true"><div className="confirm-modal"><span>💎</span><h2>금고 기록을 저장할까요?</h2><p>{confirmVaultAction.confirmText}</p><div className="confirm-modal-actions"><button type="button" className="outline-button no-margin" disabled={loading} onClick={() => setConfirmVaultAction(null)}>취소</button><button type="button" className="primary-button no-margin" disabled={loading} onClick={executeVaultAction}>{loading ? '저장 중...' : '확인'}</button></div></div></div>}</>;
+  const transactions = transactionPageInfo.transactions ?? summary?.recentTransactions ?? [];
+  return <><div className="page-title"><h1>{readonly ? '장부 조회' : '통장현황'}</h1><p>클랜 금고의 다이아 잔액과 입금·분배·차감 기록을 관리합니다.</p></div><div className="vault-grid"><section className="white-card vault-balance"><span className="vault-icon">💎</span><p>현재 클랜금고 잔액</p><strong>{money(summary?.balanceDiamonds)}</strong><small>입금 {summary?.depositCount ?? 0}건 · 분배 {summary?.distributionCount ?? 0}건</small></section>{!readonly && <section className="white-card vault-form-card"><div className="section-heading"><h2>금고 기록 추가</h2></div><div className="vault-tabs"><button type="button" className={mode === 'deposit' ? 'active' : ''} onClick={() => setMode('deposit')}>입금</button><button type="button" className={mode === 'distribute' ? 'active' : ''} onClick={() => setMode('distribute')}>분배</button><button type="button" className={mode === 'withdraw' ? 'active' : ''} onClick={() => setMode('withdraw')}>차감</button><button type="button" className={mode === 'adjust' ? 'active' : ''} onClick={() => setMode('adjust')}>잔액수정</button></div><form className="vault-form" onSubmit={submit}>{mode === 'distribute' && <div className="vault-target-picker"><label>받는 클랜원 검색<input value={targetSearch} onChange={(e) => setTargetSearch(e.target.value)} placeholder="닉네임/클랜명으로 필터링" /></label><div className="vault-target-actions"><button type="button" className="mini-button" onClick={selectFilteredTargets}>현재 필터 전체선택</button><button type="button" className="mini-button" onClick={() => setSelectedTargetIds([])}>선택해제</button><span>{selectedTargetIds.length}명 선택됨</span></div><div className="vault-selected-targets">{selectedTargets.map((target) => <span key={target.memberId}>{target.characterName}<button type="button" onClick={() => toggleTarget(target.memberId)}>×</button></span>)}</div><div className="vault-target-list">{filteredTargets.map((target) => <label key={target.memberId} className={selectedTargetIds.includes(String(target.memberId)) ? 'selected' : ''}><input type="checkbox" checked={selectedTargetIds.includes(String(target.memberId))} onChange={() => toggleTarget(target.memberId)} /><b>{target.characterName}</b><small>{canonicalClanName(target.guildName)}</small></label>)}</div></div>}{mode === 'adjust' ? <label>새 금고 잔액<input required min="0" type="number" value={form.balanceDiamonds} onChange={(e) => setForm({ ...form, balanceDiamonds: e.target.value })} placeholder="현재 총 다이아 개수" /></label> : <label>다이아 수량<input required min="1" type="number" value={form.amountDiamonds} onChange={(e) => setForm({ ...form, amountDiamonds: e.target.value })} placeholder="기록할 다이아 수량" /></label>}<label>메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 에노크 분배, 보스 수익 입금" /></label><button className="primary-button" disabled={loading}>{loading ? '저장 중...' : '금고 기록 저장'}</button>{message && <p className="vault-message">{message}</p>}</form></section>}</div><section className="white-card"><div className="section-heading"><h2>거래내역</h2><span className="result-count">{transactionPageInfo.totalElements ?? transactions.length}건</span></div><div className="table-wrap"><table className="data-table vault-table"><thead><tr><th>시간</th><th>종류</th><th>대상</th><th>수량</th><th>처리 후 잔액</th><th>메모</th><th>기록자</th>{!readonly && <th>처리</th>}</tr></thead><tbody>{transactions.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td><span className={`vault-type ${typeTone[row.type]}`}>{typeText[row.type] ?? row.type}</span></td><td>{row.targetMemberName ?? '-'}</td><td>{money(row.amountDiamonds)}</td><td><b>{money(row.balanceAfter)}</b></td><td>{row.memo || '-'}</td><td>{row.createdByMemberName ?? '-'}</td>{!readonly && <td>{row.type === 'DISTRIBUTION' && row.claimed ? <button type="button" className="mini-button" disabled={loading} onClick={() => cancelClaim(row)}>수령취소</button> : '-'}</td>}</tr>)}</tbody></table></div><PaginationControls page={transactionPageInfo.page} totalPages={transactionPageInfo.totalPages} totalElements={transactionPageInfo.totalElements} pageSize={transactionPageInfo.pageSize} onChange={(nextPage) => load(nextPage)} />{!transactions.length && <div className="empty-state">아직 금고 거래내역이 없습니다.</div>}</section>{confirmVaultAction && <div className="confirm-modal-backdrop" role="dialog" aria-modal="true"><div className="confirm-modal"><span>💎</span><h2>금고 기록을 저장할까요?</h2><p>{confirmVaultAction.confirmText}</p><div className="confirm-modal-actions"><button type="button" className="outline-button no-margin" disabled={loading} onClick={() => setConfirmVaultAction(null)}>취소</button><button type="button" className="primary-button no-margin" disabled={loading} onClick={executeVaultAction}>{loading ? '저장 중...' : '확인'}</button></div></div></div>}</>;
 }
 
 function PaymentPage({ member }) {

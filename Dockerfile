@@ -7,6 +7,7 @@ RUN chmod +x ./gradlew && ./gradlew clean bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+ENV TZ=Asia/Seoul
 COPY --from=build /app/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
