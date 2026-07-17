@@ -105,13 +105,14 @@ public class BossParticipationController {
             throw new SecurityException("\uC6B4\uC601\uC790\uB9CC \uBCF4\uC2A4 \uCC38\uC5EC\uB0B4\uC5ED\uC744 \uB4F1\uB85D\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
         }
 
-        if (request.getMembers() == null || request.getMembers().isEmpty()) {
-            throw new IllegalArgumentException("\uCC38\uC5EC \uBA85\uB2E8\uC744 1\uBA85 \uC774\uC0C1 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
-        }
-
         String bossName = clean(request.getBossName());
         if (bossName.isBlank()) {
             throw new IllegalArgumentException("\uBCF4\uC2A4\uBA85\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
+        }
+
+        boolean attendanceApplied = !Boolean.FALSE.equals(request.getAttendanceApplied());
+        if (attendanceApplied && (request.getMembers() == null || request.getMembers().isEmpty())) {
+            throw new IllegalArgumentException("\uCC38\uC5EC \uBA85\uB2E8\uC744 1\uBA85 \uC774\uC0C1 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
         }
 
         ActivityType activityType = resolveActivityType(request.getActivityTypeId(), bossName);
@@ -121,6 +122,7 @@ public class BossParticipationController {
                 .bossName(bossName)
                 .score(request.getScore() == null ? 1 : request.getScore())
                 .penaltyApplied(Boolean.TRUE.equals(request.getPenaltyApplied()))
+                .attendanceApplied(attendanceApplied)
                 .activityType(activityType)
                 .memo(clean(request.getMemo()))
                 .createdBy(admin)
@@ -143,15 +145,24 @@ public class BossParticipationController {
             throw new SecurityException("\uC6B4\uC601\uC790\uB9CC \uBCF4\uC2A4 \uCC38\uC5EC\uBA85\uB2E8\uC744 \uC218\uC815\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
         }
 
-        if (request.getMembers() == null || request.getMembers().isEmpty()) {
+        BossParticipationRecord record = findRecord(recordId);
+        boolean attendanceApplied = request.getAttendanceApplied() == null
+                ? !Boolean.FALSE.equals(record.getAttendanceApplied())
+                : !Boolean.FALSE.equals(request.getAttendanceApplied());
+        if (attendanceApplied && (request.getMembers() == null || request.getMembers().isEmpty())) {
             throw new IllegalArgumentException("\uCC38\uC5EC \uBA85\uB2E8\uC744 1\uBA85 \uC774\uC0C1 \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
         }
 
-        BossParticipationRecord record = findRecord(recordId);
         List<BossParticipationMember> previousMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
         ActivityType activityType = request.getActivityTypeId() == null
                 ? resolveActivityType(record)
                 : resolveActivityType(request.getActivityTypeId(), record.getBossName());
+        if (request.getPenaltyApplied() != null) {
+            record.setPenaltyApplied(request.getPenaltyApplied());
+        }
+        if (request.getAttendanceApplied() != null) {
+            record.setAttendanceApplied(request.getAttendanceApplied());
+        }
         record.setActivityType(activityType);
         recordRepository.save(record);
         participationMemberRepository.deleteByRecord(record);
@@ -167,7 +178,9 @@ public class BossParticipationController {
     }
 
     private void saveRecordMembers(BossParticipationRecord record, List<BossParticipationRequestDto.MemberEntry> members, ActivityType activityType) {
-        members.stream()
+        boolean attendanceApplied = !Boolean.FALSE.equals(record.getAttendanceApplied());
+        List<BossParticipationRequestDto.MemberEntry> safeMembers = members == null ? List.of() : members;
+        safeMembers.stream()
                 .map(this::normalizeEntry)
                 .filter(Objects::nonNull)
                 .distinct()
@@ -180,7 +193,7 @@ public class BossParticipationController {
                             .clanName(entry.clanName())
                             .matched(matched != null)
                             .build());
-                    if (matched != null && matched.getActive() && activityType != null
+                    if (attendanceApplied && matched != null && matched.getActive() && activityType != null
                             && !activityAttendanceRepository.existsByMemberAndActivityTypeAndAttendanceDate(matched, activityType, record.getBossDate())) {
                         activityAttendanceRepository.save(ActivityAttendance.builder()
                                 .member(matched)

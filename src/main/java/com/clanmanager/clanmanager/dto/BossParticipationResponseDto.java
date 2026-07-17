@@ -22,6 +22,7 @@ public class BossParticipationResponseDto {
     private String bossName;
     private Integer score;
     private Boolean penaltyApplied;
+    private Boolean attendanceApplied;
     private String memo;
     private String createdByName;
     private long totalCount;
@@ -53,6 +54,7 @@ public class BossParticipationResponseDto {
                 .bossName(record.getBossName())
                 .score(record.getScore())
                 .penaltyApplied(Boolean.TRUE.equals(record.getPenaltyApplied()))
+                .attendanceApplied(!Boolean.FALSE.equals(record.getAttendanceApplied()))
                 .memo(record.getMemo())
                 .createdByName(record.getCreatedBy() == null ? null : record.getCreatedBy().getCharacterName())
                 .totalCount(totalCount)

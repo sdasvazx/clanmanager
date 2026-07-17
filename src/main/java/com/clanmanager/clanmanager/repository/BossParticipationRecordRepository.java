@@ -21,6 +21,22 @@ public interface BossParticipationRecordRepository extends JpaRepository<BossPar
             from BossParticipationRecord r
             where r.activityType is not null
             and r.activityType.active = true
+            and (r.attendanceApplied is null or r.attendanceApplied = true)
+            and (:startDate is null or r.bossDate >= :startDate)
+            and (:endDate is null or r.bossDate < :endDate)
+            group by r.activityType.activityTypeId
+            """)
+    List<ActivityOccurrenceCountProjection> findAppliedActivityOccurrenceCountsByPeriod(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
+
+    @Query("""
+            select r.activityType.activityTypeId as activityTypeId, count(r) as totalCount
+            from BossParticipationRecord r
+            where r.activityType is not null
+            and r.activityType.active = true
+            and (r.attendanceApplied is null or r.attendanceApplied = true)
             and r.penaltyApplied = true
             and (:startDate is null or r.bossDate >= :startDate)
             and (:endDate is null or r.bossDate < :endDate)

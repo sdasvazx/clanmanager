@@ -39,6 +39,10 @@ public class BossParticipationRecord {
     @Builder.Default
     private Boolean penaltyApplied = false;
 
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
+    private Boolean attendanceApplied = true;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "activity_type_id")
     private ActivityType activityType;
@@ -57,7 +61,15 @@ public class BossParticipationRecord {
     public void prePersist() {
         this.score = this.score == null ? 1 : this.score;
         this.penaltyApplied = this.penaltyApplied == null ? false : this.penaltyApplied;
+        this.attendanceApplied = this.attendanceApplied == null ? true : this.attendanceApplied;
         this.submittedAt = this.submittedAt == null ? LocalDateTime.now() : this.submittedAt;
         this.createdAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    public void preUpdate() {
+        this.score = this.score == null ? 1 : this.score;
+        this.penaltyApplied = this.penaltyApplied == null ? false : this.penaltyApplied;
+        this.attendanceApplied = this.attendanceApplied == null ? true : this.attendanceApplied;
     }
 }

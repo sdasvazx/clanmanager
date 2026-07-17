@@ -257,6 +257,9 @@ const createBatchRowFromSlot = (slot, previous = {}) => ({
   penaltyApplied: Object.prototype.hasOwnProperty.call(previous, 'penaltyApplied')
     ? Boolean(previous.penaltyApplied)
     : Boolean(slot.penaltyEnabled ?? true),
+  attendanceApplied: Object.prototype.hasOwnProperty.call(previous, 'attendanceApplied')
+    ? Boolean(previous.attendanceApplied)
+    : true,
   scanning: false,
   progress: previous.progress || 0,
   savedRecord: previous.savedRecord || null,
@@ -2176,7 +2179,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
     if (!row) return;
     const confirmedNames = row.names.filter((item) => item.matched);
     const skippedCount = row.names.filter((item) => !item.matched).length + row.ambiguous.length;
-    if (!confirmedNames.length) {
+    if (row.attendanceApplied !== false && !confirmedNames.length) {
       updateBatchRow(key, { message: '먼저 사진을 넣고 인식해 주세요.' });
       return;
     }
@@ -2191,6 +2194,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
           bossName: row.bossName,
           score: Number(row.score || 1) * (row.doubleScore ? 2 : 1),
           penaltyApplied: Boolean(row.penaltyApplied),
+          attendanceApplied: row.attendanceApplied !== false,
           memo: [row.longTerm ? '장기전' : '', row.doubleScore ? '새벽/쟁 일정 2배' : ''].filter(Boolean).join(', '),
           members: confirmedNames.map((item) => ({ characterName: item.name, clanName: item.clanName })),
         }),
@@ -2549,6 +2553,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
                   <label className="batch-check"><input type="checkbox" checked={row.doubleScore} onChange={(event) => updateBatchRow(row.key, { doubleScore: event.target.checked })} /> 새벽/쟁 일정(2배)</label>
                   <label className="batch-check"><input type="checkbox" checked={row.longTerm} onChange={(event) => updateBatchRow(row.key, { longTerm: event.target.checked })} /> 장기전</label>
                   <label className="batch-check penalty-check"><input type="checkbox" checked={row.penaltyApplied} onChange={(event) => updateBatchRow(row.key, { penaltyApplied: event.target.checked })} /> 패널티</label>
+                  <label className="batch-check"><input type="checkbox" checked={row.attendanceApplied !== false} onChange={(event) => updateBatchRow(row.key, { attendanceApplied: event.target.checked })} /> 출석 적용</label>
                   <div className="batch-actions">
                     <button type="button" className="outline-button no-margin" disabled={!row.files.length || row.scanning} onClick={() => scanBatchRow(row.key)}>{row.scanning ? `인식 ${row.progress}%` : '글자인식'}</button>
                     <button type="button" className="primary-button no-margin" disabled={row.scanning} onClick={() => saveBatchRow(row.key)}>인원체크 완료</button>

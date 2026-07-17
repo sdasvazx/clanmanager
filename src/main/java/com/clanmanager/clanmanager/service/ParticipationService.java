@@ -33,11 +33,11 @@ public class ParticipationService {
         var members = memberRepository.findByActiveTrueOrderByMemberIdAsc();
         var activeActivities = activityTypeRepository.findByActiveTrueOrderByDisplayOrderAscActivityTypeIdAsc();
 
-        Map<Long, Long> totalByActivityId = attendanceRepository.findActivityOccurrenceCountsByPeriod(startDate, endDate)
+        Map<Long, Long> totalByActivityId = bossParticipationRecordRepository.findAppliedActivityOccurrenceCountsByPeriod(startDate, endDate)
                 .stream()
                 .collect(Collectors.toMap(
-                        ActivityAttendanceRepository.ActivityOccurrenceCountProjection::getActivityTypeId,
-                        ActivityAttendanceRepository.ActivityOccurrenceCountProjection::getTotalCount
+                        BossParticipationRecordRepository.ActivityOccurrenceCountProjection::getActivityTypeId,
+                        BossParticipationRecordRepository.ActivityOccurrenceCountProjection::getTotalCount
                 ));
         Map<Long, Long> penaltyTotalByActivityId = bossParticipationRecordRepository.findPenaltyActivityOccurrenceCountsByPeriod(startDate, endDate)
                 .stream()
