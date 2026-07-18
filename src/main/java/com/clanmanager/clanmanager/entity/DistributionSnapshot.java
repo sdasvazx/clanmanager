@@ -42,6 +42,9 @@ public class DistributionSnapshot {
 
     private Long remainingDiamonds;
 
+    @Column(length = 500)
+    private String periodIds;
+
     @Lob
     @Column(nullable = false)
     private String requestJson;

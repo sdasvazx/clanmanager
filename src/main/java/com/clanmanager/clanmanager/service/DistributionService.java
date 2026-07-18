@@ -56,9 +56,10 @@ public class DistributionService {
     @Transactional(readOnly = true)
     public DistributionResponseDto calculate(DistributionRequestDto request) {
         DistributionSettings settings = normalize(request);
-        ParticipationResponseDto participation = getParticipationForDistribution(request);
         Map<Long, Member> memberMap = memberRepository.findByActiveTrueOrderByMemberIdAsc().stream()
                 .collect(Collectors.toMap(Member::getMemberId, Function.identity()));
+        ParticipationAggregationResult aggregation = getParticipationForDistribution(settings, memberMap);
+        ParticipationResponseDto participation = aggregation.participation();
 
         List<DistributionResponseDto.ResultItemDto> baseResults = participation.getRows().stream()
                 .filter(row -> memberMap.containsKey(row.getMemberId()))
@@ -99,6 +100,9 @@ public class DistributionService {
                 .clanDiamonds(settings.clanDiamonds())
                 .participationDiamonds(settings.participationDiamonds())
                 .powerDiamonds(settings.powerDiamonds())
+                .periodIds(settings.periodIds())
+                .selectedPeriods(aggregation.selectedPeriods())
+                .totalActivityCount(aggregation.totalActivityCount())
                 .allocatedDiamonds(allocated)
                 .remainingDiamonds(Math.max(0L, total - allocated))
                 .readOnly(false)
@@ -118,6 +122,7 @@ public class DistributionService {
                 .totalDiamonds(response.getTotalDiamonds())
                 .allocatedDiamonds(response.getAllocatedDiamonds())
                 .remainingDiamonds(response.getRemainingDiamonds())
+                .periodIds(joinPeriodIds(response.getPeriodIds()))
                 .requestJson(writeJson(request))
                 .responseJson(writeJson(response))
                 .createdByMemberId(admin.getMemberId())
@@ -137,6 +142,7 @@ public class DistributionService {
                         .totalDiamonds(snapshot.getTotalDiamonds())
                         .allocatedDiamonds(snapshot.getAllocatedDiamonds())
                         .remainingDiamonds(snapshot.getRemainingDiamonds())
+                        .periodIds(parsePeriodIds(snapshot.getPeriodIds()))
                         .createdAt(snapshot.getCreatedAt())
                         .createdByName(snapshot.getCreatedByName())
                         .build())
@@ -199,30 +205,108 @@ public class DistributionService {
         return response;
     }
 
-    private ParticipationResponseDto getParticipationForDistribution(DistributionRequestDto request) {
-        ParticipationPeriod period = resolveParticipationPeriod(request);
-        if (period == null) {
-            return participationService.getParticipation(null, null);
+    private ParticipationAggregationResult getParticipationForDistribution(
+            DistributionSettings settings,
+            Map<Long, Member> memberMap
+    ) {
+        List<ParticipationPeriod> selectedPeriods = resolveParticipationPeriods(settings.periodIds());
+        Map<Long, ParticipationAggregate> aggregates = new LinkedHashMap<>();
+        memberMap.values().forEach(member -> aggregates.put(member.getMemberId(), new ParticipationAggregate(member)));
+
+        Map<Long, ActivityColumnAggregate> activityColumns = new LinkedHashMap<>();
+        List<DistributionResponseDto.PeriodSummaryDto> periodSummaries = new ArrayList<>();
+        LocalDate startDate = null;
+        LocalDate endDate = null;
+        int integratedTotalActivityCount = 0;
+
+        for (ParticipationPeriod period : selectedPeriods) {
+            ParticipationResponseDto periodParticipation = participationService.getParticipation(period.getStartDate(), period.getEndDate());
+            int periodTotalActivityCount = periodParticipation.getTotalActivityCount() == null
+                    ? 0
+                    : periodParticipation.getTotalActivityCount();
+
+            integratedTotalActivityCount += periodTotalActivityCount;
+            for (ParticipationAggregate aggregate : aggregates.values()) {
+                aggregate.addTotalActivityCount(periodTotalActivityCount);
+            }
+
+            if (periodParticipation.getRows() != null) {
+                periodParticipation.getRows().forEach(row -> {
+                    ParticipationAggregate aggregate = aggregates.get(row.getMemberId());
+                    if (aggregate != null) {
+                        aggregate.add(row);
+                    }
+                });
+            }
+
+            if (periodParticipation.getActivityColumns() != null) {
+                periodParticipation.getActivityColumns().forEach(column ->
+                        activityColumns.computeIfAbsent(column.getActivityTypeId(), ignored -> new ActivityColumnAggregate(column))
+                                .add(column.getTotalCount())
+                );
+            }
+
+            periodSummaries.add(DistributionResponseDto.PeriodSummaryDto.builder()
+                    .periodId(period.getPeriodId())
+                    .periodIndex(period.getPeriodIndex())
+                    .periodName(period.getPeriodName())
+                    .startDate(period.getStartDate())
+                    .endDate(period.getEndDate())
+                    .totalActivityCount(periodTotalActivityCount)
+                    .build());
+            startDate = startDate == null || period.getStartDate().isBefore(startDate) ? period.getStartDate() : startDate;
+            endDate = endDate == null || period.getEndDate().isAfter(endDate) ? period.getEndDate() : endDate;
         }
-        return participationService.getParticipation(period.getStartDate(), period.getEndDate());
+
+        long topAttendanceCount = aggregates.values().stream()
+                .mapToLong(ParticipationAggregate::attendanceCount)
+                .max()
+                .orElse(0L);
+        int topFinalScore = aggregates.values().stream()
+                .mapToInt(ParticipationAggregate::finalParticipationScore)
+                .max()
+                .orElse(0);
+
+        List<ParticipationResponseDto.ActivityColumnDto> columns = activityColumns.values().stream()
+                .sorted(Comparator
+                        .comparing(ActivityColumnAggregate::displayOrder)
+                        .thenComparing(ActivityColumnAggregate::activityTypeId))
+                .map(ActivityColumnAggregate::toDto)
+                .toList();
+        List<ParticipationResponseDto.ParticipationMemberDto> rows = aggregates.values().stream()
+                .map(aggregate -> aggregate.toDto(topAttendanceCount, topFinalScore))
+                .toList();
+
+        return new ParticipationAggregationResult(
+                ParticipationResponseDto.builder()
+                        .startDate(startDate)
+                        .endDate(endDate)
+                        .topAttendanceCount(topAttendanceCount)
+                        .totalActivityCount(integratedTotalActivityCount)
+                        .topFinalScore(topFinalScore)
+                        .totalMemberCount(memberMap.size())
+                        .activityColumns(columns)
+                        .rows(rows)
+                        .build(),
+                periodSummaries,
+                integratedTotalActivityCount
+        );
     }
 
-    private ParticipationPeriod resolveParticipationPeriod(DistributionRequestDto request) {
-        if (request != null && request.getPeriodId() != null) {
-            return participationPeriodRepository.findById(request.getPeriodId()).orElse(null);
+    private List<ParticipationPeriod> resolveParticipationPeriods(List<Long> periodIds) {
+        if (periodIds == null || periodIds.isEmpty()) {
+            throw new IllegalArgumentException("분배 회차를 1개 이상 선택해 주세요.");
         }
-        if (request != null && request.getPeriodIndex() != null) {
-            return participationPeriodRepository.findByPeriodIndex(request.getPeriodIndex()).orElse(null);
+        Map<Long, ParticipationPeriod> periodMap = participationPeriodRepository.findAllByPeriodIdIn(periodIds).stream()
+                .collect(Collectors.toMap(ParticipationPeriod::getPeriodId, Function.identity()));
+        List<ParticipationPeriod> selectedPeriods = periodIds.stream()
+                .map(periodMap::get)
+                .filter(Objects::nonNull)
+                .toList();
+        if (selectedPeriods.size() != periodIds.size()) {
+            throw new IllegalArgumentException("선택한 분배 회차 중 존재하지 않는 회차가 있습니다.");
         }
-        List<ParticipationPeriod> periods = participationPeriodRepository.findAllByOrderByPeriodIndexAsc();
-        if (periods.isEmpty()) {
-            return null;
-        }
-        LocalDate today = LocalDate.now();
-        return periods.stream()
-                .filter(period -> !today.isBefore(period.getStartDate()) && !today.isAfter(period.getEndDate()))
-                .findFirst()
-                .orElse(periods.get(periods.size() - 1));
+        return selectedPeriods;
     }
 
     private DistributionResponseDto.ResultItemDto toBaseResult(
@@ -251,6 +335,8 @@ public class DistributionService {
                 .currentPowerScore(currentPowerScore)
                 .powerScore(powerScore)
                 .attendanceCount(row.getAttendanceCount())
+                .totalActivityCount(row.getTotalActivityCount())
+                .integratedParticipationRate(row.getParticipationRate())
                 .participationRate(row.getParticipationRate())
                 .finalParticipationScore(row.getFinalParticipationScore())
                 .participationEligible(participationEligible)
@@ -343,6 +429,8 @@ public class DistributionService {
                 .currentPowerScore(row.getCurrentPowerScore())
                 .powerScore(row.getPowerScore())
                 .attendanceCount(row.getAttendanceCount())
+                .totalActivityCount(row.getTotalActivityCount())
+                .integratedParticipationRate(row.getIntegratedParticipationRate())
                 .participationRate(row.getParticipationRate())
                 .finalParticipationScore(row.getFinalParticipationScore())
                 .participationEligible(row.getParticipationEligible())
@@ -354,10 +442,14 @@ public class DistributionService {
     }
 
     private DistributionSettings normalize(DistributionRequestDto request) {
+        if (request == null) {
+            throw new IllegalArgumentException("분배 설정 정보가 필요합니다.");
+        }
         String mode = request.getMode() == null ? "CLAN" : request.getMode().trim().toUpperCase();
         if (!mode.equals("TOTAL")) {
             mode = "CLAN";
         }
+        List<Long> periodIds = normalizePeriodIds(request);
         Map<String, Long> clanDiamonds = new LinkedHashMap<>();
         CLAN_ORDER.forEach(clan -> clanDiamonds.put(clan, safeAmount(request.getClanDiamonds() == null ? null : request.getClanDiamonds().get(clan))));
         Map<String, Long> participationDiamonds = new LinkedHashMap<>();
@@ -385,8 +477,34 @@ public class DistributionService {
                 participationDiamonds,
                 powerDiamonds,
                 totalParticipationDiamonds,
-                totalPowerDiamonds
+                totalPowerDiamonds,
+                periodIds
         );
+    }
+
+    private List<Long> normalizePeriodIds(DistributionRequestDto request) {
+        List<Long> ids = new ArrayList<>();
+        if (request.getPeriodIds() != null) {
+            request.getPeriodIds().stream()
+                    .filter(Objects::nonNull)
+                    .forEach(id -> {
+                        if (!ids.contains(id)) {
+                            ids.add(id);
+                        }
+                    });
+        }
+        if (ids.isEmpty() && request.getPeriodId() != null) {
+            ids.add(request.getPeriodId());
+        }
+        if (ids.isEmpty() && request.getPeriodIndex() != null) {
+            participationPeriodRepository.findByPeriodIndex(request.getPeriodIndex())
+                    .map(ParticipationPeriod::getPeriodId)
+                    .ifPresent(ids::add);
+        }
+        if (ids.isEmpty()) {
+            throw new IllegalArgumentException("분배 회차를 1개 이상 선택해 주세요.");
+        }
+        return ids;
     }
 
     private Member requireAdmin(Long memberId) {
@@ -518,6 +636,30 @@ public class DistributionService {
         }
     }
 
+    private String joinPeriodIds(List<Long> periodIds) {
+        if (periodIds == null || periodIds.isEmpty()) {
+            return null;
+        }
+        return periodIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+    }
+
+    private List<Long> parsePeriodIds(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (String part : value.split(",")) {
+            try {
+                ids.add(Long.parseLong(part.trim()));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return ids;
+    }
+
     private DistributionResponseDto withSnapshotMeta(DistributionResponseDto response, DistributionSnapshot snapshot) {
         return DistributionResponseDto.builder()
                 .snapshotId(snapshot.getSnapshotId())
@@ -530,6 +672,9 @@ public class DistributionService {
                 .clanDiamonds(response.getClanDiamonds())
                 .participationDiamonds(response.getParticipationDiamonds())
                 .powerDiamonds(response.getPowerDiamonds())
+                .periodIds(response.getPeriodIds())
+                .selectedPeriods(response.getSelectedPeriods())
+                .totalActivityCount(response.getTotalActivityCount())
                 .allocatedDiamonds(response.getAllocatedDiamonds())
                 .remainingDiamonds(response.getRemainingDiamonds())
                 .readOnly(true)
@@ -549,8 +694,126 @@ public class DistributionService {
             Map<String, Long> participationDiamonds,
             Map<String, Long> powerDiamonds,
             long totalParticipationDiamonds,
-            long totalPowerDiamonds
+            long totalPowerDiamonds,
+            List<Long> periodIds
     ) {
+    }
+
+    private record ParticipationAggregationResult(
+            ParticipationResponseDto participation,
+            List<DistributionResponseDto.PeriodSummaryDto> selectedPeriods,
+            int totalActivityCount
+    ) {
+    }
+
+    private class ParticipationAggregate {
+        private final Member member;
+        private long attendanceCount = 0L;
+        private int totalActivityCount = 0;
+        private int baseParticipationScore = 0;
+        private int absencePenaltyScore = 0;
+        private int minorityBonusScore = 0;
+        private int finalParticipationScore = 0;
+        private final Map<Long, Long> activityCounts = new LinkedHashMap<>();
+
+        private ParticipationAggregate(Member member) {
+            this.member = member;
+        }
+
+        private void addTotalActivityCount(int count) {
+            this.totalActivityCount += Math.max(0, count);
+        }
+
+        private void add(ParticipationResponseDto.ParticipationMemberDto row) {
+            this.attendanceCount += row.getAttendanceCount() == null ? 0L : row.getAttendanceCount();
+            this.baseParticipationScore += row.getBaseParticipationScore() == null ? 0 : row.getBaseParticipationScore();
+            this.absencePenaltyScore += row.getAbsencePenaltyScore() == null ? 0 : row.getAbsencePenaltyScore();
+            this.minorityBonusScore += row.getMinorityBonusScore() == null ? 0 : row.getMinorityBonusScore();
+            this.finalParticipationScore += row.getFinalParticipationScore() == null ? 0 : row.getFinalParticipationScore();
+            if (row.getActivityCounts() != null) {
+                row.getActivityCounts().forEach((activityTypeId, count) ->
+                        this.activityCounts.merge(activityTypeId, count == null ? 0L : count, Long::sum)
+                );
+            }
+        }
+
+        private long attendanceCount() {
+            return attendanceCount;
+        }
+
+        private int finalParticipationScore() {
+            return finalParticipationScore;
+        }
+
+        private ParticipationResponseDto.ParticipationMemberDto toDto(long topAttendanceCount, int topFinalScore) {
+            double participationRate = totalActivityCount <= 0
+                    ? 0.0
+                    : round1((attendanceCount * 100.0) / totalActivityCount);
+            double contributionRate = topFinalScore <= 0
+                    ? 0.0
+                    : round1((finalParticipationScore * 100.0) / topFinalScore);
+            return ParticipationResponseDto.ParticipationMemberDto.builder()
+                    .memberId(member.getMemberId())
+                    .characterName(member.getCharacterName())
+                    .guildName(member.getGuildName())
+                    .characterClass(member.getCharacterClass())
+                    .level(member.getLevel())
+                    .combatPower(member.getCombatPower())
+                    .attendanceCount(attendanceCount)
+                    .topAttendanceCount(topAttendanceCount)
+                    .totalActivityCount(totalActivityCount)
+                    .participationRate(participationRate)
+                    .baseParticipationScore(baseParticipationScore)
+                    .absencePenaltyScore(absencePenaltyScore)
+                    .minorityBonusScore(minorityBonusScore)
+                    .finalParticipationScore(Math.max(0, finalParticipationScore))
+                    .contributionRate(contributionRate)
+                    .activityCounts(activityCounts)
+                    .build();
+        }
+    }
+
+    private static class ActivityColumnAggregate {
+        private final Long activityTypeId;
+        private final String activityName;
+        private final Integer displayOrder;
+        private final Integer participationScore;
+        private final Boolean penaltyEnabled;
+        private final Integer absencePenaltyScore;
+        private int totalCount = 0;
+
+        private ActivityColumnAggregate(ParticipationResponseDto.ActivityColumnDto column) {
+            this.activityTypeId = column.getActivityTypeId();
+            this.activityName = column.getActivityName();
+            this.displayOrder = column.getDisplayOrder();
+            this.participationScore = column.getParticipationScore();
+            this.penaltyEnabled = column.getPenaltyEnabled();
+            this.absencePenaltyScore = column.getAbsencePenaltyScore();
+        }
+
+        private void add(Integer count) {
+            this.totalCount += count == null ? 0 : count;
+        }
+
+        private Long activityTypeId() {
+            return activityTypeId;
+        }
+
+        private Integer displayOrder() {
+            return displayOrder == null ? 0 : displayOrder;
+        }
+
+        private ParticipationResponseDto.ActivityColumnDto toDto() {
+            return ParticipationResponseDto.ActivityColumnDto.builder()
+                    .activityTypeId(activityTypeId)
+                    .activityName(activityName)
+                    .displayOrder(displayOrder)
+                    .participationScore(participationScore)
+                    .penaltyEnabled(penaltyEnabled)
+                    .absencePenaltyScore(absencePenaltyScore)
+                    .totalCount(totalCount)
+                    .build();
+        }
     }
 
     private record DistributionGroupResult(

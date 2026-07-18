@@ -3,6 +3,7 @@ package com.clanmanager.clanmanager.dto;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
 import java.util.Map;
 
 @Getter
@@ -18,6 +19,7 @@ public class DistributionRequestDto {
     private Map<String, Long> clanDiamonds;
     private Map<String, Long> participationDiamonds;
     private Map<String, Long> powerDiamonds;
+    private List<Long> periodIds;
     private Long periodId;
     private Integer periodIndex;
     private Long createdByMemberId;

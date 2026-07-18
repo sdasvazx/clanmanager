@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import lombok.Setter;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,9 @@ public class DistributionResponseDto {
     private Map<String, Long> clanDiamonds;
     private Map<String, Long> participationDiamonds;
     private Map<String, Long> powerDiamonds;
+    private List<Long> periodIds;
+    private List<PeriodSummaryDto> selectedPeriods;
+    private Integer totalActivityCount;
     private Long allocatedDiamonds;
     private Long remainingDiamonds;
     private Boolean readOnly;
@@ -72,6 +76,8 @@ public class DistributionResponseDto {
         private Double currentPowerScore;
         private Double powerScore;
         private Long attendanceCount;
+        private Integer totalActivityCount;
+        private Double integratedParticipationRate;
         private Double participationRate;
         private Integer finalParticipationScore;
         private Boolean participationEligible;
@@ -79,6 +85,20 @@ public class DistributionResponseDto {
         private Long participationAmount;
         private Long powerAmount;
         private Long finalAmount;
+    }
+
+    @Getter
+    @Setter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PeriodSummaryDto {
+        private Long periodId;
+        private Integer periodIndex;
+        private String periodName;
+        private LocalDate startDate;
+        private LocalDate endDate;
+        private Integer totalActivityCount;
     }
 
     @Getter
@@ -94,6 +114,8 @@ public class DistributionResponseDto {
         private Long totalDiamonds;
         private Long allocatedDiamonds;
         private Long remainingDiamonds;
+        private List<Long> periodIds;
+        private List<PeriodSummaryDto> selectedPeriods;
         private LocalDateTime createdAt;
         private String createdByName;
     }

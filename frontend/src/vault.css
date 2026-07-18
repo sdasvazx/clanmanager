@@ -431,6 +431,97 @@
   font-weight: 700;
 }
 
+.period-picker {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+}
+
+.period-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.period-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.period-picker-actions button {
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: #eef5ff;
+  color: #2563eb;
+  font-weight: 900;
+}
+
+.period-picker-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.period-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.period-checkbox-card {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: flex-start;
+  gap: 9px !important;
+  padding: 10px 12px;
+  border: 1px solid #dbe7f5;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.period-checkbox-card input {
+  width: auto;
+  margin-top: 3px;
+}
+
+.period-checkbox-card span {
+  display: grid;
+  gap: 3px;
+}
+
+.period-checkbox-card b {
+  color: #0f172a;
+}
+
+.period-checkbox-card small {
+  color: #64748b;
+  font-size: .82rem;
+}
+
+.selected-period-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.selected-period-tags span,
+.selected-period-tags em {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #1d4ed8;
+  font-size: .82rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.selected-period-tags em {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: 1fr 1fr;
