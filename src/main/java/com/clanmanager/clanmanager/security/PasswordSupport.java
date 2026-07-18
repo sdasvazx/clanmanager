@@ -5,6 +5,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 public final class PasswordSupport {
 
+    public static final String DEFAULT_INITIAL_PASSWORD = "112200";
+
     private static final String BCRYPT_PREFIX = "$2";
     private static final PasswordEncoder ENCODER = new BCryptPasswordEncoder();
 

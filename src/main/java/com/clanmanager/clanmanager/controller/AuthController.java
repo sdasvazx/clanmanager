@@ -30,7 +30,7 @@ public class AuthController {
 
         Member savedMember = memberRepository.save(Member.builder()
                 .characterName(request.getCharacterName())
-                .password(PasswordSupport.encode(request.getPassword()))
+                .password(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD))
                 .combatPower(request.getCombatPower())
                 .role(memberRepository.count() == 0 ? MemberRole.ADMIN : MemberRole.MEMBER)
                 .active(true)

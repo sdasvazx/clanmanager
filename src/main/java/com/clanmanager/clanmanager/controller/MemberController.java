@@ -107,13 +107,9 @@ public class MemberController {
             throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
         }
 
-        String initialPassword = request.getInitialPassword() == null || request.getInitialPassword().isBlank()
-                ? "112200"
-                : request.getInitialPassword();
-
         return memberRepository.save(Member.builder()
                 .characterName(characterName)
-                .password(PasswordSupport.encode(initialPassword))
+                .password(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD))
                 .combatPower(request.getCombatPower() == null ? 0 : request.getCombatPower())
                 .guildName(blankToNull(request.getGuildName()))
                 .characterClass(blankToNull(request.getCharacterClass()))
@@ -255,7 +251,7 @@ public class MemberController {
             if (isNew) {
                 member = Member.builder()
                         .characterName(characterName)
-                        .password(PasswordSupport.encode(row.getInitialPassword() == null || row.getInitialPassword().isBlank() ? "112200" : row.getInitialPassword()))
+                        .password(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD))
                         .active(true)
                         .build();
             }
@@ -320,7 +316,7 @@ public class MemberController {
 
         String nextPassword = request == null ? null : request.getNewPassword();
         if (nextPassword == null || nextPassword.trim().isBlank()) {
-            nextPassword = "112200";
+            nextPassword = PasswordSupport.DEFAULT_INITIAL_PASSWORD;
         }
         if (nextPassword.trim().length() < 4) {
             throw new IllegalArgumentException("새 비밀번호는 4자리 이상으로 입력해 주세요.");

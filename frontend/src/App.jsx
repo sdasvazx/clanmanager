@@ -9,6 +9,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api
 const OCR_API_BASE = import.meta.env.VITE_OCR_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8090' : '');
 const OCR_API_KEY = import.meta.env.VITE_OCR_API_KEY ?? '';
 const ROULETTE_URL = 'https://lazygyu.github.io/roulette/';
+const DEFAULT_INITIAL_PASSWORD = '112200';
 
 const THEME_PRESETS = [
   { id: 'light', label: '기본 파랑', icon: '🔵' },
@@ -1010,12 +1011,12 @@ function AuthScreen({ onLogin }) {
       if (isRegister) {
         await request('/auth/register', {
           method: 'POST',
-          body: JSON.stringify({ ...form, combatPower: Number(form.combatPower || 0) }),
+          body: JSON.stringify({ ...form, password: DEFAULT_INITIAL_PASSWORD, combatPower: Number(form.combatPower || 0) }),
         });
       }
       const loggedIn = await request('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ characterName: form.characterName, password: form.password }),
+        body: JSON.stringify({ characterName: form.characterName, password: isRegister ? DEFAULT_INITIAL_PASSWORD : form.password }),
       });
       onLogin(loggedIn);
     } catch (err) {
@@ -1034,7 +1035,8 @@ function AuthScreen({ onLogin }) {
         <p>캐릭터 정보와 클랜 활동을 한곳에서 관리하세요.</p>
         <form onSubmit={submit}>
           <label>캐릭터 이름<input required value={form.characterName} onChange={(e) => setForm({ ...form, characterName: e.target.value })} /></label>
-          <label>비밀번호<input required type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
+          <label>비밀번호<input required type={isRegister ? 'text' : 'password'} readOnly={isRegister} value={isRegister ? DEFAULT_INITIAL_PASSWORD : form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
+          {isRegister && <p className="subtle">처음 로그인 비밀번호는 모든 클랜원 공통 {DEFAULT_INITIAL_PASSWORD}입니다. 로그인 후 마이페이지에서 변경할 수 있습니다.</p>}
           {isRegister && <label>전투력<input required type="number" value={form.combatPower} onChange={(e) => setForm({ ...form, combatPower: e.target.value })} /></label>}
           {error && <p className="form-error">{error}</p>}
           <button className="primary-button" disabled={loading}>{loading ? '처리 중...' : isRegister ? '회원가입' : '로그인'}</button>
@@ -4242,7 +4244,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
       });
       setCreateForm(emptyCreateForm);
       await load();
-      setMessage(`${saved.characterName} 클랜원을 미리 등록했습니다. 임시 비밀번호는 등록한 값으로 로그인하면 됩니다.`);
+      setMessage(`${saved.characterName} 클랜원을 미리 등록했습니다. 초기 비밀번호는 ${DEFAULT_INITIAL_PASSWORD}입니다.`);
     } catch (err) { setMessage(err.message); }
   };
 
@@ -4489,11 +4491,11 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
 
       <section className="white-card role-card">
         <div className="section-heading">
-          <div><h2>클랜원 미리 등록</h2><p className="subtle">운영자가 캐릭터 정보를 먼저 넣어두면, 클랜원은 임시 비밀번호로 로그인한 뒤 마이페이지에서 직접 변경할 수 있습니다.</p></div>
+          <div><h2>클랜원 미리 등록</h2><p className="subtle">운영자가 캐릭터 정보를 먼저 넣어두면, 클랜원은 초기 비밀번호 {DEFAULT_INITIAL_PASSWORD}로 로그인한 뒤 마이페이지에서 직접 변경할 수 있습니다.</p></div>
         </div>
         <form className="admin-create-form" onSubmit={createMember}>
           <label>닉네임<input required value={createForm.characterName} onChange={(e) => setCreateForm({ ...createForm, characterName: e.target.value })} /></label>
-          <label>임시 비밀번호<input required value={createForm.initialPassword} onChange={(e) => setCreateForm({ ...createForm, initialPassword: e.target.value })} /></label>
+          <label>초기 비밀번호<input required readOnly value={DEFAULT_INITIAL_PASSWORD} /></label>
           <label>클랜<select value={createForm.guildName} onChange={(e) => setCreateForm({ ...createForm, guildName: e.target.value })}><option value="">클랜 선택</option>{managedClanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}</select></label>
           <label>클래스<select value={createForm.characterClass} onChange={(e) => setCreateForm({ ...createForm, characterClass: e.target.value })}><option value="">클래스 선택</option>{managedClassOptions.map((className) => <option key={className} value={className}>{className}</option>)}</select></label>
           <label>레벨<input type="number" min="0" value={createForm.level} onChange={(e) => setCreateForm({ ...createForm, level: e.target.value })} /></label>
