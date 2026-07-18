@@ -130,21 +130,22 @@ public class ParticipationService {
             int totalActivityCount,
             int minorityBonusScore
     ) {
-        long attendanceCount = counts.values().stream().mapToLong(Long::longValue).sum();
+        long attendanceCount = 0L;
         int baseScore = 0;
         int penaltyScore = 0;
         Map<Long, Long> orderedCounts = new LinkedHashMap<>();
 
         for (ActivityType activity : activeActivities) {
             Long activityTypeId = activity.getActivityTypeId();
-            long attended = counts.getOrDefault(activityTypeId, 0L);
             long total = totalByActivityId.getOrDefault(activityTypeId, 0L);
+            long attended = capCount(counts.getOrDefault(activityTypeId, 0L), total);
             int participationScore = participationScore(activity);
             orderedCounts.put(activityTypeId, attended);
+            attendanceCount += attended;
             baseScore += Math.toIntExact(attended * participationScore);
             if (Boolean.TRUE.equals(activity.getPenaltyEnabled())) {
                 long penaltyTotal = penaltyTotalByActivityId.getOrDefault(activityTypeId, 0L);
-                long penaltyAttended = penaltyCounts.getOrDefault(activityTypeId, 0L);
+                long penaltyAttended = capCount(penaltyCounts.getOrDefault(activityTypeId, 0L), penaltyTotal);
                 long missed = Math.max(0L, penaltyTotal - penaltyAttended);
                 penaltyScore += Math.toIntExact(missed * (long) absencePenaltyScore(activity));
             }
@@ -153,7 +154,7 @@ public class ParticipationService {
         int finalScore = Math.max(0, baseScore - penaltyScore + minorityBonusScore);
         double participationRate = totalActivityCount == 0
                 ? 0.0
-                : Math.round(((double) attendanceCount / totalActivityCount) * 1000) / 10.0;
+                : Math.min(100.0, Math.round(((double) attendanceCount / totalActivityCount) * 1000) / 10.0);
 
         return ParticipationResponseDto.ParticipationMemberDto.builder()
                 .memberId(member.getMemberId())
@@ -232,5 +233,10 @@ public class ParticipationService {
 
     private int absencePenaltyScore(ActivityType activity) {
         return activity.getAbsencePenaltyScore() == null ? 0 : activity.getAbsencePenaltyScore();
+    }
+
+    private long capCount(long count, long total) {
+        if (count <= 0 || total <= 0) return 0L;
+        return Math.min(count, total);
     }
 }
