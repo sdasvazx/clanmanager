@@ -10,6 +10,16 @@ const OCR_API_BASE = import.meta.env.VITE_OCR_API_BASE_URL ?? (import.meta.env.D
 const OCR_API_KEY = import.meta.env.VITE_OCR_API_KEY ?? '';
 const ROULETTE_URL = 'https://lazygyu.github.io/roulette/';
 
+const THEME_PRESETS = [
+  { id: 'light', label: '기본 파랑', icon: '🔵' },
+  { id: 'violet', label: '보라', icon: '🟣' },
+  { id: 'emerald', label: '초록', icon: '🟢' },
+  { id: 'sunset', label: '주황', icon: '🟠' },
+  { id: 'rose', label: '장미', icon: '🌹' },
+  { id: 'gold', label: '흑금', icon: '🟡' },
+  { id: 'dark', label: '다크', icon: '🌙' },
+];
+
 const menu = [
   ['lobby', '로', '로비'],
   ['my-info', '내', '내 정보 확인'],
@@ -1094,7 +1104,15 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
         <button className="hamburger" onClick={() => setCollapsed(!collapsed)}>☰</button>
         <div className="brand-mark">C</div>
         <div className="topbar-spacer" />
-        <button className="circle-button" title={theme === 'dark' ? '화이트 모드' : '다크 모드'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀' : '☾'}</button>
+        <label className="theme-picker" title="사이트 색상 선택">
+          <span>{THEME_PRESETS.find((preset) => preset.id === theme)?.icon || '🎨'}</span>
+          <select value={theme} onChange={(event) => setTheme(event.target.value)} aria-label="사이트 색상 선택">
+            {THEME_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>{preset.label}</option>
+            ))}
+          </select>
+        </label>
+        <button className="circle-button" title={theme === 'dark' ? '기본 파랑' : '다크 모드'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀' : '☾'}</button>
         <button className="profile-menu name-only"><span>{member.characterName}</span></button>
         <button className="logout-icon" title="로그아웃" onClick={onLogout}>⇥</button>
       </header>
