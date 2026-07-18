@@ -52,6 +52,7 @@ public class InitialDataInitializer implements ApplicationRunner {
         deactivateObsoleteTimedTypes();
         deactivateInvalidSchedules();
         normalizeVaultVersionColumns();
+        normalizeNoticeImageColumn();
         createClanVault();
         promoteFirstMemberToAdminIfNeeded();
     }
@@ -96,6 +97,15 @@ public class InitialDataInitializer implements ApplicationRunner {
     private void normalizeVaultVersionColumns() {
         jdbcTemplate.update("UPDATE clan_vault SET version = 0 WHERE version IS NULL");
         jdbcTemplate.update("UPDATE vault_transactions SET version = 0 WHERE version IS NULL");
+    }
+
+    private void normalizeNoticeImageColumn() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE notices MODIFY image_data_url LONGTEXT");
+        } catch (Exception ignored) {
+            // Hibernate creates the column as LONGTEXT for new databases.
+            // Some databases/tests may not support this exact MySQL syntax, so keep startup safe.
+        }
     }
 
     private void createClanVault() {

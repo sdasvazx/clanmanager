@@ -131,6 +131,29 @@ const copyToClipboard = async (text) => {
   document.execCommand('copy');
   document.body.removeChild(textarea);
 };
+const imageFileToCompressedDataUrl = (file, maxWidth = 1400, maxHeight = 1400, quality = 0.82) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const image = new Image();
+    image.onload = () => {
+      const ratio = Math.min(1, maxWidth / image.width, maxHeight / image.height);
+      const width = Math.max(1, Math.round(image.width * ratio));
+      const height = Math.max(1, Math.round(image.height * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    image.onerror = () => reject(new Error('이미지를 처리하지 못했습니다. 다른 파일로 다시 시도해 주세요.'));
+    image.src = String(reader.result || '');
+  };
+  reader.onerror = () => reject(new Error('이미지를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.'));
+  reader.readAsDataURL(file);
+});
 const normalize = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
 const normalizeForOcrMatch = (value) => normalize(value)
   .replace(/2/g, 'z')
@@ -1160,7 +1183,7 @@ function NoticePanel({ member, notices, onReload }) {
   const [message, setMessage] = useState('');
   const canManage = member.role === 'ADMIN';
 
-  const selectImage = (event) => {
+  const selectImage = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -1174,17 +1197,19 @@ function NoticePanel({ member, notices, onReload }) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
+    setMessage('이미지 첨부 처리 중...');
+    try {
+      const imageDataUrl = await imageFileToCompressedDataUrl(file);
       setForm((prev) => ({
         ...prev,
-        imageDataUrl: String(reader.result || ''),
+        imageDataUrl,
         imageFileName: file.name,
       }));
       setMessage('');
-    };
-    reader.onerror = () => setMessage('이미지를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.');
-    reader.readAsDataURL(file);
+    } catch (err) {
+      setMessage(err.message || '이미지를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.');
+      event.target.value = '';
+    }
   };
 
   const clearImage = () => {
