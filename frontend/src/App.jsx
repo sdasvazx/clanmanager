@@ -1664,6 +1664,25 @@ function Participation({ member, setPage }) {
       return { bossName, total, attended };
     }).filter((row) => row.total || row.attended);
   }, [activityColumns, detailRecordsInPeriod, detailHistoryInPeriod]);
+  const detailPeriodSummaries = useMemo(() => detailPeriodOptions
+    .map((option) => {
+      const periodRecords = bossRecords.filter((record) => record.bossDate >= option.start && record.bossDate < option.end);
+      const periodHistory = detailHistory.filter((record) => record.bossDate >= option.start && record.bossDate < option.end);
+      const total = periodRecords.length;
+      const attended = periodHistory.length;
+      const score = periodHistory.reduce((sum, row) => sum + Number(row.score || 1), 0);
+      const rate = total ? Math.round((attended / total) * 1000) / 10 : 0;
+      return {
+        ...option,
+        label: periodNames[option.index] || defaultPeriodName(option),
+        total,
+        attended,
+        score,
+        rate,
+      };
+    })
+    .filter((row) => row.total || row.attended || row.index <= getCurrentParticipationPeriodIndex())
+    .sort((a, b) => b.index - a.index), [bossRecords, detailHistory, detailPeriodOptions, periodNames]);
   const detailParticipationScore = detailHistoryInPeriod.reduce((sum, row) => sum + Number(row.score || 1), 0);
   const detailPenaltyScore = 0;
   const detailFinalScore = Math.max(0, detailParticipationScore - detailPenaltyScore);
@@ -1789,6 +1808,32 @@ function Participation({ member, setPage }) {
                 <span><small>패널티</small><b className="red-text">{detailPenaltyScore}점</b></span>
                 <span><small>최종 점수</small><b className="blue-text">{detailFinalScore}점</b></span>
               </div>
+            </div>
+            <div className="participation-detail-panel">
+              <div className="section-heading compact-heading">
+                <h3>지난 회차 기록</h3>
+                <span className="result-count">{detailPeriodSummaries.length}개 회차</span>
+              </div>
+              {detailLoading ? (
+                <div className="empty-state">지난 기록을 불러오는 중입니다.</div>
+              ) : (
+                <div className="participation-period-history-grid">
+                  {detailPeriodSummaries.map((row) => (
+                    <button
+                      type="button"
+                      key={row.index}
+                      className={`period-history-card ${row.index === detailPeriodIndex ? 'active' : ''}`}
+                      onClick={() => setDetailPeriodIndex(row.index)}
+                    >
+                      <b>{row.label}</b>
+                      <span>{row.start} ~ {row.end}</span>
+                      <strong>{row.rate}%</strong>
+                      <small>참여 {row.attended}회 / 총 {row.total}회 · {row.score}점</small>
+                    </button>
+                  ))}
+                  {!detailPeriodSummaries.length && <div className="empty-state">지난 회차 기록이 없습니다.</div>}
+                </div>
+              )}
             </div>
             <div className="participation-detail-panel">
               <h3>보스별 참여 현황</h3>
