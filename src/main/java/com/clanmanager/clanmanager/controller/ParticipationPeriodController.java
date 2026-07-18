@@ -23,7 +23,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ParticipationPeriodController {
 
-    private static final LocalDate AUTO_PERIOD_START = LocalDate.of(2026, 6, 9);
+    private static final LocalDate AUTO_PERIOD_START = LocalDate.of(2026, 6, 10);
     private static final int AUTO_PERIOD_DAYS = 14;
     private static final int AUTO_PERIOD_LOOKAHEAD = 6;
     private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
