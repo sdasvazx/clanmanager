@@ -1156,16 +1156,47 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
 function NoticePanel({ member, notices, onReload }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(true);
-  const [form, setForm] = useState({ title: '', content: '' });
+  const [form, setForm] = useState({ title: '', content: '', imageDataUrl: '', imageFileName: '' });
   const [message, setMessage] = useState('');
   const canManage = member.role === 'ADMIN';
+
+  const selectImage = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setMessage('이미지 파일만 등록할 수 있습니다.');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setMessage('공지 이미지는 4MB 이하로 등록해 주세요.');
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm((prev) => ({
+        ...prev,
+        imageDataUrl: String(reader.result || ''),
+        imageFileName: file.name,
+      }));
+      setMessage('');
+    };
+    reader.onerror = () => setMessage('이미지를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.');
+    reader.readAsDataURL(file);
+  };
+
+  const clearImage = () => {
+    setForm((prev) => ({ ...prev, imageDataUrl: '', imageFileName: '' }));
+  };
 
   const save = async (event) => {
     event.preventDefault();
     setMessage('');
     try {
       await request('/notices', { method: 'POST', body: JSON.stringify({ ...form, createdByMemberId: member.memberId }) });
-      setForm({ title: '', content: '' });
+      setForm({ title: '', content: '', imageDataUrl: '', imageFileName: '' });
       setOpen(false);
       await onReload();
     } catch (err) {
@@ -1193,8 +1224,38 @@ function NoticePanel({ member, notices, onReload }) {
           {canManage && <button className="small-primary" onClick={() => setOpen(!open)}>+ 추가</button>}
         </div>
       </div>
-      {open && <form className="inline-form" onSubmit={save}><input required placeholder="공지 제목" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /><textarea required placeholder="공지 내용" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /><button className="primary-button">공지 등록</button>{message && <p className="form-error">{message}</p>}</form>}
-      {expanded && (notices.length ? notices.map((n) => <article key={n.noticeId} className="notice-row"><div className="notice-row-head"><b>{n.title}</b>{canManage && <button className="notice-delete-button" onClick={() => remove(n)}>삭제</button>}</div><p>{n.content}</p><small>{new Date(n.createdAt).toLocaleString('ko-KR')}</small></article>) : <div className="empty-state">아직 등록된 공지사항이 없습니다.</div>)}
+      {open && (
+        <form className="inline-form notice-form" onSubmit={save}>
+          <input required placeholder="공지 제목" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <textarea required placeholder="공지 내용" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} />
+          <label className="notice-image-picker">
+            <span>사진 첨부</span>
+            <input type="file" accept="image/*" onChange={selectImage} />
+          </label>
+          {form.imageDataUrl && (
+            <div className="notice-image-preview">
+              <img src={form.imageDataUrl} alt={form.imageFileName || '공지 첨부 이미지 미리보기'} />
+              <div>
+                <b>{form.imageFileName || '첨부 이미지'}</b>
+                <button type="button" className="notice-delete-button" onClick={clearImage}>사진 제거</button>
+              </div>
+            </div>
+          )}
+          <button className="primary-button">공지 등록</button>
+          {message && <p className="form-error">{message}</p>}
+        </form>
+      )}
+      {expanded && (notices.length ? notices.map((n) => (
+        <article key={n.noticeId} className="notice-row">
+          <div className="notice-row-head">
+            <b>{n.title}</b>
+            {canManage && <button className="notice-delete-button" onClick={() => remove(n)}>삭제</button>}
+          </div>
+          <p>{n.content}</p>
+          {n.imageDataUrl && <img className="notice-image" src={n.imageDataUrl} alt={n.imageFileName || `${n.title} 첨부 이미지`} />}
+          <small>{new Date(n.createdAt).toLocaleString('ko-KR')}</small>
+        </article>
+      )) : <div className="empty-state">아직 등록된 공지사항이 없습니다.</div>)}
     </section>
   );
 }

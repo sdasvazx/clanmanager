@@ -24,6 +24,13 @@ public class Notice {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @Lob
+    @Column(columnDefinition = "LONGTEXT")
+    private String imageDataUrl;
+
+    @Column(length = 255)
+    private String imageFileName;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private Member createdBy;

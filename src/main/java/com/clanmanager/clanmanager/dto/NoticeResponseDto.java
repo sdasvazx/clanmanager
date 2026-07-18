@@ -14,6 +14,8 @@ public class NoticeResponseDto {
     private Long noticeId;
     private String title;
     private String content;
+    private String imageDataUrl;
+    private String imageFileName;
     private Long createdByMemberId;
     private String createdByName;
     private LocalDateTime createdAt;
@@ -24,6 +26,8 @@ public class NoticeResponseDto {
                 .noticeId(notice.getNoticeId())
                 .title(notice.getTitle())
                 .content(notice.getContent())
+                .imageDataUrl(notice.getImageDataUrl())
+                .imageFileName(notice.getImageFileName())
                 .createdByMemberId(createdBy == null ? null : createdBy.getMemberId())
                 .createdByName(createdBy == null ? null : createdBy.getCharacterName())
                 .createdAt(notice.getCreatedAt())
