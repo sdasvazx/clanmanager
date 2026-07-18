@@ -1184,11 +1184,12 @@ function Lobby({ member, setPage, favoritePages = [] }) {
   const [members, setMembers] = useState([]);
   const [participationSummary, setParticipationSummary] = useState(null);
   const [message, setMessage] = useState('');
+  const currentPeriod = getParticipationPeriod(getCurrentParticipationPeriodIndex());
   const load = async () => {
     const [noticeResult, memberResult, participationResult] = await Promise.allSettled([
       request('/notices'),
       request('/members'),
-      request('/participation'),
+      request(`/participation?startDate=${currentPeriod.start}&endDate=${currentPeriod.end}`),
     ]);
 
     if (noticeResult.status === 'fulfilled') setNotices(Array.isArray(noticeResult.value) ? noticeResult.value : []);
@@ -1229,12 +1230,16 @@ function Lobby({ member, setPage, favoritePages = [] }) {
           ))}
         </div>
       </section>
-      <ParticipationRanking rows={participationRows} totalCount={participationSummary?.totalMemberCount ?? members.length} />
+      <ParticipationRanking
+        rows={participationRows}
+        totalCount={participationSummary?.totalMemberCount ?? members.length}
+        periodLabel={defaultPeriodName(currentPeriod)}
+      />
     </>
   );
 }
 
-function ParticipationRanking({ rows, totalCount }) {
+function ParticipationRanking({ rows, totalCount, periodLabel = '' }) {
   const targetClans = clanDisplayOrder.slice(0, 4);
   const grouped = new Map(groupByClan(rows));
 
@@ -1243,7 +1248,7 @@ function ParticipationRanking({ rows, totalCount }) {
       <div className="section-heading">
         <div>
           <h2>🏆 클랜별 참여율 순위</h2>
-          <p className="subtle">각 클랜별 상위 10명을 2x2로 보기 좋게 표시합니다.</p>
+          <p className="subtle">{periodLabel ? `${periodLabel} 기준 · ` : ''}각 클랜별 상위 10명을 2x2로 보기 좋게 표시합니다.</p>
         </div>
         <span className="result-count">전체 {totalCount}명</span>
       </div>
