@@ -333,6 +333,35 @@ public class MemberController {
         );
     }
 
+    @PatchMapping("/passwords/reset")
+    public Map<String, Object> resetAllPasswords(
+            @RequestParam Long adminMemberId,
+            @Valid @RequestBody(required = false) PasswordResetRequest request
+    ) {
+        Member admin = findMember(adminMemberId);
+        if (admin.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("Only admins can reset all member passwords.");
+        }
+
+        String nextPassword = request == null ? null : request.getNewPassword();
+        if (nextPassword == null || nextPassword.trim().isBlank()) {
+            nextPassword = PasswordSupport.DEFAULT_INITIAL_PASSWORD;
+        }
+        if (nextPassword.trim().length() < 4) {
+            throw new IllegalArgumentException("Password must be at least 4 characters.");
+        }
+
+        String encodedPassword = PasswordSupport.encode(nextPassword.trim());
+        List<Member> members = memberRepository.findAll();
+        members.forEach(member -> member.setPassword(encodedPassword));
+        memberRepository.saveAll(members);
+
+        return Map.of(
+                "message", "All member passwords reset.",
+                "resetCount", members.size()
+        );
+    }
+
     @DeleteMapping("/{memberId}")
     public Map<String, Object> deleteMember(
             @PathVariable Long memberId,
