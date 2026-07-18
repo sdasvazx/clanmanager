@@ -23,7 +23,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ParticipationPeriodController {
 
-    private static final LocalDate AUTO_PERIOD_START = LocalDate.of(2026, 7, 8);
+    private static final LocalDate AUTO_PERIOD_START = LocalDate.of(2026, 6, 9);
     private static final int AUTO_PERIOD_DAYS = 14;
     private static final int AUTO_PERIOD_LOOKAHEAD = 6;
     private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
@@ -44,18 +44,37 @@ public class ParticipationPeriodController {
         int maxIndex = currentIndex + AUTO_PERIOD_LOOKAHEAD;
         for (int index = 0; index <= maxIndex; index++) {
             int periodIndex = index;
-            if (periodRepository.findByPeriodIndex(periodIndex).isPresent()) {
-                continue;
-            }
             int displayIndex = index + 1;
             LocalDate startDate = AUTO_PERIOD_START.plusDays((long) index * AUTO_PERIOD_DAYS);
-            LocalDate endDate = startDate.plusDays(AUTO_PERIOD_DAYS);
-            periodRepository.save(ParticipationPeriod.builder()
-                    .periodIndex(periodIndex)
-                    .startDate(startDate)
-                    .endDate(endDate)
-                    .periodName(displayIndex + "회차 (" + startDate + " ~ " + endDate + ")")
-                    .build());
+            LocalDate endDate = startDate.plusDays(AUTO_PERIOD_DAYS - 1L);
+            String autoName = displayIndex + "회차 (" + startDate + " ~ " + endDate + ")";
+
+            ParticipationPeriod period = periodRepository.findByPeriodIndex(periodIndex)
+                    .orElseGet(() -> ParticipationPeriod.builder()
+                            .periodIndex(periodIndex)
+                            .build());
+
+            boolean changed = false;
+            if (!startDate.equals(period.getStartDate())) {
+                period.setStartDate(startDate);
+                changed = true;
+            }
+            if (!endDate.equals(period.getEndDate())) {
+                period.setEndDate(endDate);
+                changed = true;
+            }
+            if (period.getPeriodName() == null
+                    || period.getPeriodName().isBlank()
+                    || period.getPeriodName().startsWith(displayIndex + "회차 (")
+                    || period.getPeriodName().startsWith(displayIndex + "?뚯감 (")) {
+                if (!autoName.equals(period.getPeriodName())) {
+                    period.setPeriodName(autoName);
+                    changed = true;
+                }
+            }
+            if (period.getPeriodId() == null || changed) {
+                periodRepository.save(period);
+            }
         }
     }
 
