@@ -79,7 +79,7 @@ async function request(path, options = {}) {
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 const money = (value) => `${formatNumber(value)} 다이아`;
 const today = () => new Date().toISOString().slice(0, 10);
-const PARTICIPATION_PERIOD_START = import.meta.env.VITE_PARTICIPATION_PERIOD_START || '2026-06-09';
+const PARTICIPATION_PERIOD_START = import.meta.env.VITE_PARTICIPATION_PERIOD_START || '2026-06-10';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const formatLocalDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const dateOnly = (value) => {
