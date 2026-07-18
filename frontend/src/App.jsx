@@ -93,7 +93,7 @@ const addDays = (value, days) => {
 };
 const getParticipationPeriod = (index) => {
   const start = addDays(PARTICIPATION_PERIOD_START, index * 14);
-  const end = addDays(start, 14);
+  const end = addDays(start, 13);
   return { index, start, end };
 };
 const getCurrentParticipationPeriodIndex = () => {
