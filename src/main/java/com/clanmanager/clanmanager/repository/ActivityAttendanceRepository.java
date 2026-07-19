@@ -174,15 +174,32 @@ public interface ActivityAttendanceRepository
                 com.clanmanager.clanmanager.entity.AttendanceStatus.ATTENDED
               and a.member.active = true
               and a.activityType.active = true
-              and exists (
-                  select 1
-                  from BossParticipationRecord r
-                  where r.activityType = a.activityType
-                    and r.bossDate = a.attendanceDate
-                    and (
-                        r.attendanceApplied is null
-                        or r.attendanceApplied = true
-                    )
+              and (
+                  (
+                      a.bossParticipationRecord is not null
+                      and exists (
+                          select 1
+                          from BossParticipationRecord r
+                          where r = a.bossParticipationRecord
+                            and (
+                                r.attendanceApplied is null
+                                or r.attendanceApplied = true
+                            )
+                      )
+                  )
+                  or (
+                      a.bossParticipationRecord is null
+                      and exists (
+                          select 1
+                          from BossParticipationRecord r
+                          where r.activityType = a.activityType
+                            and r.bossDate = a.attendanceDate
+                            and (
+                                r.attendanceApplied is null
+                                or r.attendanceApplied = true
+                            )
+                      )
+                  )
               )
               and (:startDate is null
                    or a.attendanceDate >= :startDate)
