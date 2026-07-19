@@ -83,6 +83,7 @@ public class ParticipationService {
                     return toMemberDto(
                             member,
                             scoreActivities,
+                            activeActivities,
                             totalByActivityId,
                             penaltyTotalByActivityId,
                             counts,
@@ -118,7 +119,7 @@ public class ParticipationService {
                 .totalActivityCount(totalActivityCount)
                 .topFinalScore(topFinalScore)
                 .totalMemberCount(rows.size())
-                .activityColumns(toActivityColumns(scoreActivities, totalByActivityId))
+                .activityColumns(toActivityColumns(activeActivities, totalByActivityId))
                 .rows(rows)
                 .build();
     }
@@ -133,7 +134,8 @@ public class ParticipationService {
 
     private ParticipationResponseDto.ParticipationMemberDto toMemberDto(
             Member member,
-            List<ActivityType> activeActivities,
+            List<ActivityType> scoreActivities,
+            List<ActivityType> displayActivities,
             Map<Long, Long> totalByActivityId,
             Map<Long, Long> penaltyTotalByActivityId,
             Map<Long, Long> counts,
@@ -145,13 +147,19 @@ public class ParticipationService {
         int baseScore = 0;
         int penaltyScore = 0;
         Map<Long, Long> orderedCounts = new LinkedHashMap<>();
+        var scoreActivityIds = scoreActivities.stream()
+                .map(ActivityType::getActivityTypeId)
+                .collect(Collectors.toSet());
 
-        for (ActivityType activity : activeActivities) {
+        for (ActivityType activity : displayActivities) {
             Long activityTypeId = activity.getActivityTypeId();
             long total = totalByActivityId.getOrDefault(activityTypeId, 0L);
             long attended = capCount(counts.getOrDefault(activityTypeId, 0L), total);
             int participationScore = participationScore(activity);
             orderedCounts.put(activityTypeId, attended);
+            if (!scoreActivityIds.contains(activityTypeId)) {
+                continue;
+            }
             attendanceCount += attended;
             baseScore += Math.toIntExact(attended * participationScore);
             if (Boolean.TRUE.equals(activity.getPenaltyEnabled())) {
