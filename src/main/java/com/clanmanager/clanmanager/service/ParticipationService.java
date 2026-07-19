@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ParticipationService {
 
+    private static final String MINORITY_BATTLE_NAME = "소수쟁";
+
     private final MemberRepository memberRepository;
     private final ActivityAttendanceRepository attendanceRepository;
     private final ActivityTypeRepository activityTypeRepository;
@@ -32,6 +34,12 @@ public class ParticipationService {
     public ParticipationResponseDto getParticipation(LocalDate startDate, LocalDate endDate) {
         var members = memberRepository.findByActiveTrueOrderByMemberIdAsc();
         var activeActivities = activityTypeRepository.findByActiveTrueOrderByDisplayOrderAscActivityTypeIdAsc();
+        var scoreActivities = activeActivities.stream()
+                .filter(activity -> !isMinorityBattle(activity))
+                .toList();
+        var minorityActivities = activeActivities.stream()
+                .filter(this::isMinorityBattle)
+                .toList();
 
         Map<Long, Long> appliedRecordTotalByActivityId = bossParticipationRecordRepository.findAppliedActivityOccurrenceCountsByPeriod(startDate, endDate)
                 .stream()
@@ -52,7 +60,7 @@ public class ParticipationService {
                         BossParticipationRecordRepository.ActivityOccurrenceCountProjection::getActivityTypeId,
                         BossParticipationRecordRepository.ActivityOccurrenceCountProjection::getTotalCount
                 ));
-        int totalActivityCount = activeActivities.stream()
+        int totalActivityCount = scoreActivities.stream()
                 .mapToInt(activity -> totalByActivityId.getOrDefault(activity.getActivityTypeId(), 0L).intValue())
                 .sum();
 
@@ -70,16 +78,19 @@ public class ParticipationService {
         );
 
         List<ParticipationResponseDto.ParticipationMemberDto> rawRows = members.stream()
-                .map(member -> toMemberDto(
-                        member,
-                        activeActivities,
-                        totalByActivityId,
-                        penaltyTotalByActivityId,
-                        memberActivityCounts.getOrDefault(member.getMemberId(), Map.of()),
-                        memberPenaltyActivityCounts.getOrDefault(member.getMemberId(), Map.of()),
-                        totalActivityCount,
-                        0
-                ))
+                .map(member -> {
+                    Map<Long, Long> counts = memberActivityCounts.getOrDefault(member.getMemberId(), Map.of());
+                    return toMemberDto(
+                            member,
+                            scoreActivities,
+                            totalByActivityId,
+                            penaltyTotalByActivityId,
+                            counts,
+                            memberPenaltyActivityCounts.getOrDefault(member.getMemberId(), Map.of()),
+                            totalActivityCount,
+                            calculateMinorityBonusScore(minorityActivities, counts)
+                    );
+                })
                 .toList();
 
         int topFinalScore = rawRows.stream()
@@ -107,7 +118,7 @@ public class ParticipationService {
                 .totalActivityCount(totalActivityCount)
                 .topFinalScore(topFinalScore)
                 .totalMemberCount(rows.size())
-                .activityColumns(toActivityColumns(activeActivities, totalByActivityId))
+                .activityColumns(toActivityColumns(scoreActivities, totalByActivityId))
                 .rows(rows)
                 .build();
     }
@@ -233,6 +244,22 @@ public class ParticipationService {
 
     private int absencePenaltyScore(ActivityType activity) {
         return activity.getAbsencePenaltyScore() == null ? 0 : activity.getAbsencePenaltyScore();
+    }
+
+    private boolean isMinorityBattle(ActivityType activity) {
+        return activity != null && MINORITY_BATTLE_NAME.equals(activity.getTypeName());
+    }
+
+    private int calculateMinorityBonusScore(List<ActivityType> minorityActivities, Map<Long, Long> counts) {
+        if (minorityActivities.isEmpty() || counts.isEmpty()) return 0;
+        long bonusScore = 0L;
+        for (ActivityType activity : minorityActivities) {
+            long attended = counts.getOrDefault(activity.getActivityTypeId(), 0L);
+            if (attended > 0) {
+                bonusScore += attended * (long) participationScore(activity);
+            }
+        }
+        return Math.toIntExact(bonusScore);
     }
 
     private long capCount(long count, long total) {
