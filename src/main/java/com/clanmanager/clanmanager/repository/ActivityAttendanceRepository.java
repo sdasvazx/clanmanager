@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface ActivityAttendanceRepository
         extends JpaRepository<ActivityAttendance, Long> {
@@ -47,6 +48,12 @@ public interface ActivityAttendanceRepository
      * 동일 회원, 활동 종류, 날짜의 출석 기록 존재 여부
      */
     boolean existsByMemberAndActivityTypeAndAttendanceDate(
+            Member member,
+            ActivityType activityType,
+            LocalDate attendanceDate
+    );
+
+    Optional<ActivityAttendance> findByMemberAndActivityTypeAndAttendanceDate(
             Member member,
             ActivityType activityType,
             LocalDate attendanceDate

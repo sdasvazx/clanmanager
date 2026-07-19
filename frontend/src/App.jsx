@@ -1987,6 +1987,9 @@ function Attendance({ member, setPage, mode = 'check' }) {
   const [selectedDraftByClan, setSelectedDraftByClan] = useState({});
   const [savingRoster, setSavingRoster] = useState(false);
   const [reviewEdit, setReviewEdit] = useState(null);
+  const [rosterAdd, setRosterAdd] = useState({ clanName: clanOptions[0], characterName: '' });
+  const [recordEdit, setRecordEdit] = useState(null);
+  const [savingRecordEdit, setSavingRecordEdit] = useState(false);
   const [form, setForm] = useState({ bossDate: today(), cutTime: '21:00', bossName: '21시 보스', score: 1, clanName: '로망', memo: '' });
   const [draftByClan, setDraftByClan] = useState({});
   const [file, setFile] = useState(null);
@@ -2519,6 +2522,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
     setSelectedMembers([]);
     setSelectedDraftByClan({});
     setReviewEdit(null);
+    setRosterAdd({ clanName: clanName || clanOptions[0], characterName: '' });
     try {
       const rows = await request(`/boss-participations/${record.recordId}/members`);
       setSelectedMembers(rows);
@@ -2541,7 +2545,16 @@ function Attendance({ member, setPage, mode = 'check' }) {
     try {
       const rows = await request(`/boss-participations/${selectedRecord.recordId}/members?adminMemberId=${member.memberId}`, {
         method: 'PUT',
-        body: JSON.stringify({ members: entries }),
+        body: JSON.stringify({
+          bossName: selectedRecord.bossName,
+          bossDate: selectedRecord.bossDate,
+          cutTime: selectedRecord.cutTime,
+          score: selectedRecord.score,
+          activityTypeId: selectedRecord.activityTypeId ?? null,
+          penaltyApplied: selectedRecord.penaltyApplied,
+          attendanceApplied: selectedRecord.attendanceApplied,
+          members: entries,
+        }),
       });
       setSelectedMembers(rows);
       setSelectedDraftByClan(rowsToDraftByClan(rows));
@@ -2552,6 +2565,95 @@ function Attendance({ member, setPage, mode = 'check' }) {
       setMessage(err.message);
     } finally {
       setSavingRoster(false);
+    }
+  };
+
+  const addSelectedDraftName = () => {
+    const clanName = clanOptions.includes(rosterAdd.clanName) ? rosterAdd.clanName : clanOptions[0];
+    const names = namesFromText(rosterAdd.characterName);
+    if (!names.length) return;
+    setSelectedDraftByClan((prev) => {
+      const current = namesFromText(prev[clanName] || '');
+      return { ...prev, [clanName]: [...new Set([...current, ...names])].join('\n') };
+    });
+    setSelectedMembers((prev) => {
+      const next = [...prev];
+      const stamp = Date.now();
+      names.forEach((characterName, index) => {
+        if (next.some((row) => row.clanName === clanName && row.characterName === characterName)) return;
+        next.push({
+          participationMemberId: `draft-${clanName}-${characterName}-${stamp}-${index}`,
+          clanName,
+          characterName,
+          matched: isRegisteredDraftName(characterName, clanName),
+        });
+      });
+      return next;
+    });
+    setRosterAdd((prev) => ({ ...prev, characterName: '' }));
+    setReviewEdit(null);
+  };
+
+  const openRecordEdit = (record) => {
+    setRecordEdit({
+      recordId: record.recordId,
+      bossDate: record.bossDate || today(),
+      cutTime: String(record.cutTime || '').slice(0, 5) || '21:00',
+      bossName: record.bossName || '',
+      score: Number(record.score || 1),
+      activityTypeId: record.activityTypeId ?? '',
+      penaltyApplied: Boolean(record.penaltyApplied),
+      attendanceApplied: record.attendanceApplied !== false,
+      memo: record.memo || '',
+    });
+  };
+
+  const saveRecordEdit = async () => {
+    if (!recordEdit) return;
+    const preservedMembers = selectedRecord?.recordId === recordEdit.recordId
+      ? Object.entries(selectedDraftByClan).flatMap(([clanName, text]) => namesFromText(text).map((characterName) => ({ characterName, clanName })))
+      : [];
+    setSavingRecordEdit(true);
+    setMessage('');
+    try {
+      const updated = await request(`/boss-participations/${recordEdit.recordId}?adminMemberId=${member.memberId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          bossDate: recordEdit.bossDate,
+          cutTime: recordEdit.cutTime,
+          bossName: recordEdit.bossName,
+          score: Number(recordEdit.score || 0),
+          activityTypeId: recordEdit.activityTypeId ? Number(recordEdit.activityTypeId) : null,
+          penaltyApplied: Boolean(recordEdit.penaltyApplied),
+          attendanceApplied: Boolean(recordEdit.attendanceApplied),
+          memo: recordEdit.memo,
+          members: preservedMembers,
+        }),
+      });
+      setRecordEdit(null);
+      await load(recordPage);
+      if (selectedRecord?.recordId === updated.recordId) {
+        await openRoster(updated, selectedClan);
+      }
+      setMessage('보스 참여내역을 수정했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSavingRecordEdit(false);
+    }
+  };
+
+  const deleteBossRecord = async (record) => {
+    if (!window.confirm(`${record.bossDate} ${record.bossName} 기록을 삭제할까요? 출석 반영 내역도 함께 정리됩니다.`)) return;
+    setMessage('');
+    try {
+      await request(`/boss-participations/${record.recordId}?adminMemberId=${member.memberId}`, { method: 'DELETE' });
+      if (selectedRecord?.recordId === record.recordId) setSelectedRecord(null);
+      if (recordEdit?.recordId === record.recordId) setRecordEdit(null);
+      await load(recordPage);
+      setMessage('보스 참여내역을 삭제했습니다.');
+    } catch (err) {
+      setMessage(err.message);
     }
   };
 
@@ -2988,7 +3090,14 @@ function Attendance({ member, setPage, mode = 'check' }) {
                   </td>
                   <td><ClanCountBadges record={record} onSelectClan={(clan) => openRoster(record, clan)} /></td>
                   <td><b>{record.score}</b></td>
-                  <td><div className="boss-action-buttons"><button className="roster-button" onClick={() => openRoster(record)}>명단보기</button><button className="roster-button roulette-button" onClick={() => copyRouletteNames(record)}>핀볼복사</button></div></td>
+                  <td>
+                    <div className="boss-action-buttons">
+                      <button className="roster-button" onClick={() => openRoster(record)}>명단보기</button>
+                      <button className="roster-button roulette-button" onClick={() => copyRouletteNames(record)}>핀볼복사</button>
+                      {member.role === 'ADMIN' && <button type="button" className="roster-button" onClick={() => openRecordEdit(record)}>수정</button>}
+                      {member.role === 'ADMIN' && <button type="button" className="roster-button danger-text" onClick={() => deleteBossRecord(record)}>삭제</button>}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -3003,6 +3112,57 @@ function Attendance({ member, setPage, mode = 'check' }) {
         />
         {!records.length && <div className="empty-state">아직 등록된 보스 참여내역이 없습니다.</div>}
       </section>}
+
+      {showHistory && recordEdit && (
+        <section className="white-card boss-record-edit-card">
+          <div className="section-heading compact">
+            <div>
+              <h2>보스 참여내역 수정</h2>
+              <p className="subtle">날짜, 시간, 보스명, 점수와 출석 적용 여부를 수정합니다.</p>
+            </div>
+            <button type="button" className="mini-button" onClick={() => setRecordEdit(null)}>닫기</button>
+          </div>
+          <div className="boss-record-edit-grid">
+            <label>날짜
+              <input type="date" value={recordEdit.bossDate} onChange={(event) => setRecordEdit({ ...recordEdit, bossDate: event.target.value })} />
+            </label>
+            <label>컷시간
+              <input type="time" value={recordEdit.cutTime} onChange={(event) => setRecordEdit({ ...recordEdit, cutTime: event.target.value })} />
+            </label>
+            <label>보스명
+              <input value={recordEdit.bossName} onChange={(event) => setRecordEdit({ ...recordEdit, bossName: event.target.value })} />
+            </label>
+            <label>점수
+              <input type="number" min="0" value={recordEdit.score} onChange={(event) => setRecordEdit({ ...recordEdit, score: event.target.value })} />
+            </label>
+            <label>활동 연결
+              <select value={recordEdit.activityTypeId ?? ''} onChange={(event) => setRecordEdit({ ...recordEdit, activityTypeId: event.target.value ? Number(event.target.value) : '' })}>
+                <option value="">보스명으로 자동 연결</option>
+                {batchRows.filter((row) => row.activityTypeId).map((row) => (
+                  <option key={row.activityTypeId} value={row.activityTypeId}>{row.bossName}</option>
+                ))}
+              </select>
+            </label>
+            <label className="wide">메모
+              <input value={recordEdit.memo} onChange={(event) => setRecordEdit({ ...recordEdit, memo: event.target.value })} />
+            </label>
+            <label className="checkbox-label">
+              <input type="checkbox" checked={recordEdit.attendanceApplied} onChange={(event) => setRecordEdit({ ...recordEdit, attendanceApplied: event.target.checked })} />
+              출석 적용
+            </label>
+            <label className="checkbox-label">
+              <input type="checkbox" checked={recordEdit.penaltyApplied} onChange={(event) => setRecordEdit({ ...recordEdit, penaltyApplied: event.target.checked })} />
+              패널티
+            </label>
+          </div>
+          <div className="form-actions">
+            <button type="button" className="primary-button no-margin" disabled={savingRecordEdit} onClick={saveRecordEdit}>
+              {savingRecordEdit ? '저장 중...' : '수정 저장'}
+            </button>
+            <button type="button" className="outline-button no-margin" onClick={() => setRecordEdit(null)}>취소</button>
+          </div>
+        </section>
+      )}
 
       {showHistory && selectedRecord && (
         <section className="white-card boss-roster-card">
@@ -3021,6 +3181,30 @@ function Attendance({ member, setPage, mode = 'check' }) {
                   <p className="subtle">잘못 들어간 이름은 지우고, 빠진 이름은 한 줄에 한 명씩 추가하세요.</p>
                 </div>
                 <button className="primary-button no-margin" onClick={saveSelectedRoster} disabled={savingRoster}>{savingRoster ? '저장중...' : '명단 저장'}</button>
+              </div>
+              <div className="roster-quick-add">
+                <select value={rosterAdd.clanName} onChange={(event) => setRosterAdd((prev) => ({ ...prev, clanName: event.target.value }))}>
+                  {clanOptions.map((clan) => <option key={clan} value={clan}>{clan}</option>)}
+                </select>
+                <div className="nickname-input-wrap">
+                  <input
+                    list="member-name-suggestions"
+                    value={rosterAdd.characterName}
+                    onChange={(event) => setRosterAdd((prev) => ({ ...prev, characterName: event.target.value }))}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addSelectedDraftName();
+                      }
+                    }}
+                    placeholder="빠진 닉네임 입력 또는 여러 명 붙여넣기"
+                  />
+                  <NicknameSuggestionList
+                    value={rosterAdd.characterName}
+                    onPick={(name) => setRosterAdd((prev) => ({ ...prev, characterName: name }))}
+                  />
+                </div>
+                <button type="button" className="primary-button no-margin" onClick={addSelectedDraftName}>추가</button>
               </div>
               <div className="boss-roster-edit-grid">
                 {clanOptions.map((clan) => (
@@ -3047,7 +3231,7 @@ function Attendance({ member, setPage, mode = 'check' }) {
                     ) : (
                       <>
                         {row.characterName}
-                        {member.role === 'ADMIN' && !row.matched && <>
+                        {member.role === 'ADMIN' && <>
                           <button type="button" onClick={() => setReviewEdit({ clanName, oldName: row.characterName, value: row.characterName })}>수정</button>
                           <button type="button" onClick={() => removeSelectedDraftName(clanName, row.characterName)}>삭제</button>
                         </>}

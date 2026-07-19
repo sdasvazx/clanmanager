@@ -21,6 +21,7 @@ public class BossParticipationResponseDto {
     private LocalDateTime submittedAt;
     private String bossName;
     private Integer score;
+    private Long activityTypeId;
     private Boolean penaltyApplied;
     private Boolean attendanceApplied;
     private String memo;
@@ -53,6 +54,7 @@ public class BossParticipationResponseDto {
                 .submittedAt(record.getSubmittedAt())
                 .bossName(record.getBossName())
                 .score(record.getScore())
+                .activityTypeId(record.getActivityType() == null ? null : record.getActivityType().getActivityTypeId())
                 .penaltyApplied(Boolean.TRUE.equals(record.getPenaltyApplied()))
                 .attendanceApplied(!Boolean.FALSE.equals(record.getAttendanceApplied()))
                 .memo(record.getMemo())

@@ -21,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -138,7 +139,7 @@ public class BossParticipationController {
     public List<BossParticipationMemberDto> updateRecordMembers(
             @PathVariable Long recordId,
             @RequestParam Long adminMemberId,
-            @Valid @RequestBody BossParticipationRequestDto request
+            @RequestBody BossParticipationRequestDto request
     ) {
         Member admin = findMember(adminMemberId);
         if (admin.getRole() != MemberRole.ADMIN) {
@@ -177,6 +178,71 @@ public class BossParticipationController {
                 .toList();
     }
 
+    @PutMapping("/{recordId}")
+    @Transactional
+    public BossParticipationResponseDto updateRecord(
+            @PathVariable Long recordId,
+            @RequestParam Long adminMemberId,
+            @RequestBody BossParticipationRequestDto request
+    ) {
+        Member admin = findMember(adminMemberId);
+        requireAdmin(admin, "운영자만 보스 참여내역을 수정할 수 있습니다.");
+
+        BossParticipationRecord record = findRecord(recordId);
+        List<BossParticipationMember> previousMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
+        LocalDate oldBossDate = record.getBossDate();
+        ActivityType oldActivityType = resolveActivityType(record);
+
+        String bossName = clean(request.getBossName());
+        if (bossName.isBlank()) {
+            throw new IllegalArgumentException("보스명을 입력해 주세요.");
+        }
+
+        boolean attendanceApplied = request.getAttendanceApplied() == null
+                ? !Boolean.FALSE.equals(record.getAttendanceApplied())
+                : !Boolean.FALSE.equals(request.getAttendanceApplied());
+        List<BossParticipationRequestDto.MemberEntry> effectiveMembers = request.getMembers() == null || request.getMembers().isEmpty()
+                ? toMemberEntries(previousMembers)
+                : request.getMembers();
+        if (attendanceApplied && effectiveMembers.isEmpty()) {
+            throw new IllegalArgumentException("참여 명단을 1명 이상 입력해 주세요.");
+        }
+
+        ActivityType activityType = resolveActivityType(request.getActivityTypeId(), bossName);
+        deleteAttendanceEntries(oldBossDate, oldActivityType, previousMembers);
+
+        record.setBossDate(request.getBossDate() == null ? record.getBossDate() : request.getBossDate());
+        record.setCutTime(request.getCutTime() == null ? record.getCutTime() : request.getCutTime());
+        record.setBossName(bossName);
+        record.setScore(request.getScore() == null ? record.getScore() : request.getScore());
+        if (request.getPenaltyApplied() != null) {
+            record.setPenaltyApplied(request.getPenaltyApplied());
+        }
+        record.setAttendanceApplied(attendanceApplied);
+        record.setActivityType(activityType);
+        record.setMemo(clean(request.getMemo()));
+        recordRepository.save(record);
+
+        participationMemberRepository.deleteByRecord(record);
+        saveRecordMembers(record, effectiveMembers, activityType);
+
+        return toResponse(record);
+    }
+
+    @DeleteMapping("/{recordId}")
+    @Transactional
+    public Map<String, String> deleteRecord(@PathVariable Long recordId, @RequestParam Long adminMemberId) {
+        Member admin = findMember(adminMemberId);
+        requireAdmin(admin, "운영자만 보스 참여내역을 삭제할 수 있습니다.");
+
+        BossParticipationRecord record = findRecord(recordId);
+        List<BossParticipationMember> previousMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
+        deleteAttendanceEntries(record.getBossDate(), resolveActivityType(record), previousMembers);
+        participationMemberRepository.deleteByRecord(record);
+        recordRepository.delete(record);
+        return Map.of("message", "deleted");
+    }
+
     private void saveRecordMembers(BossParticipationRecord record, List<BossParticipationRequestDto.MemberEntry> members, ActivityType activityType) {
         boolean attendanceApplied = !Boolean.FALSE.equals(record.getAttendanceApplied());
         List<BossParticipationRequestDto.MemberEntry> safeMembers = members == null ? List.of() : members;
@@ -193,16 +259,49 @@ public class BossParticipationController {
                             .clanName(entry.clanName())
                             .matched(matched != null)
                             .build());
-                    if (attendanceApplied && matched != null && matched.getActive() && activityType != null
-                            && !activityAttendanceRepository.existsByMemberAndActivityTypeAndAttendanceDate(matched, activityType, record.getBossDate())) {
-                        activityAttendanceRepository.save(ActivityAttendance.builder()
-                                .member(matched)
-                                .activityType(activityType)
-                                .attendanceDate(record.getBossDate())
-                                .status(AttendanceStatus.ATTENDED)
-                                .build());
+                    if (attendanceApplied && matched != null && matched.getActive() && activityType != null) {
+                        ActivityAttendance attendance = activityAttendanceRepository
+                                .findByMemberAndActivityTypeAndAttendanceDate(matched, activityType, record.getBossDate())
+                                .orElseGet(() -> ActivityAttendance.builder()
+                                        .member(matched)
+                                        .activityType(activityType)
+                                        .attendanceDate(record.getBossDate())
+                                        .build());
+                        attendance.setStatus(AttendanceStatus.ATTENDED);
+                        activityAttendanceRepository.save(attendance);
                     }
                 });
+    }
+
+    private void requireAdmin(Member member, String message) {
+        if (member.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException(message);
+        }
+    }
+
+    private List<BossParticipationRequestDto.MemberEntry> toMemberEntries(List<BossParticipationMember> members) {
+        return members.stream()
+                .map(member -> {
+                    BossParticipationRequestDto.MemberEntry entry = new BossParticipationRequestDto.MemberEntry();
+                    entry.setCharacterName(member.getCharacterName());
+                    entry.setClanName(member.getClanName());
+                    return entry;
+                })
+                .toList();
+    }
+
+    private void deleteAttendanceEntries(LocalDate bossDate, ActivityType activityType, List<BossParticipationMember> members) {
+        if (bossDate == null || activityType == null || members == null) {
+            return;
+        }
+        members.stream()
+                .map(BossParticipationMember::getMember)
+                .filter(Objects::nonNull)
+                .forEach(previous -> activityAttendanceRepository.deleteByMemberAndActivityTypeAndAttendanceDate(
+                        previous,
+                        activityType,
+                        bossDate
+                ));
     }
 
     private void removeAttendanceForDeletedMembers(
@@ -302,7 +401,7 @@ public class BossParticipationController {
         if (activityTypeId != null) {
             return activityTypeRepository.findById(activityTypeId)
                     .filter(activityType -> Boolean.TRUE.equals(activityType.getActive()))
-                    .orElseThrow(() -> new IllegalArgumentException("활동 설정을 찾을 수 없습니다."));
+                    .orElseThrow(() -> new IllegalArgumentException("?쒕룞 ?ㅼ젙??李얠쓣 ???놁뒿?덈떎."));
         }
         return resolveActivityType(bossName);
     }

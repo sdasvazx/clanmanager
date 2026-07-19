@@ -1643,6 +1643,57 @@
   color: #6d28d9;
 }
 
+.roster-button.danger-text {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #e11d48;
+}
+
+.boss-record-edit-card {
+  max-width: 1180px;
+  margin: 0 auto 18px;
+}
+
+.boss-record-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.boss-record-edit-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: .9rem;
+  font-weight: 800;
+  color: #41516a;
+}
+
+.boss-record-edit-grid input,
+.boss-record-edit-grid select {
+  width: 100%;
+  border: 1px solid #cbd8e8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #10223b;
+  outline: 0;
+}
+
+.boss-record-edit-grid .wide {
+  grid-column: span 2;
+}
+
+.boss-record-edit-grid .checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  color: #10223b;
+}
+
+.boss-record-edit-grid .checkbox-label input {
+  width: auto;
+}
+
 .pinball-table {
   min-width: 860px;
 }
@@ -1740,6 +1791,29 @@
 
 .boss-roster-editor h3 {
   margin: 0 0 6px;
+}
+
+.roster-quick-add {
+  display: grid;
+  grid-template-columns: 140px minmax(220px, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  margin: 12px 0 16px;
+}
+
+.roster-quick-add select,
+.roster-quick-add input {
+  width: 100%;
+  border: 1px solid #cbd8e8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #10223b;
+  outline: 0;
+}
+
+.roster-quick-add .nickname-input-wrap {
+  position: relative;
 }
 
 .boss-roster-edit-grid {
@@ -3546,6 +3620,14 @@
   .pinball-draft-actions button {
     width: 100%;
     min-height: 40px;
+  }
+
+  .boss-record-edit-grid .wide {
+    grid-column: span 1;
+  }
+
+  .roster-quick-add {
+    grid-template-columns: 1fr;
   }
 
   .batch-date-control,
