@@ -3,6 +3,7 @@ package com.clanmanager.clanmanager.repository;
 import com.clanmanager.clanmanager.entity.ActivityAttendance;
 import com.clanmanager.clanmanager.entity.ActivityType;
 import com.clanmanager.clanmanager.entity.AttendanceStatus;
+import com.clanmanager.clanmanager.entity.BossParticipationRecord;
 import com.clanmanager.clanmanager.entity.Member;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -59,6 +60,13 @@ public interface ActivityAttendanceRepository
             LocalDate attendanceDate
     );
 
+    boolean existsByMemberAndActivityTypeAndAttendanceDateAndBossParticipationRecord(
+            Member member,
+            ActivityType activityType,
+            LocalDate attendanceDate,
+            BossParticipationRecord bossParticipationRecord
+    );
+
     /*
      * 동일 회원, 활동 종류, 날짜의 출석 기록 삭제
      */
@@ -66,6 +74,13 @@ public interface ActivityAttendanceRepository
             Member member,
             ActivityType activityType,
             LocalDate attendanceDate
+    );
+
+    void deleteByMemberAndActivityTypeAndAttendanceDateAndBossParticipationRecord(
+            Member member,
+            ActivityType activityType,
+            LocalDate attendanceDate,
+            BossParticipationRecord bossParticipationRecord
     );
 
     /*

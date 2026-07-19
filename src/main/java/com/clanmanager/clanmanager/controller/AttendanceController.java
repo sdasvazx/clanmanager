@@ -46,10 +46,15 @@ public class AttendanceController {
         ActivityType activityType = activityTypeRepository.findById(request.getActivityTypeId())
                 .orElseThrow(() -> new IllegalArgumentException("활동을 찾을 수 없습니다."));
 
+        LocalDate attendanceDate = request.getAttendanceDate() == null ? LocalDate.now() : request.getAttendanceDate();
+        if (attendanceRepository.existsByMemberAndActivityTypeAndAttendanceDate(member, activityType, attendanceDate)) {
+            throw new IllegalArgumentException("이미 같은 날짜의 활동 출석 기록이 존재합니다.");
+        }
+
         ActivityAttendance attendance = ActivityAttendance.builder()
                 .member(member)
                 .activityType(activityType)
-                .attendanceDate(request.getAttendanceDate() == null ? LocalDate.now() : request.getAttendanceDate())
+                .attendanceDate(attendanceDate)
                 .status(request.getStatus() == null ? AttendanceStatus.ATTENDED : request.getStatus())
                 .build();
 

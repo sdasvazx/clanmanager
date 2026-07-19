@@ -11,8 +11,8 @@ import java.time.LocalDateTime;
         name = "activity_attendances",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "uk_member_activity_date",
-                        columnNames = {"member_id", "activity_type_id", "attendance_date"}
+                        name = "uk_member_activity_date_record",
+                        columnNames = {"member_id", "activity_type_id", "attendance_date", "boss_participation_record_id"}
                 )
         },
         indexes = {
@@ -44,6 +44,10 @@ public class ActivityAttendance {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private AttendanceStatus status;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "boss_participation_record_id")
+    private BossParticipationRecord bossParticipationRecord;
 
     private LocalDateTime recordedAt;
 

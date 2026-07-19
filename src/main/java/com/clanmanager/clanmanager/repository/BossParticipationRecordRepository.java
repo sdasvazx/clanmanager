@@ -20,7 +20,10 @@ public interface BossParticipationRecordRepository
     @Query("""
             select
                 r.activityType.activityTypeId as activityTypeId,
-                count(distinct r.bossDate) as totalCount
+                case
+                    when r.activityType.typeName = '소수쟁' then count(r)
+                    else count(distinct r.bossDate)
+                end as totalCount
             from BossParticipationRecord r
             where r.activityType is not null
               and r.activityType.active = true
@@ -36,7 +39,7 @@ public interface BossParticipationRecordRepository
                   :endDate is null
                   or r.bossDate <= :endDate
               )
-            group by r.activityType.activityTypeId
+            group by r.activityType.activityTypeId, r.activityType.typeName
             """)
     List<ActivityOccurrenceCountProjection>
     findAppliedActivityOccurrenceCountsByPeriod(
@@ -47,7 +50,10 @@ public interface BossParticipationRecordRepository
     @Query("""
             select
                 r.activityType.activityTypeId as activityTypeId,
-                count(distinct r.bossDate) as totalCount
+                case
+                    when r.activityType.typeName = '소수쟁' then count(r)
+                    else count(distinct r.bossDate)
+                end as totalCount
             from BossParticipationRecord r
             where r.activityType is not null
               and r.activityType.active = true
@@ -63,7 +69,7 @@ public interface BossParticipationRecordRepository
                   :endDate is null
                   or r.bossDate <= :endDate
               )
-            group by r.activityType.activityTypeId
+            group by r.activityType.activityTypeId, r.activityType.typeName
             """)
     List<ActivityOccurrenceCountProjection>
     findPenaltyActivityOccurrenceCountsByPeriod(

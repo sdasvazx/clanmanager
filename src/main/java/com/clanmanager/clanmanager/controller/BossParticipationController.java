@@ -209,7 +209,7 @@ public class BossParticipationController {
         }
 
         ActivityType activityType = resolveActivityType(request.getActivityTypeId(), bossName);
-        deleteAttendanceEntries(oldBossDate, oldActivityType, previousMembers);
+        deleteAttendanceEntries(oldBossDate, oldActivityType, record, previousMembers);
 
         record.setBossDate(request.getBossDate() == null ? record.getBossDate() : request.getBossDate());
         record.setCutTime(request.getCutTime() == null ? record.getCutTime() : request.getCutTime());
@@ -237,7 +237,7 @@ public class BossParticipationController {
 
         BossParticipationRecord record = findRecord(recordId);
         List<BossParticipationMember> previousMembers = participationMemberRepository.findByRecordOrderByClanNameAscCharacterNameAsc(record);
-        deleteAttendanceEntries(record.getBossDate(), resolveActivityType(record), previousMembers);
+        deleteAttendanceEntries(record.getBossDate(), resolveActivityType(record), record, previousMembers);
         participationMemberRepository.deleteByRecord(record);
         recordRepository.delete(record);
         return Map.of("message", "deleted");
@@ -260,15 +260,22 @@ public class BossParticipationController {
                             .matched(matched != null)
                             .build());
                     if (attendanceApplied && matched != null && matched.getActive() && activityType != null) {
-                        ActivityAttendance attendance = activityAttendanceRepository
-                                .findByMemberAndActivityTypeAndAttendanceDate(matched, activityType, record.getBossDate())
-                                .orElseGet(() -> ActivityAttendance.builder()
-                                        .member(matched)
-                                        .activityType(activityType)
-                                        .attendanceDate(record.getBossDate())
-                                        .build());
-                        attendance.setStatus(AttendanceStatus.ATTENDED);
-                        activityAttendanceRepository.save(attendance);
+                        boolean exists = activityAttendanceRepository
+                                .existsByMemberAndActivityTypeAndAttendanceDateAndBossParticipationRecord(
+                                        matched,
+                                        activityType,
+                                        record.getBossDate(),
+                                        record
+                                );
+                        if (!exists) {
+                            activityAttendanceRepository.save(ActivityAttendance.builder()
+                                    .member(matched)
+                                    .activityType(activityType)
+                                    .attendanceDate(record.getBossDate())
+                                    .status(AttendanceStatus.ATTENDED)
+                                    .bossParticipationRecord(record)
+                                    .build());
+                        }
                     }
                 });
     }
@@ -290,17 +297,23 @@ public class BossParticipationController {
                 .toList();
     }
 
-    private void deleteAttendanceEntries(LocalDate bossDate, ActivityType activityType, List<BossParticipationMember> members) {
-        if (bossDate == null || activityType == null || members == null) {
+    private void deleteAttendanceEntries(
+            LocalDate bossDate,
+            ActivityType activityType,
+            BossParticipationRecord record,
+            List<BossParticipationMember> members
+    ) {
+        if (bossDate == null || activityType == null || record == null || members == null) {
             return;
         }
         members.stream()
                 .map(BossParticipationMember::getMember)
                 .filter(Objects::nonNull)
-                .forEach(previous -> activityAttendanceRepository.deleteByMemberAndActivityTypeAndAttendanceDate(
+                .forEach(previous -> activityAttendanceRepository.deleteByMemberAndActivityTypeAndAttendanceDateAndBossParticipationRecord(
                         previous,
                         activityType,
-                        bossDate
+                        bossDate,
+                        record
                 ));
     }
 
@@ -324,10 +337,11 @@ public class BossParticipationController {
                 .map(BossParticipationMember::getMember)
                 .filter(Objects::nonNull)
                 .filter(previous -> !currentMemberIds.contains(previous.getMemberId()))
-                .forEach(previous -> activityAttendanceRepository.deleteByMemberAndActivityTypeAndAttendanceDate(
+                .forEach(previous -> activityAttendanceRepository.deleteByMemberAndActivityTypeAndAttendanceDateAndBossParticipationRecord(
                         previous,
                         activityType,
-                        record.getBossDate()
+                        record.getBossDate(),
+                        record
                 ));
     }
 
