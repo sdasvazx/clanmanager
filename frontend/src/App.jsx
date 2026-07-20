@@ -1531,9 +1531,7 @@ function ProfileCard({ member, info, incompleteCollections = [], participationSu
   const participationRate = Number(currentRow?.participationRate ?? currentRow?.rate ?? info.participationRate ?? 0);
   const contributionRate = Number(currentRow?.contributionRate ?? participationRate);
   const baseScore = Number(currentRow?.baseParticipationScore ?? attendanceCount);
-  const penaltyScore = Number(currentRow?.absencePenaltyScore ?? 0);
-  const finalScore = Number(currentRow?.finalParticipationScore ?? Math.max(0, baseScore - penaltyScore));
-  const topFinalScore = Number(participationSummary?.topFinalScore ?? finalScore);
+  const minorityBonusScore = Number(currentRow?.minorityBonusScore ?? 0);
   const activityCounts = currentRow?.activityCounts || {};
   const recordsInPeriod = useMemo(() => bossRecords.filter((record) => record.bossDate >= period.start && record.bossDate < period.end), [bossRecords, period.start, period.end]);
   const historyInPeriod = useMemo(() => bossHistory.filter((record) => record.bossDate >= period.start && record.bossDate < period.end), [bossHistory, period.start, period.end]);
@@ -1562,6 +1560,11 @@ function ProfileCard({ member, info, incompleteCollections = [], participationSu
       score: Number(activity.absencePenaltyScore || 0),
     }));
   }).filter((row) => row.score > 0);
+  const computedPenaltyScore = penaltyDetails.reduce((sum, row) => sum + Number(row.score || 0), 0);
+  const backendPenaltyScore = Number(currentRow?.absencePenaltyScore ?? 0);
+  const penaltyScore = Math.max(backendPenaltyScore, computedPenaltyScore);
+  const finalScore = Math.max(0, baseScore - penaltyScore + minorityBonusScore);
+  const topFinalScore = Number(participationSummary?.topFinalScore ?? finalScore);
   const dateRows = [...new Set(recordsInPeriod.map((record) => record.bossDate))].sort().map((date) => {
     const cells = activityColumns.map((activity) => {
       const dayRecords = recordsInPeriod.filter((record) => record.bossDate === date && normalizeActivityName(record.activityTypeName || record.bossName) === normalizeActivityName(activity.activityName));
@@ -1713,6 +1716,8 @@ function Participation({ member, setPage }) {
   const [detailPeriodIndex, setDetailPeriodIndex] = useState(getCurrentParticipationPeriodIndex());
   const [detailHistory, setDetailHistory] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailSummary, setDetailSummary] = useState(null);
+  const [detailSummaryLoading, setDetailSummaryLoading] = useState(false);
   const [rosterSettings] = useRosterSettings();
 
   useEffect(() => {
@@ -1799,20 +1804,40 @@ function Participation({ member, setPage }) {
     const maxIndex = Math.max(current + 2, detailPeriodIndex + 1, periodIndex + 1);
     return Array.from({ length: maxIndex + 1 }, (_, index) => getParticipationPeriod(index));
   }, [detailPeriodIndex, periodIndex]);
+  useEffect(() => {
+    if (!detailMember?.memberId) {
+      setDetailSummary(null);
+      return;
+    }
+    setDetailSummaryLoading(true);
+    request(`/participation?startDate=${detailPeriod.start}&endDate=${detailPeriod.end}`)
+      .then((summary) => setDetailSummary(summary || null))
+      .catch(() => setDetailSummary(null))
+      .finally(() => setDetailSummaryLoading(false));
+  }, [detailMember?.memberId, detailPeriod.start, detailPeriod.end]);
   const detailRecordsInPeriod = useMemo(() => bossRecords.filter((record) => record.bossDate >= detailPeriod.start && record.bossDate < detailPeriod.end), [bossRecords, detailPeriod.start, detailPeriod.end]);
   const detailHistoryInPeriod = useMemo(() => detailHistory.filter((record) => record.bossDate >= detailPeriod.start && record.bossDate < detailPeriod.end), [detailHistory, detailPeriod.start, detailPeriod.end]);
+  const detailActivityColumns = detailSummary?.activityColumns || activityColumns;
+  const detailSummaryRow = useMemo(() => (detailSummary?.rows || []).find((row) => Number(row.memberId) === Number(detailMember?.memberId)) || null, [detailSummary, detailMember?.memberId]);
+  const detailActivityCounts = detailSummaryRow?.activityCounts || {};
   const detailBossStats = useMemo(() => {
-    const allNames = [...new Set([
-      ...activityColumns.map((activity) => activity.activityName),
+    const configuredRows = detailActivityColumns.map((activity) => ({
+      bossName: activity.activityName,
+      total: Number(activity.totalCount || 0),
+      attended: Number(detailActivityCounts?.[activity.activityTypeId] || 0),
+    }));
+    const configuredNames = new Set(configuredRows.map((row) => normalize(row.bossName)));
+    const extraNames = [...new Set([
       ...detailRecordsInPeriod.map((record) => record.bossName),
       ...detailHistoryInPeriod.map((record) => record.bossName),
-    ])];
-    return allNames.map((bossName) => {
+    ])].filter((bossName) => !configuredNames.has(normalize(bossName)));
+    const extraRows = extraNames.map((bossName) => {
       const total = detailRecordsInPeriod.filter((record) => record.bossName === bossName).length;
       const attended = detailHistoryInPeriod.filter((record) => record.bossName === bossName).length;
       return { bossName, total, attended };
-    }).filter((row) => row.total || row.attended);
-  }, [activityColumns, detailRecordsInPeriod, detailHistoryInPeriod]);
+    });
+    return [...configuredRows, ...extraRows].filter((row) => row.total || row.attended);
+  }, [detailActivityColumns, detailActivityCounts, detailRecordsInPeriod, detailHistoryInPeriod]);
   const detailPeriodSummaries = useMemo(() => detailPeriodOptions
     .map((option) => {
       const periodRecords = bossRecords.filter((record) => record.bossDate >= option.start && record.bossDate < option.end);
@@ -1832,9 +1857,28 @@ function Participation({ member, setPage }) {
     })
     .filter((row) => row.total || row.attended || row.index <= getCurrentParticipationPeriodIndex())
     .sort((a, b) => b.index - a.index), [bossRecords, detailHistory, detailPeriodOptions, periodNames]);
-  const detailParticipationScore = detailHistoryInPeriod.reduce((sum, row) => sum + Number(row.score || 1), 0);
-  const detailPenaltyScore = 0;
-  const detailFinalScore = Math.max(0, detailParticipationScore - detailPenaltyScore);
+  const detailPenaltyDetails = useMemo(() => detailActivityColumns
+    .filter((activity) => activity.penaltyEnabled)
+    .map((activity) => {
+      const total = Number(activity.totalCount || 0);
+      const attended = Number(detailActivityCounts?.[activity.activityTypeId] || 0);
+      const missed = Math.max(0, total - Math.min(attended, total));
+      const score = Number(activity.absencePenaltyScore || 0);
+      return {
+        activityTypeId: activity.activityTypeId,
+        activityName: activity.activityName,
+        missed,
+        score,
+        totalPenalty: missed * score,
+      };
+    })
+    .filter((row) => row.missed > 0 && row.totalPenalty > 0), [detailActivityColumns, detailActivityCounts]);
+  const detailParticipationScore = Number(detailSummaryRow?.baseParticipationScore ?? detailHistoryInPeriod.reduce((sum, row) => sum + Number(row.score || 1), 0));
+  const detailComputedPenaltyScore = detailPenaltyDetails.reduce((sum, row) => sum + Number(row.totalPenalty || 0), 0);
+  const detailBackendPenaltyScore = Number(detailSummaryRow?.absencePenaltyScore ?? 0);
+  const detailPenaltyScore = Math.max(detailBackendPenaltyScore, detailComputedPenaltyScore);
+  const detailMinorityBonusScore = Number(detailSummaryRow?.minorityBonusScore ?? 0);
+  const detailFinalScore = Math.max(0, detailParticipationScore - detailPenaltyScore + detailMinorityBonusScore);
 
   const savePeriodName = async () => {
     if (member?.role !== 'ADMIN') return;
@@ -1952,12 +1996,25 @@ function Participation({ member, setPage }) {
             <div className="participation-score-card">
               <p>상세 참여 점수</p>
               <strong>{detailFinalScore}점</strong>
+              {detailSummaryLoading && <small className="subtle">선택 회차 점수 계산을 불러오는 중입니다.</small>}
               <div>
                 <span><small>참여 점수</small><b>{detailParticipationScore}점</b></span>
-                <span><small>패널티</small><b className="red-text">{detailPenaltyScore}점</b></span>
+                <span><small>패널티</small><b className="red-text">-{detailPenaltyScore}점</b></span>
                 <span><small>최종 점수</small><b className="blue-text">{detailFinalScore}점</b></span>
               </div>
             </div>
+            {!!detailPenaltyDetails.length && (
+              <div className="participation-detail-panel my-info-penalty-box">
+                <h3>미참여 패널티 내역</h3>
+                {detailPenaltyDetails.map((row) => (
+                  <div key={row.activityTypeId}>
+                    <span>{row.activityName} 미참여 {row.missed}회 × {row.score}점</span>
+                    <b>-{row.totalPenalty}점</b>
+                  </div>
+                ))}
+                <div className="total"><span>총 패널티</span><b>-{detailPenaltyScore}점</b></div>
+              </div>
+            )}
             <div className="participation-detail-panel">
               <div className="section-heading compact-heading">
                 <h3>지난 회차 기록</h3>
