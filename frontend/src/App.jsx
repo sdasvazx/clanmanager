@@ -4036,9 +4036,45 @@ function CollectionPage({ member }) {
   const [savingCell, setSavingCell] = useState('');
   const [showLogs, setShowLogs] = useState(false);
   const [filters, setFilters] = useState({ keyword: '', clan: 'all', characterClass: 'all', itemKeyword: '', state: 'all' });
+  const [distributionCut, setDistributionCut] = useState(45);
+  const [participationByMember, setParticipationByMember] = useState({});
   const [rosterSettings] = useRosterSettings();
+  const isAdmin = member.role === 'ADMIN';
   const load = () => request('/management/collection-dashboard').then(setData).catch((err) => setMessage(err.message));
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const currentIndex = getCurrentParticipationPeriodIndex();
+    const currentPeriod = getParticipationPeriod(currentIndex);
+    const pastIndexes = [currentIndex - 1, currentIndex - 2].filter((index) => index >= 0);
+    const fetchPeriod = (period) => request(`/participation?startDate=${period.start}&endDate=${period.end}`).catch(() => null);
+    Promise.all([fetchPeriod(currentPeriod), ...pastIndexes.map((index) => fetchPeriod(getParticipationPeriod(index)))])
+      .then(([currentSummary, ...pastSummaries]) => {
+        if (cancelled) return;
+        const map = {};
+        (currentSummary?.rows || []).forEach((row) => {
+          const id = Number(row.memberId);
+          map[id] = {
+            current: Number(row.participationRate ?? row.rate ?? 0),
+            pastRates: [],
+          };
+        });
+        pastSummaries.filter(Boolean).forEach((summary) => {
+          (summary.rows || []).forEach((row) => {
+            const id = Number(row.memberId);
+            if (!map[id]) map[id] = { current: 0, pastRates: [] };
+            map[id].pastRates.push(Number(row.participationRate ?? row.rate ?? 0));
+          });
+        });
+        Object.values(map).forEach((entry) => {
+          entry.pastAverage = entry.pastRates.length
+            ? entry.pastRates.reduce((sum, rate) => sum + rate, 0) / entry.pastRates.length
+            : 0;
+        });
+        setParticipationByMember(map);
+      });
+    return () => { cancelled = true; };
+  }, []);
   const statusMap = useMemo(() => {
     const map = new Map();
     data.statuses.forEach((row) => map.set(`${row.memberId}:${row.itemId}`, row));
@@ -4046,6 +4082,10 @@ function CollectionPage({ member }) {
   }, [data.statuses]);
   const addItem = async (event) => {
     event.preventDefault();
+    if (!isAdmin) {
+      setMessage('운영자만 컬렉템 항목을 추가할 수 있습니다.');
+      return;
+    }
     setMessage('');
     try {
       await request('/management/collection-items', {
@@ -4060,6 +4100,10 @@ function CollectionPage({ member }) {
     }
   };
   const renameItem = async () => {
+    if (!isAdmin) {
+      setMessage('운영자만 컬렉템 항목을 수정할 수 있습니다.');
+      return;
+    }
     if (!editingItem?.itemName?.trim()) return;
     setMessage('');
     try {
@@ -4075,6 +4119,10 @@ function CollectionPage({ member }) {
     }
   };
   const deleteItem = async (item) => {
+    if (!isAdmin) {
+      setMessage('운영자만 컬렉템 항목을 숨길 수 있습니다.');
+      return;
+    }
     if (!window.confirm(`${item.itemName} 항목을 숨길까요? 기존 로그는 유지됩니다.`)) return;
     setMessage('');
     try {
@@ -4086,6 +4134,10 @@ function CollectionPage({ member }) {
     }
   };
   const updateStatus = async (targetMember, item, state) => {
+    if (!isAdmin) {
+      setMessage('운영자만 컬렉템 지급 상태를 수정할 수 있습니다.');
+      return;
+    }
     const key = `${targetMember.memberId}:${item.itemId}`;
     setSavingCell(key);
     setMessage('');
@@ -4165,11 +4217,11 @@ function CollectionPage({ member }) {
       <section className="white-card collection-toolbar">
         <div>
           <h2>스킬현황 아이템 관리</h2>
-          <p className="subtle">모든 클랜원이 수정할 수 있으며, 변경 내역은 오른쪽 로그에 기록됩니다.</p>
+          <p className="subtle">운영자만 수정할 수 있으며, 변경 내역은 로그에 기록됩니다.</p>
         </div>
         <form className="collection-add-form" onSubmit={addItem}>
-          <input value={itemName} onChange={(event) => setItemName(event.target.value)} placeholder="새 컬렉템/스킬명" />
-          <button className="primary-button">항목 추가</button>
+          <input disabled={!isAdmin} value={itemName} onChange={(event) => setItemName(event.target.value)} placeholder="새 컬렉템/스킬명" />
+          <button className="primary-button" disabled={!isAdmin}>항목 추가</button>
         </form>
       </section>
       {message && <p className="vault-message">{message}</p>}
@@ -4180,6 +4232,16 @@ function CollectionPage({ member }) {
             <p className="subtle">아이템별로 완료/미완료 인원을 나눠서 보여줍니다. 사람 이름 옆 상태를 바꾸면 바로 저장됩니다.</p>
           </div>
           <span className="result-count">완료 {completedCount} / {totalCount}</span>
+        </div>
+        <div className="collection-cut-panel">
+          <div>
+            <b>분배컷 표시</b>
+            <p className="subtle">현재 참여율이 분배컷보다 낮은 클랜원은 붉게 표시됩니다.</p>
+          </div>
+          <label>분배컷
+            <input type="number" min="0" max="100" value={distributionCut} onChange={(event) => setDistributionCut(Number(event.target.value || 0))} />
+            <span>%</span>
+          </label>
         </div>
         <div className="collection-summary-grid">
           <div><small>전체 항목</small><b>{data.items.length}개</b></div>
@@ -4201,21 +4263,23 @@ function CollectionPage({ member }) {
               <tr>
                 <th className="collection-member-head">클랜원</th>
                 <th>클랜</th>
+                <th>현재참여율</th>
+                <th>과거평균참여율(2주)</th>
                 {visibleItems.map((item) => (
                   <th key={item.itemId}>
                     {editingItem?.itemId === item.itemId ? (
                       <span className="collection-item-edit compact">
-                        <input value={editingItem.itemName} onChange={(event) => setEditingItem({ ...editingItem, itemName: event.target.value })} />
-                        <button type="button" onClick={renameItem}>저장</button>
+                        <input disabled={!isAdmin} value={editingItem.itemName} onChange={(event) => setEditingItem({ ...editingItem, itemName: event.target.value })} />
+                        <button type="button" disabled={!isAdmin} onClick={renameItem}>저장</button>
                         <button type="button" onClick={() => setEditingItem(null)}>취소</button>
                       </span>
                     ) : (
                       <span className="collection-item-header">
                         <b>{item.itemName}</b>
-                        <span>
+                        {isAdmin && <span>
                           <button type="button" onClick={() => setEditingItem(item)}>수정</button>
                           <button type="button" onClick={() => deleteItem(item)}>숨김</button>
-                        </span>
+                        </span>}
                       </span>
                     )}
                   </th>
@@ -4223,10 +4287,15 @@ function CollectionPage({ member }) {
               </tr>
             </thead>
             <tbody>
-              {visibleMembers.map((targetMember) => (
-                <tr key={targetMember.memberId}>
+              {visibleMembers.map((targetMember) => {
+                const participation = participationByMember[Number(targetMember.memberId)] || { current: 0, pastAverage: 0 };
+                const belowCut = Number(participation.current || 0) < Number(distributionCut || 0);
+                return (
+                <tr key={targetMember.memberId} className={belowCut ? 'below-distribution-cut' : ''}>
                   <td className="collection-member-name"><b>{targetMember.characterName}</b><small>{targetMember.characterClass || '-'}</small></td>
                   <td><span className={`clan-badge ${normalize(canonicalClanName(targetMember.guildName))}`}>{canonicalClanName(targetMember.guildName)}</span></td>
+                  <td className={belowCut ? 'rate-below-cut' : ''}>{Number(participation.current || 0).toFixed(1)}%</td>
+                  <td>{Number(participation.pastAverage || 0).toFixed(1)}%</td>
                   {visibleItems.map((item) => {
                     const { key, status, state } = collectionCell(targetMember, item);
                     const done = state === '완료';
@@ -4235,7 +4304,7 @@ function CollectionPage({ member }) {
                         <button
                           type="button"
                           className={`collection-status-cell ${done ? 'complete' : 'incomplete'}`}
-                          disabled={savingCell === key}
+                          disabled={!isAdmin || savingCell === key}
                           title={status?.updatedByName ? `${status.updatedByName} · ${new Date(status.updatedAt).toLocaleString('ko-KR')}` : '클릭해서 완료/미완료 변경'}
                           onClick={() => toggleCollectionStatus(targetMember, item)}
                         >
@@ -4245,7 +4314,8 @@ function CollectionPage({ member }) {
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

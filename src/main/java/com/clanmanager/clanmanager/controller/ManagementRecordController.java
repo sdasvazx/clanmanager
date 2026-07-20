@@ -315,12 +315,9 @@ public class ManagementRecordController {
 
     @PatchMapping("/collection-statuses")
     public CollectionStatusDto updateCollectionStatus(@Valid @RequestBody CollectionStatusRequest request) {
-        Member actor = validateMember(request.getActorMemberId());
+        Member actor = validateAdmin(request.getActorMemberId());
         Member target = memberRepository.findById(request.getMemberId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 클랜원입니다."));
-        if (!actor.getMemberId().equals(target.getMemberId()) && actor.getRole() != MemberRole.ADMIN) {
-            throw new SecurityException("본인 컬렉템 상태만 수정할 수 있습니다.");
-        }
         CollectionItem item = collectionItemRepository.findById(request.getItemId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 컬렉템 항목입니다."));
         String nextState = cleanRequired(request.getState(), "상태를 선택해 주세요.");

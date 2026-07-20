@@ -2522,6 +2522,30 @@
   font-size: 1.35rem;
 }
 
+.collection-cut-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  margin: 16px 0;
+  border: 1px solid #d8e6ff;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.collection-cut-panel label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.collection-cut-panel input {
+  width: 92px;
+}
+
 .collection-wide-wrap {
   max-height: 70vh;
   border: 1px solid #dfe9f6;
@@ -2570,6 +2594,19 @@
 .collection-wide-table th.collection-member-head {
   background: #f8fbff;
   z-index: 5;
+}
+
+.collection-wide-table tr.below-distribution-cut td {
+  background: #fde2e1;
+}
+
+.collection-wide-table tr.below-distribution-cut td:first-child {
+  border-left: 4px solid #ef4444;
+}
+
+.rate-below-cut {
+  color: #c00000;
+  font-weight: 950;
 }
 
 .collection-member-name b {
