@@ -64,6 +64,7 @@ public class DistributionService {
         List<DistributionResponseDto.ResultItemDto> baseResults = participation.getRows().stream()
                 .filter(row -> memberMap.containsKey(row.getMemberId()))
                 .map(row -> toBaseResult(row, memberMap.get(row.getMemberId()), settings))
+                .filter(row -> settings.mode().equals("TOTAL") || CLAN_ORDER.contains(row.getClanName()))
                 .toList();
 
         Map<String, List<DistributionResponseDto.ResultItemDto>> groups = groupResults(baseResults, settings.mode());
@@ -356,7 +357,9 @@ public class DistributionService {
         }
         Map<String, List<DistributionResponseDto.ResultItemDto>> groups = new LinkedHashMap<>();
         CLAN_ORDER.forEach(clan -> groups.put(clan, new ArrayList<>()));
-        results.forEach(row -> groups.computeIfAbsent(row.getClanName(), ignored -> new ArrayList<>()).add(row));
+        results.stream()
+                .filter(row -> CLAN_ORDER.contains(row.getClanName()))
+                .forEach(row -> groups.get(row.getClanName()).add(row));
         return groups;
     }
 
@@ -578,14 +581,24 @@ public class DistributionService {
     }
 
     private String canonicalClanName(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return "귀신";
+        if (raw == null) {
+            return "\uBBF8\uBD84\uB958";
+        }
+        String normalizedProbe = raw.trim().toLowerCase();
+        if (normalizedProbe.isBlank()
+                || normalizedProbe.equals("nan")
+                || normalizedProbe.equals("none")
+                || normalizedProbe.equals("non")
+                || normalizedProbe.equals("null")
+                || normalizedProbe.equals("-")) {
+            return "\uBBF8\uBD84\uB958";
         }
         String normalized = raw.trim().toLowerCase();
         if (normalized.contains("운좋")) return "운좋은";
         if (normalized.contains("로망")) return "로망";
         if (normalized.contains("z") || normalized.contains("ｚ")) return "귀신Z";
-        return "귀신";
+        if (normalized.contains("귀신")) return "귀신";
+        return "\uBBF8\uBD84\uB958";
     }
 
     private int clanOrder(String clanName) {
