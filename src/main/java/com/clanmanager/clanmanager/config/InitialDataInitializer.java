@@ -53,6 +53,7 @@ public class InitialDataInitializer implements ApplicationRunner {
         deactivateInvalidSchedules();
         normalizeVaultVersionColumns();
         normalizeNoticeImageColumn();
+        deactivateReservedMembers();
         createClanVault();
         promoteFirstMemberToAdminIfNeeded();
     }
@@ -106,6 +107,16 @@ public class InitialDataInitializer implements ApplicationRunner {
             // Hibernate creates the column as LONGTEXT for new databases.
             // Some databases/tests may not support this exact MySQL syntax, so keep startup safe.
         }
+    }
+
+    private void deactivateReservedMembers() {
+        memberRepository.findByCharacterName("\uC18C\uC218\uC7C1").ifPresent(member -> {
+            if (Boolean.TRUE.equals(member.getActive())) {
+                member.setActive(false);
+                member.setStatus("\uC0AD\uC81C\uB428");
+                memberRepository.save(member);
+            }
+        });
     }
 
     private void createClanVault() {

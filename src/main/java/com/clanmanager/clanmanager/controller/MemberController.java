@@ -34,6 +34,8 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class MemberController {
 
+    private static final String RESERVED_ACTIVITY_MEMBER_NAME = "\uC18C\uC218\uC7C1";
+
     private final MemberRepository memberRepository;
     private final MemberSpecHistoryRepository memberSpecHistoryRepository;
     private final ParticipationService participationService;
@@ -103,6 +105,7 @@ public class MemberController {
         if (characterName.isBlank()) {
             throw new IllegalArgumentException("캐릭터 이름은 비워둘 수 없습니다.");
         }
+        validateMemberNameAllowed(characterName);
         Member member = memberRepository.findByCharacterName(characterName).orElse(null);
         if (member != null && Boolean.TRUE.equals(member.getActive())) {
             throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
@@ -167,6 +170,8 @@ public class MemberController {
             throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
         }
 
+        validateMemberNameAllowed(characterName);
+
         String previousName = member.getCharacterName();
         Integer previousCombatPower = member.getCombatPower();
         Integer previousLevel = member.getLevel();
@@ -212,6 +217,8 @@ public class MemberController {
             throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
         }
 
+        validateMemberNameAllowed(characterName);
+
         String previousName = member.getCharacterName();
         Integer previousCombatPower = member.getCombatPower();
         Integer previousLevel = member.getLevel();
@@ -253,6 +260,9 @@ public class MemberController {
         for (BulkMemberRequest row : request.getMembers()) {
             String characterName = row.getCharacterName() == null ? "" : row.getCharacterName().trim();
             if (characterName.isBlank()) {
+                continue;
+            }
+            if (isReservedActivityMemberName(characterName)) {
                 continue;
             }
 
@@ -467,6 +477,16 @@ public class MemberController {
     private Member findMember(Long memberId) {
         return memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+    }
+
+    private void validateMemberNameAllowed(String characterName) {
+        if (isReservedActivityMemberName(characterName)) {
+            throw new IllegalArgumentException("\uC18C\uC218\uC7C1\uC740 \uD65C\uB3D9\uBA85\uC774\uB77C \uD074\uB79C\uC6D0\uC73C\uB85C \uB4F1\uB85D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
+        }
+    }
+
+    private boolean isReservedActivityMemberName(String characterName) {
+        return RESERVED_ACTIVITY_MEMBER_NAME.equals(characterName);
     }
 
     private String blankToNull(String value) {

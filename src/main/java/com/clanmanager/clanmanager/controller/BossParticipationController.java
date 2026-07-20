@@ -48,6 +48,7 @@ public class BossParticipationController {
 
     private static final int HISTORY_PAGE_SIZE = 50;
     private static final int MAX_HISTORY_PAGES = 10;
+    private static final Set<String> RESERVED_PARTICIPANT_NAMES = Set.of("\uC18C\uC218\uC7C1");
 
     private final BossParticipationRecordRepository recordRepository;
     private final BossParticipationMemberRepository participationMemberRepository;
@@ -373,6 +374,9 @@ public class BossParticipationController {
         }
         String characterName = clean(entry.getCharacterName());
         if (characterName.isBlank()) {
+            return null;
+        }
+        if (RESERVED_PARTICIPANT_NAMES.contains(characterName)) {
             return null;
         }
         String clanName = clean(entry.getClanName());
