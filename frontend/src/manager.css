@@ -2580,6 +2580,34 @@
   font-weight: 900;
 }
 
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.sortable-th span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sortable-th.active {
+  background: #edf4ff;
+  color: #2563eb;
+}
+
+.sort-indicator {
+  margin-left: 4px;
+  color: #94a3b8;
+  font-size: .68rem;
+  font-weight: 900;
+}
+
+.sortable-th.active .sort-indicator {
+  color: #2563eb;
+}
+
 .collection-wide-table .collection-member-head,
 .collection-wide-table .collection-member-name {
   position: sticky;
@@ -3343,6 +3371,64 @@
 .collection-log-card.collapsible .collection-log-list {
   max-height: 520px;
   margin-top: 16px;
+}
+
+.collection-log-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.collection-log-tools {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.collection-log-tools label {
+  display: grid;
+  gap: 6px;
+  min-width: min(360px, 100%);
+  color: #64748b;
+  font-size: .82rem;
+  font-weight: 850;
+}
+
+.collection-log-tools input {
+  width: 100%;
+  border: 1px solid #cbd7e6;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #17233a;
+}
+
+.collection-log-page-info {
+  color: #64748b;
+  font-weight: 850;
+}
+
+.collection-log-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.collection-log-pagination button {
+  border: 1px solid #cbd7e6;
+  border-radius: 9px;
+  padding: 8px 12px;
+  background: #fff;
+  color: #17233a;
+  font-weight: 900;
+}
+
+.collection-log-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
 }
 
 @media (max-width: 900px) {

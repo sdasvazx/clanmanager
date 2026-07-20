@@ -221,6 +221,49 @@ function useRosterSettings() {
   return [settings, saveSettings];
 }
 
+const compareSortableValues = (left, right) => {
+  const leftEmpty = left === null || left === undefined || left === '';
+  const rightEmpty = right === null || right === undefined || right === '';
+  if (leftEmpty && rightEmpty) return 0;
+  if (leftEmpty) return -1;
+  if (rightEmpty) return 1;
+  if (typeof left === 'number' || typeof right === 'number') {
+    return Number(left || 0) - Number(right || 0);
+  }
+  return String(left).localeCompare(String(right), 'ko-KR', { numeric: true, sensitivity: 'base' });
+};
+
+function useSortableRows(rows, initialKey = null, initialDirection = 'asc') {
+  const [sortKey, setSortKey] = useState(initialKey);
+  const [sortDirection, setSortDirection] = useState(initialDirection);
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection('asc');
+  };
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+    const sorted = [...rows].sort((a, b) => compareSortableValues(a?.[sortKey], b?.[sortKey]));
+    return sortDirection === 'asc' ? sorted : sorted.reverse();
+  }, [rows, sortKey, sortDirection]);
+  return { sortedRows, sortKey, sortDirection, toggleSort };
+}
+
+function SortableHeader({ label, field, sortKey, sortDirection, onSort, className = '' }) {
+  const active = sortKey === field;
+  return (
+    <th className={`sortable-th ${active ? 'active' : ''} ${className}`.trim()} onClick={() => onSort(field)} title={`${label} 정렬`}>
+      <span>{label}</span>
+      <small className="sort-indicator">{active ? (sortDirection === 'asc' ? '▲' : '▼') : '↕'}</small>
+    </th>
+  );
+}
+
+const COLLECTION_LOG_PAGE_SIZE = 20;
+
 const normalizeRosterSettingName = (value) => String(value || '')
   .trim()
   .replace(/\s+/g, '')
@@ -3756,8 +3799,25 @@ function DistributionAdminPage({ member }) {
   const summaries = result?.clanSummaries ?? [];
   const selectedPeriodIds = Array.isArray(settings.periodIds) ? settings.periodIds.map(Number) : [];
   const selectedPeriods = periods.filter((p) => selectedPeriodIds.includes(Number(p.periodId)));
+  const sortableDistributionRows = useMemo(() => rows.map((row) => ({
+    ...row,
+    sortableClanName: row.clanName || '',
+    sortableCharacterName: row.characterName || '',
+    sortableParticipationRate: Number(row.integratedParticipationRate ?? row.participationRate ?? 0),
+    sortableParticipationAmount: Number(row.participationAmount || 0),
+    sortableCurrentPower: Number(row.currentPowerMan || 0),
+    sortablePowerScore: Number(row.powerScore || 0),
+    sortablePowerAmount: Number(row.powerAmount || 0),
+    sortableFinalAmount: Number(row.finalAmount || 0),
+  })), [rows]);
+  const {
+    sortedRows: sortedDistributionRows,
+    sortKey: distributionSortKey,
+    sortDirection: distributionSortDirection,
+    toggleSort: toggleDistributionSort,
+  } = useSortableRows(sortableDistributionRows, 'sortableFinalAmount', 'desc');
 
-  return <><div className="page-title distribution-title"><div><h1>분배금 조회</h1><p>참여율과 투력점수 기준으로 분배금을 계산하고 금고 미수령 분배금으로 적립합니다.</p></div><div className="page-actions"><button className="dark-button" onClick={() => setBasisOpen(true)}>투력점수 산출근거</button><button className="green-button" onClick={deposit} disabled={loading}>분배금 적립</button><button className="purple-button" onClick={saveSnapshot} disabled={loading}>히스토리 저장</button></div></div>{message && <p className="vault-message">{message}</p>}<div className="distribution-toolbar"><label>히스토리 보기<select value={historyId} onChange={(e) => selectHistory(e.target.value)}><option value="current">현재</option>{history.map((item) => <option key={item.snapshotId} value={item.snapshotId}>{new Date(item.createdAt).toLocaleString('ko-KR')} · {item.mode === 'TOTAL' ? '전체' : '클랜별'} · {money(item.allocatedDiamonds)}</option>)}</select></label><label>클랜(소속) 필터<select value={clanFilter} onChange={(e) => setClanFilter(e.target.value)}><option>전체보기</option>{DISTRIBUTION_CLANS.map((clan) => <option key={clan}>{clan}</option>)}</select></label></div><section className="white-card distribution-settings-card"><div className="section-heading"><h2>분배 설정</h2><span className="admin-badge">관리자 전용</span></div><div className="distribution-settings-grid"><div><small>분배 모드</small><div className="segmented-control"><button className={settings.mode === 'CLAN' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'CLAN')}>클랜별 분배</button><button className={settings.mode === 'TOTAL' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'TOTAL')}>전체 분배</button></div></div><div className="period-picker"><div className="period-picker-header"><label>분배 회차 <small>(참여점수 계산 기준)</small></label><div className="period-picker-actions"><button type="button" disabled={!editing || !periods.length} onClick={selectAllPeriods}>전체 선택</button><button type="button" disabled={!editing || !selectedPeriodIds.length} onClick={clearPeriods}>전체 해제</button></div></div><div className="period-checkbox-grid">{periods.map((p) => <label className="period-checkbox-card" key={p.periodId}><input type="checkbox" disabled={!editing} checked={selectedPeriodIds.includes(Number(p.periodId))} onChange={(e) => togglePeriod(p.periodId, e.target.checked)} /><span><b>{p.periodName}</b><small>{p.startDate} ~ {p.endDate}</small></span></label>)}</div><div className="selected-period-tags">{selectedPeriods.length > 0 && selectedPeriods.map((p) => <span key={p.periodId}>{p.periodName} · {p.startDate}~{p.endDate}</span>)}{selectedPeriods.length === 0 && <em>선택한 회차가 없습니다.</em>}</div></div><label>참여율 컷 <small>(백분율 %)</small><input disabled={!editing} type="number" min="0" value={settings.participationCut} onChange={(e) => update('participationCut', e.target.value)} /></label><label>현재투력 컷 <small>(100=100만 또는 1,000,000)</small><input disabled={!editing} type="number" min="0" value={settings.powerScoreCut} onChange={(e) => update('powerScoreCut', e.target.value)} /></label></div><p className="info-box">참여분배 다이아는 선택한 여러 회차의 참여횟수 합계/전체 활동횟수 합계로 계산한 통합 참여율 컷을 기준으로, 투력분배 다이아는 현재투력 컷을 기준으로 각각 독립 배분합니다.</p>{settings.mode === 'TOTAL' ? <div className="distribution-clan-inputs"><label>전체 참여분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalParticipationDiamonds} onChange={(e) => update('totalParticipationDiamonds', e.target.value)} /></label><label>전체 투력분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalPowerDiamonds} onChange={(e) => update('totalPowerDiamonds', e.target.value)} /></label></div> : <div className="distribution-clan-inputs">{DISTRIBUTION_CLANS.map((clan) => <label key={`${clan}-participation`}>{clan} 참여분배 다이아<input disabled={!editing} type="number" min="0" value={settings.participationDiamonds[clan]} onChange={(e) => updateSplitClanDiamond('participation', clan, e.target.value)} /></label>)}{DISTRIBUTION_CLANS.map((clan) => <label key={`${clan}-power`}>{clan} 투력분배 다이아<input disabled={!editing} type="number" min="0" value={settings.powerDiamonds[clan]} onChange={(e) => updateSplitClanDiamond('power', clan, e.target.value)} /></label>)}</div>}<label className="distribution-memo">적립 메모<input disabled={!editing} value={settings.memo} onChange={(e) => update('memo', e.target.value)} placeholder="예: 7월 2주차 보스 분배" /></label></section><section className="white-card"><div className="section-heading"><h2>{settings.mode === 'TOTAL' ? '전체 분배 다이아' : '클랜별 분배 다이아'}</h2><span className="result-count">실제 지급 합계 {money(result?.allocatedDiamonds ?? 0)} · 미배분 {money(result?.remainingDiamonds ?? 0)}</span></div><div className="distribution-summary-list">{summaries.map((summary) => <div className="distribution-summary-card" key={summary.clanName}><div><b>{summary.clanName}</b><small>{summary.memberCount}명</small></div><div><span>총 분배</span><strong>{money(summary.totalDiamonds)}</strong></div><div><span>참여분배</span><strong>{money(summary.participationPool)}</strong><small>{summary.participationEligibleCount}명</small></div><div><span>투력분배</span><strong>{money(summary.powerPool)}</strong><small>{summary.powerEligibleCount}명</small></div><div><span>미배분</span><strong>{money(summary.remainingDiamonds)}</strong></div><div><span>1점당 다이아</span><strong>참여 {Number(summary.participationDiamondsPerPoint || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}</strong><small>투력 {Number(summary.powerDiamondsPerPoint || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}</small></div></div>)}</div></section><section className="white-card"><div className="section-heading"><h2>회원별 분배 결과</h2><span className="result-count">{rows.length}명</span></div><div className="table-wrap"><table className="data-table distribution-result-table"><thead><tr><th>클랜</th><th>닉네임</th><th>통합 참여율</th><th>참여횟수</th><th>전체횟수</th><th>참여분배</th><th>현재투력</th><th>성장</th><th>투력점수</th><th>투력분배</th><th>최종 지급</th></tr></thead><tbody>{rows.map((row) => <tr key={row.memberId}><td><span className="clan-badge">{row.clanName}</span></td><td><b>{row.characterName}</b><small>{row.characterClass || '-'}</small></td><td className={row.participationEligible ? 'green-text' : 'red-text'}>{row.integratedParticipationRate ?? row.participationRate ?? 0}%</td><td>{row.attendanceCount ?? 0}회</td><td>{row.totalActivityCount ?? result?.totalActivityCount ?? 0}회</td><td>{money(row.participationAmount)}</td><td>{row.currentPowerMan}만</td><td>+{row.growthScore}</td><td className={row.powerEligible ? 'green-text' : 'red-text'}>{row.powerScore}</td><td>{money(row.powerAmount)}</td><td><b>{money(row.finalAmount)}</b></td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">분배 결과가 없습니다.</div>}</section>{basisOpen && <PowerScoreModal onClose={() => setBasisOpen(false)} />}</>;
+  return <><div className="page-title distribution-title"><div><h1>분배금 조회</h1><p>참여율과 투력점수 기준으로 분배금을 계산하고 금고 미수령 분배금으로 적립합니다.</p></div><div className="page-actions"><button className="dark-button" onClick={() => setBasisOpen(true)}>투력점수 산출근거</button><button className="green-button" onClick={deposit} disabled={loading}>분배금 적립</button><button className="purple-button" onClick={saveSnapshot} disabled={loading}>히스토리 저장</button></div></div>{message && <p className="vault-message">{message}</p>}<div className="distribution-toolbar"><label>히스토리 보기<select value={historyId} onChange={(e) => selectHistory(e.target.value)}><option value="current">현재</option>{history.map((item) => <option key={item.snapshotId} value={item.snapshotId}>{new Date(item.createdAt).toLocaleString('ko-KR')} · {item.mode === 'TOTAL' ? '전체' : '클랜별'} · {money(item.allocatedDiamonds)}</option>)}</select></label><label>클랜(소속) 필터<select value={clanFilter} onChange={(e) => setClanFilter(e.target.value)}><option>전체보기</option>{DISTRIBUTION_CLANS.map((clan) => <option key={clan}>{clan}</option>)}</select></label></div><section className="white-card distribution-settings-card"><div className="section-heading"><h2>분배 설정</h2><span className="admin-badge">관리자 전용</span></div><div className="distribution-settings-grid"><div><small>분배 모드</small><div className="segmented-control"><button className={settings.mode === 'CLAN' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'CLAN')}>클랜별 분배</button><button className={settings.mode === 'TOTAL' ? 'active' : ''} disabled={!editing} onClick={() => update('mode', 'TOTAL')}>전체 분배</button></div></div><div className="period-picker"><div className="period-picker-header"><label>분배 회차 <small>(참여점수 계산 기준)</small></label><div className="period-picker-actions"><button type="button" disabled={!editing || !periods.length} onClick={selectAllPeriods}>전체 선택</button><button type="button" disabled={!editing || !selectedPeriodIds.length} onClick={clearPeriods}>전체 해제</button></div></div><div className="period-checkbox-grid">{periods.map((p) => <label className="period-checkbox-card" key={p.periodId}><input type="checkbox" disabled={!editing} checked={selectedPeriodIds.includes(Number(p.periodId))} onChange={(e) => togglePeriod(p.periodId, e.target.checked)} /><span><b>{p.periodName}</b><small>{p.startDate} ~ {p.endDate}</small></span></label>)}</div><div className="selected-period-tags">{selectedPeriods.length > 0 && selectedPeriods.map((p) => <span key={p.periodId}>{p.periodName} · {p.startDate}~{p.endDate}</span>)}{selectedPeriods.length === 0 && <em>선택한 회차가 없습니다.</em>}</div></div><label>참여율 컷 <small>(백분율 %)</small><input disabled={!editing} type="number" min="0" value={settings.participationCut} onChange={(e) => update('participationCut', e.target.value)} /></label><label>현재투력 컷 <small>(100=100만 또는 1,000,000)</small><input disabled={!editing} type="number" min="0" value={settings.powerScoreCut} onChange={(e) => update('powerScoreCut', e.target.value)} /></label></div><p className="info-box">참여분배 다이아는 선택한 여러 회차의 참여횟수 합계/전체 활동횟수 합계로 계산한 통합 참여율 컷을 기준으로, 투력분배 다이아는 현재투력 컷을 기준으로 각각 독립 배분합니다.</p>{settings.mode === 'TOTAL' ? <div className="distribution-clan-inputs"><label>전체 참여분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalParticipationDiamonds} onChange={(e) => update('totalParticipationDiamonds', e.target.value)} /></label><label>전체 투력분배 다이아<input disabled={!editing} type="number" min="0" value={settings.totalPowerDiamonds} onChange={(e) => update('totalPowerDiamonds', e.target.value)} /></label></div> : <div className="distribution-clan-cards">{DISTRIBUTION_CLANS.map((clan) => <div className="distribution-clan-card" key={clan}><h3>{clan}</h3><label>참여분배 다이아<input disabled={!editing} type="number" min="0" value={settings.participationDiamonds[clan]} onChange={(e) => updateSplitClanDiamond('participation', clan, e.target.value)} /></label><label>투력분배 다이아<input disabled={!editing} type="number" min="0" value={settings.powerDiamonds[clan]} onChange={(e) => updateSplitClanDiamond('power', clan, e.target.value)} /></label></div>)}</div>}<label className="distribution-memo">적립 메모<input disabled={!editing} value={settings.memo} onChange={(e) => update('memo', e.target.value)} placeholder="예: 7월 2주차 보스 분배" /></label></section><section className="white-card"><div className="section-heading"><h2>{settings.mode === 'TOTAL' ? '전체 분배 다이아' : '클랜별 분배 다이아'}</h2><span className="result-count">실제 지급 합계 {money(result?.allocatedDiamonds ?? 0)} · 미배분 {money(result?.remainingDiamonds ?? 0)}</span></div><div className="distribution-summary-list">{summaries.map((summary) => <div className="distribution-summary-card" key={summary.clanName}><div><b>{summary.clanName}</b><small>{summary.memberCount}명</small></div><div><span>총 분배</span><strong>{money(summary.totalDiamonds)}</strong></div><div><span>참여분배</span><strong>{money(summary.participationPool)}</strong><small>{summary.participationEligibleCount}명</small></div><div><span>투력분배</span><strong>{money(summary.powerPool)}</strong><small>{summary.powerEligibleCount}명</small></div><div><span>미배분</span><strong>{money(summary.remainingDiamonds)}</strong></div><div><span>1점당 다이아</span><strong>참여 {Number(summary.participationDiamondsPerPoint || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}</strong><small>투력 {Number(summary.powerDiamondsPerPoint || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}</small></div></div>)}</div></section><section className="white-card"><div className="section-heading"><h2>회원별 분배 결과</h2><span className="result-count">{rows.length}명</span></div><div className="table-wrap"><table className="data-table distribution-result-table"><thead><tr><SortableHeader label="클랜" field="sortableClanName" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} /><SortableHeader label="닉네임" field="sortableCharacterName" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} /><SortableHeader label="통합 참여율" field="sortableParticipationRate" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} /><th>참여횟수</th><th>전체횟수</th><SortableHeader label="참여분배" field="sortableParticipationAmount" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} /><SortableHeader label="현재투력" field="sortableCurrentPower" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} /><th>성장</th><SortableHeader label="투력점수" field="sortablePowerScore" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} /><SortableHeader label="투력분배" field="sortablePowerAmount" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} /><SortableHeader label="최종 지급" field="sortableFinalAmount" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} /></tr></thead><tbody>{sortedDistributionRows.map((row) => <tr key={row.memberId}><td><span className="clan-badge">{row.clanName}</span></td><td><b>{row.characterName}</b><small>{row.characterClass || '-'}</small></td><td className={row.participationEligible ? 'green-text' : 'red-text'}>{row.integratedParticipationRate ?? row.participationRate ?? 0}%</td><td>{row.attendanceCount ?? 0}회</td><td>{row.totalActivityCount ?? result?.totalActivityCount ?? 0}회</td><td>{money(row.participationAmount)}</td><td>{row.currentPowerMan}만</td><td>+{row.growthScore}</td><td className={row.powerEligible ? 'green-text' : 'red-text'}>{row.powerScore}</td><td>{money(row.powerAmount)}</td><td><b>{money(row.finalAmount)}</b></td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">분배 결과가 없습니다.</div>}</section>{basisOpen && <PowerScoreModal onClose={() => setBasisOpen(false)} />}</>;
 }
 
 function PowerScoreModal({ onClose }) {
@@ -4035,6 +4095,8 @@ function CollectionPage({ member }) {
   const [memoByCell, setMemoByCell] = useState({});
   const [savingCell, setSavingCell] = useState('');
   const [showLogs, setShowLogs] = useState(false);
+  const [logSearch, setLogSearch] = useState('');
+  const [logPage, setLogPage] = useState(0);
   const [filters, setFilters] = useState({ keyword: '', clan: 'all', characterClass: 'all', itemKeyword: '', state: 'all' });
   const [distributionCut, setDistributionCut] = useState(45);
   const [participationByMember, setParticipationByMember] = useState({});
@@ -4203,6 +4265,48 @@ function CollectionPage({ member }) {
     const matchesState = filters.state === 'all' || visibleItems.some((item) => collectionCell(targetMember, item).state === filters.state);
     return matchesKeyword && matchesClan && matchesClass && matchesState;
   }), [data.members, filters, visibleItems, statusMap]);
+  const collectionSortableRows = useMemo(() => visibleMembers.map((targetMember) => {
+    const participation = participationByMember[Number(targetMember.memberId)] || { current: 0, pastAverage: 0 };
+    const combatPower = Number(targetMember.combatPower || 0);
+    return {
+      ...targetMember,
+      sortableCharacterName: targetMember.characterName || '',
+      sortableClanName: canonicalClanName(targetMember.guildName) || '',
+      sortableCombatPower: combatPower,
+      sortableCurrentParticipation: Number(participation.current || 0),
+      sortablePastParticipation: Number(participation.pastAverage || 0),
+    };
+  }), [visibleMembers, participationByMember]);
+  const {
+    sortedRows: sortedCollectionMembers,
+    sortKey: collectionSortKey,
+    sortDirection: collectionSortDirection,
+    toggleSort: toggleCollectionSort,
+  } = useSortableRows(collectionSortableRows, 'sortableCharacterName', 'asc');
+  const filteredCollectionLogs = useMemo(() => {
+    const keyword = normalize(logSearch);
+    const histories = Array.isArray(data.histories) ? data.histories : [];
+    if (!keyword) return histories;
+    return histories.filter((log) => [
+      log.action,
+      log.characterName,
+      log.itemName,
+      log.previousState,
+      log.nextState,
+      log.editedByName,
+      log.memo,
+      log.createdAt,
+    ].some((value) => normalize(value).includes(keyword)));
+  }, [data.histories, logSearch]);
+  const totalLogPages = Math.max(1, Math.ceil(filteredCollectionLogs.length / COLLECTION_LOG_PAGE_SIZE));
+  const safeLogPage = Math.min(logPage, totalLogPages - 1);
+  const pagedCollectionLogs = filteredCollectionLogs.slice(
+    safeLogPage * COLLECTION_LOG_PAGE_SIZE,
+    safeLogPage * COLLECTION_LOG_PAGE_SIZE + COLLECTION_LOG_PAGE_SIZE,
+  );
+  useEffect(() => {
+    setLogPage(0);
+  }, [logSearch, data.histories.length]);
   const visibleTotalCount = visibleMembers.length * visibleItems.length;
   const visibleCompletedCount = visibleMembers.reduce((sum, targetMember) => (
     sum + visibleItems.filter((item) => collectionCell(targetMember, item).state === '완료').length
@@ -4261,10 +4365,11 @@ function CollectionPage({ member }) {
           <table className="collection-wide-table">
             <thead>
               <tr>
-                <th className="collection-member-head">클랜원</th>
-                <th>클랜</th>
-                <th>현재참여율</th>
-                <th>과거평균참여율(2주)</th>
+                <SortableHeader className="collection-member-head" label="클랜원" field="sortableCharacterName" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
+                <SortableHeader label="클랜" field="sortableClanName" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
+                <SortableHeader label="전투력" field="sortableCombatPower" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
+                <SortableHeader label="현재참여율" field="sortableCurrentParticipation" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
+                <SortableHeader label="과거평균참여율(2주)" field="sortablePastParticipation" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
                 {visibleItems.map((item) => (
                   <th key={item.itemId}>
                     {editingItem?.itemId === item.itemId ? (
@@ -4287,13 +4392,14 @@ function CollectionPage({ member }) {
               </tr>
             </thead>
             <tbody>
-              {visibleMembers.map((targetMember) => {
+              {sortedCollectionMembers.map((targetMember) => {
                 const participation = participationByMember[Number(targetMember.memberId)] || { current: 0, pastAverage: 0 };
                 const belowCut = Number(participation.current || 0) < Number(distributionCut || 0);
                 return (
                 <tr key={targetMember.memberId} className={belowCut ? 'below-distribution-cut' : ''}>
                   <td className="collection-member-name"><b>{targetMember.characterName}</b><small>{targetMember.characterClass || '-'}</small></td>
                   <td><span className={`clan-badge ${normalize(canonicalClanName(targetMember.guildName))}`}>{canonicalClanName(targetMember.guildName)}</span></td>
+                  <td>{formatNumber(targetMember.sortableCombatPower)}</td>
                   <td className={belowCut ? 'rate-below-cut' : ''}>{Number(participation.current || 0).toFixed(1)}%</td>
                   <td>{Number(participation.pastAverage || 0).toFixed(1)}%</td>
                   {visibleItems.map((item) => {
@@ -4326,21 +4432,36 @@ function CollectionPage({ member }) {
       <section className="white-card collection-log-card collapsible">
         <button type="button" className="collection-log-toggle" onClick={() => setShowLogs(!showLogs)}>
           <span>변경/지급 로그</span>
-          <b>{data.histories.length}건</b>
+          <b>{filteredCollectionLogs.length} / {data.histories.length}건</b>
           <em>{showLogs ? '접기' : '열어보기'}</em>
         </button>
         {showLogs && (
-          <div className="collection-log-list">
-            {data.histories.map((log) => (
-              <div className="collection-log-row" key={log.historyId}>
-                <b>{log.action}</b>
-                <span>{log.characterName} · {log.itemName}</span>
-                <small>{log.previousState || '-'} → {log.nextState || '-'} / {log.editedByName || '-'}</small>
-                {log.memo && <em>{log.memo}</em>}
-                <time>{new Date(log.createdAt).toLocaleString('ko-KR')}</time>
+          <div className="collection-log-panel">
+            <div className="collection-log-tools">
+              <label>로그 검색
+                <input value={logSearch} onChange={(event) => setLogSearch(event.target.value)} placeholder="닉네임, 항목, 처리자, 메모 검색" />
+              </label>
+              <span className="result-count">표시 {filteredCollectionLogs.length}건</span>
+            </div>
+            <div className="collection-log-list">
+              {pagedCollectionLogs.map((log) => (
+                <div className="collection-log-row" key={log.historyId}>
+                  <b>{log.action}</b>
+                  <span>{log.characterName} · {log.itemName}</span>
+                  <small>{log.previousState || '-'} → {log.nextState || '-'} / {log.editedByName || '-'}</small>
+                  {log.memo && <em>{log.memo}</em>}
+                  <time>{new Date(log.createdAt).toLocaleString('ko-KR')}</time>
+                </div>
+              ))}
+              {!filteredCollectionLogs.length && <div className="empty-state">{logSearch ? '검색 결과가 없습니다.' : '아직 변경 로그가 없습니다.'}</div>}
+            </div>
+            {filteredCollectionLogs.length > COLLECTION_LOG_PAGE_SIZE && (
+              <div className="collection-log-pagination">
+                <button type="button" disabled={safeLogPage === 0} onClick={() => setLogPage((page) => Math.max(0, page - 1))}>이전</button>
+                <span>{safeLogPage + 1} / {totalLogPages}</span>
+                <button type="button" disabled={safeLogPage >= totalLogPages - 1} onClick={() => setLogPage((page) => Math.min(totalLogPages - 1, page + 1))}>다음</button>
               </div>
-            ))}
-            {!data.histories.length && <div className="empty-state">아직 변경 로그가 없습니다.</div>}
+            )}
           </div>
         )}
       </section>
@@ -5283,5 +5404,7 @@ export default function App() {
     : <Lobby member={member} setPage={setPage} favoritePages={visibleFavoritePages} />;
   return <Shell member={member} page={page} setPage={setPage} onLogout={logout} favorites={favorites} toggleFavorite={toggleFavorite}>{view}</Shell>;
 }
+
+
 
 
