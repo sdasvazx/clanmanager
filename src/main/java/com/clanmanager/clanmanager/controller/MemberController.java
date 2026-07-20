@@ -103,22 +103,32 @@ public class MemberController {
         if (characterName.isBlank()) {
             throw new IllegalArgumentException("캐릭터 이름은 비워둘 수 없습니다.");
         }
-        if (memberRepository.existsByCharacterName(characterName)) {
+        Member member = memberRepository.findByCharacterName(characterName).orElse(null);
+        if (member != null && Boolean.TRUE.equals(member.getActive())) {
             throw new IllegalArgumentException("이미 등록된 캐릭터 이름입니다.");
         }
 
-        return memberRepository.save(Member.builder()
-                .characterName(characterName)
-                .password(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD))
-                .combatPower(request.getCombatPower() == null ? 0 : request.getCombatPower())
-                .guildName(blankToNull(request.getGuildName()))
-                .characterClass(blankToNull(request.getCharacterClass()))
-                .level(request.getLevel() == null ? 0 : request.getLevel())
-                .rank(blankToNull(request.getRank()))
-                .status(blankToNull(request.getStatus()))
-                .role(MemberRole.MEMBER)
-                .active(request.getActive() == null ? true : request.getActive())
-                .build());
+        if (member == null) {
+            member = Member.builder()
+                    .characterName(characterName)
+                    .password(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD))
+                    .role(MemberRole.MEMBER)
+                    .build();
+        } else {
+            // 삭제는 비활성 처리이므로 같은 닉네임을 다시 등록할 때 기존 계정을 복구한다.
+            // 기존 행을 재사용하면 출석/금고 등 연관 기록의 참조도 유지된다.
+            member.setPassword(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD));
+            member.setRole(MemberRole.MEMBER);
+        }
+
+        member.setCombatPower(request.getCombatPower() == null ? 0 : request.getCombatPower());
+        member.setGuildName(blankToNull(request.getGuildName()));
+        member.setCharacterClass(blankToNull(request.getCharacterClass()));
+        member.setLevel(request.getLevel() == null ? 0 : request.getLevel());
+        member.setRank(blankToNull(request.getRank()));
+        member.setStatus(blankToNull(request.getStatus()));
+        member.setActive(request.getActive() == null ? true : request.getActive());
+        return memberRepository.save(member);
     }
 
     @PatchMapping("/{memberId}/rank")
