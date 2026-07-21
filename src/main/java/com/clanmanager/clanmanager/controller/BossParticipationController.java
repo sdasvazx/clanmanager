@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +41,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @RestController
 @RequestMapping("/api/boss-participations")
@@ -92,10 +94,20 @@ public class BossParticipationController {
     @GetMapping("/member/{memberId}")
     public List<MemberBossParticipationDto> getMemberRecords(@PathVariable Long memberId) {
         Member member = findMember(memberId);
-        return participationMemberRepository.findByMemberWithRecordOrderByRecent(member)
+        Stream<MemberBossParticipationDto> bossParticipationRecords = participationMemberRepository.findByMemberWithRecordOrderByRecent(member)
                 .stream()
+                .map(MemberBossParticipationDto::from);
+
+        Stream<MemberBossParticipationDto> manualAttendanceRecords = activityAttendanceRepository
+                .findManualAttendancesForMember(member)
+                .stream()
+                .map(MemberBossParticipationDto::fromAttendance);
+
+        return Stream.concat(bossParticipationRecords, manualAttendanceRecords)
+                .sorted(Comparator
+                        .comparing(MemberBossParticipationDto::bossDate, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(MemberBossParticipationDto::cutTime, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(80)
-                .map(MemberBossParticipationDto::from)
                 .toList();
     }
 
@@ -488,6 +500,23 @@ public class BossParticipationController {
                     record.getScore(),
                     member.getClanName(),
                     member.getCharacterName()
+            );
+        }
+
+        public static MemberBossParticipationDto fromAttendance(ActivityAttendance attendance) {
+            ActivityType activityType = attendance.getActivityType();
+            Integer score = activityType != null && activityType.getParticipationScore() != null
+                    ? activityType.getParticipationScore()
+                    : 1;
+            Member member = attendance.getMember();
+            return new MemberBossParticipationDto(
+                    attendance.getAttendanceId() == null ? null : -attendance.getAttendanceId(),
+                    attendance.getAttendanceDate(),
+                    null,
+                    activityType == null ? "수동 출석" : activityType.getTypeName(),
+                    score,
+                    member == null ? "" : member.getGuildName(),
+                    member == null ? "" : member.getCharacterName()
             );
         }
     }

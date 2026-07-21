@@ -60,6 +60,25 @@ public interface ActivityAttendanceRepository
             LocalDate attendanceDate
     );
 
+    /*
+     * 보스참여 기록과 연결되지 않은 수동 출석 체크 내역.
+     *
+     * 회원 상세 참여현황에서는 사진/OCR로 등록된 보스참여 기록과
+     * 관리자가 직접 찍은 수동 출석 기록을 함께 보여줘야 한다.
+     */
+    @Query("""
+            select a
+            from ActivityAttendance a
+            join fetch a.member
+            join fetch a.activityType
+            where a.member = :member
+              and a.bossParticipationRecord is null
+              and a.status =
+                  com.clanmanager.clanmanager.entity.AttendanceStatus.ATTENDED
+            order by a.attendanceDate desc, a.recordedAt desc
+            """)
+    List<ActivityAttendance> findManualAttendancesForMember(@Param("member") Member member);
+
     boolean existsByMemberAndActivityTypeAndAttendanceDateAndBossParticipationRecord(
             Member member,
             ActivityType activityType,
