@@ -47,7 +47,9 @@ public class AttendanceController {
                 .orElseThrow(() -> new IllegalArgumentException("활동을 찾을 수 없습니다."));
 
         LocalDate attendanceDate = request.getAttendanceDate() == null ? LocalDate.now() : request.getAttendanceDate();
-        if (attendanceRepository.existsByMemberAndActivityTypeAndAttendanceDate(member, activityType, attendanceDate)) {
+        boolean allowsMultiplePerDay = "소수쟁".equals(activityType.getTypeName());
+        if (!allowsMultiplePerDay
+                && attendanceRepository.existsByMemberAndActivityTypeAndAttendanceDate(member, activityType, attendanceDate)) {
             throw new IllegalArgumentException("이미 같은 날짜의 활동 출석 기록이 존재합니다.");
         }
 
