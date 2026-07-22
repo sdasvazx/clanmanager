@@ -4912,6 +4912,7 @@ function ClanVaultPage({ member, readonly = false }) {
     WITHDRAW: '차감',
     ADJUSTMENT: '잔액수정',
   };
+  const formModeText = { deposit: '입금', distribute: '분배', withdraw: '차감', adjust: '잔액수정' };
   const typeTone = {
     DEPOSIT: 'green',
     DISTRIBUTION: 'blue',
@@ -5059,7 +5060,7 @@ function ClanVaultPage({ member, readonly = false }) {
             <div className="vault-tabs">
               {['deposit', 'distribute', 'withdraw', 'adjust'].map((item) => (
                 <button key={item} type="button" className={mode === item ? 'active' : ''} onClick={() => setMode(item)}>
-                  {typeText[item.toUpperCase()]}
+                  {formModeText[item]}
                 </button>
               ))}
             </div>
@@ -5265,7 +5266,6 @@ function DistributionAdminPage({ member }) {
     clanDiamonds: { 귀신: 0, 운좋은: 0, 귀신Z: 0, 로망: 0 },
     participationDiamonds: { 귀신: 0, 운좋은: 0, 귀신Z: 0, 로망: 0 },
     powerDiamonds: { 귀신: 0, 운좋은: 0, 귀신Z: 0, 로망: 0 },
-    nonParticipationPenaltyDiamonds: {},
     memo: '',
   };
   const [settings, setSettings] = useState(initialSettings);
@@ -5291,7 +5291,6 @@ function DistributionAdminPage({ member }) {
     clanDiamonds: Object.fromEntries(DISTRIBUTION_CLANS.map((clan) => [clan, Number(source.clanDiamonds?.[clan] || 0)])),
     participationDiamonds: Object.fromEntries(DISTRIBUTION_CLANS.map((clan) => [clan, Number(source.participationDiamonds?.[clan] || 0)])),
     powerDiamonds: Object.fromEntries(DISTRIBUTION_CLANS.map((clan) => [clan, Number(source.powerDiamonds?.[clan] || 0)])),
-    nonParticipationPenaltyDiamonds: Object.fromEntries((source.periodIds || []).map((periodId) => [Number(periodId), Number(source.nonParticipationPenaltyDiamonds?.[periodId] || 0)])),
   });
 
   const loadHistory = async () => {
@@ -5356,14 +5355,6 @@ function DistributionAdminPage({ member }) {
   };
   const selectAllPeriods = () => update('periodIds', periods.map((p) => Number(p.periodId)).filter(Boolean));
   const clearPeriods = () => update('periodIds', []);
-  const updatePeriodPenalty = (periodId, value) =>
-    applySettings({
-      ...settings,
-      nonParticipationPenaltyDiamonds: {
-        ...settings.nonParticipationPenaltyDiamonds,
-        [periodId]: value,
-      },
-    });
   const updateSplitClanDiamond = (type, clan, value) => {
     const key = type === 'participation' ? 'participationDiamonds' : 'powerDiamonds';
     const nextMap = { ...settings[key], [clan]: value };
@@ -5406,10 +5397,6 @@ function DistributionAdminPage({ member }) {
       powerDiamonds: {
         ...settings.powerDiamonds,
         ...(snapshot.powerDiamonds || {}),
-      },
-      nonParticipationPenaltyDiamonds: {
-        ...settings.nonParticipationPenaltyDiamonds,
-        ...(snapshot.nonParticipationPenaltyDiamonds || {}),
       },
     });
     setEditing(false);
@@ -5594,16 +5581,6 @@ function DistributionAdminPage({ member }) {
                 ))}
               {selectedPeriods.length === 0 && <em>선택한 회차가 없습니다.</em>}
             </div>
-            {selectedPeriods.length > 0 && (
-              <div className="period-penalty-grid">
-                {selectedPeriods.map((period) => (
-                  <label key={period.periodId}>
-                    <span>{period.periodName} 미참여 패널티 💎</span>
-                    <input disabled={!editing} type="number" min="0" value={settings.nonParticipationPenaltyDiamonds?.[period.periodId] ?? 0} onChange={(event) => updatePeriodPenalty(period.periodId, event.target.value)} />
-                  </label>
-                ))}
-              </div>
-            )}
           </div>
           <label>
             참여율 컷 <small>(백분율 %)</small>
@@ -5724,7 +5701,20 @@ function DistributionAdminPage({ member }) {
                   <td>{row.attendanceCount ?? 0}회</td>
                   <td>{row.totalActivityCount ?? result?.totalActivityCount ?? 0}회</td>
                   <td className="red-text">-{row.absencePenaltyScore ?? 0}점</td>
-                  <td className="red-text">-{money(row.nonParticipationPenaltyDiamonds)}</td>
+                  <td className="red-text">
+                    <span
+                      className="penalty-with-tooltip"
+                      title={
+                        row.nonParticipationPenaltyDetails?.length
+                          ? row.nonParticipationPenaltyDetails
+                              .map((detail) => `${detail.missedDate} ${detail.activityName} 불참: -${Number(detail.amountDiamonds || 0).toLocaleString('ko-KR')} 다이아`)
+                              .join('\n')
+                          : '미참여 패널티 없음'
+                      }
+                    >
+                      {Number(row.nonParticipationPenaltyDiamonds || 0) > 0 ? `-${money(row.nonParticipationPenaltyDiamonds)}` : money(0)}
+                    </span>
+                  </td>
                   <td>{money(row.participationAmount)}</td>
                   <td>+{row.growthScore}</td>
                   <td className={row.powerEligible ? 'green-text' : 'red-text'}>{row.powerScore}</td>

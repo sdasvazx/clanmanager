@@ -1,9 +1,13 @@
 package com.clanmanager.clanmanager.service;
 
 import com.clanmanager.clanmanager.dto.DistributionRequestDto;
+import com.clanmanager.clanmanager.dto.DistributionPenaltyDetailDto;
 import com.clanmanager.clanmanager.dto.DistributionResponseDto;
 import com.clanmanager.clanmanager.dto.ParticipationResponseDto;
 import com.clanmanager.clanmanager.entity.ClanVault;
+import com.clanmanager.clanmanager.entity.ActivityAttendance;
+import com.clanmanager.clanmanager.entity.AttendanceStatus;
+import com.clanmanager.clanmanager.entity.BossParticipationRecord;
 import com.clanmanager.clanmanager.entity.DistributionSnapshot;
 import com.clanmanager.clanmanager.entity.Member;
 import com.clanmanager.clanmanager.entity.MemberRole;
@@ -12,6 +16,8 @@ import com.clanmanager.clanmanager.entity.ParticipationPeriod;
 import com.clanmanager.clanmanager.entity.VaultTransaction;
 import com.clanmanager.clanmanager.entity.VaultTransactionType;
 import com.clanmanager.clanmanager.repository.ClanVaultRepository;
+import com.clanmanager.clanmanager.repository.ActivityAttendanceRepository;
+import com.clanmanager.clanmanager.repository.BossParticipationRecordRepository;
 import com.clanmanager.clanmanager.repository.DistributionSnapshotRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.repository.MemberSpecHistoryRepository;
@@ -28,11 +34,13 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -42,12 +50,16 @@ import java.util.stream.Collectors;
 public class DistributionService {
 
     private static final Long VAULT_ID = 1L;
+    private static final long ABSENCE_PENALTY_DIAMONDS = 1_000L;
+    private static final Set<String> ABSENCE_PENALTY_ACTIVITIES = Set.of("결승전", "클랜수호");
     private static final List<String> CLAN_ORDER = List.of("귀신", "운좋은", "귀신Z", "로망");
 
     private final ParticipationService participationService;
     private final MemberRepository memberRepository;
     private final MemberSpecHistoryRepository memberSpecHistoryRepository;
     private final ParticipationPeriodRepository participationPeriodRepository;
+    private final ActivityAttendanceRepository attendanceRepository;
+    private final BossParticipationRecordRepository bossParticipationRecordRepository;
     private final ClanVaultRepository vaultRepository;
     private final VaultTransactionRepository transactionRepository;
     private final DistributionSnapshotRepository snapshotRepository;
@@ -101,7 +113,6 @@ public class DistributionService {
                 .clanDiamonds(settings.clanDiamonds())
                 .participationDiamonds(settings.participationDiamonds())
                 .powerDiamonds(settings.powerDiamonds())
-                .nonParticipationPenaltyDiamonds(settings.nonParticipationPenaltyDiamonds())
                 .periodIds(settings.periodIds())
                 .selectedPeriods(aggregation.selectedPeriods())
                 .totalActivityCount(aggregation.totalActivityCount())
@@ -253,15 +264,6 @@ public class DistributionService {
             }
 
             if (periodParticipation.getRows() != null) {
-                Map<Long, ParticipationResponseDto.ParticipationMemberDto> periodRows = periodParticipation.getRows().stream()
-                        .collect(Collectors.toMap(ParticipationResponseDto.ParticipationMemberDto::getMemberId, Function.identity()));
-                long periodPenalty = settings.nonParticipationPenaltyDiamonds().getOrDefault(period.getPeriodId(), 0L);
-                aggregates.forEach((memberId, aggregate) -> {
-                    ParticipationResponseDto.ParticipationMemberDto periodRow = periodRows.get(memberId);
-                    if (periodPenalty > 0 && (periodRow == null || nullToZero(periodRow.getAttendanceCount()) <= 0)) {
-                        aggregate.addNonParticipationPenalty(periodPenalty);
-                    }
-                });
                 periodParticipation.getRows().forEach(row -> {
                     ParticipationAggregate aggregate = aggregates.get(row.getMemberId());
                     if (aggregate != null) {
@@ -269,6 +271,8 @@ public class DistributionService {
                     }
                 });
             }
+
+            applyAutomaticAbsencePenalties(period, aggregates);
 
             if (periodParticipation.getActivityColumns() != null) {
                 periodParticipation.getActivityColumns().forEach(column ->
@@ -324,6 +328,43 @@ public class DistributionService {
         );
     }
 
+    private void applyAutomaticAbsencePenalties(
+            ParticipationPeriod period,
+            Map<Long, ParticipationAggregate> aggregates
+    ) {
+        Map<String, BossParticipationRecord> penaltyEvents = new LinkedHashMap<>();
+        bossParticipationRecordRepository
+                .findByBossDateBetweenOrderByBossDateAscCutTimeAsc(period.getStartDate(), period.getEndDate())
+                .stream()
+                .filter(record -> !Boolean.FALSE.equals(record.getAttendanceApplied()))
+                .filter(record -> record.getActivityType() != null)
+                .filter(record -> ABSENCE_PENALTY_ACTIVITIES.contains(record.getActivityType().getTypeName()))
+                .forEach(record -> penaltyEvents.putIfAbsent(
+                        record.getActivityType().getActivityTypeId() + ":" + record.getBossDate(),
+                        record
+                ));
+        if (penaltyEvents.isEmpty()) {
+            return;
+        }
+
+        Set<String> attended = new HashSet<>();
+        for (ActivityAttendance attendance : attendanceRepository
+                .findByAttendanceDateBetweenOrderByAttendanceDateDescRecordedAtDesc(period.getStartDate(), period.getEndDate())) {
+            if (attendance.getStatus() == AttendanceStatus.ATTENDED && attendance.getActivityType() != null) {
+                attended.add(attendance.getMember().getMemberId() + ":"
+                        + attendance.getActivityType().getActivityTypeId() + ":"
+                        + attendance.getAttendanceDate());
+            }
+        }
+
+        penaltyEvents.values().forEach(event -> aggregates.forEach((memberId, aggregate) -> {
+            String attendanceKey = memberId + ":" + event.getActivityType().getActivityTypeId() + ":" + event.getBossDate();
+            if (!attended.contains(attendanceKey)) {
+                aggregate.addNonParticipationPenalty(event.getActivityType().getTypeName(), event.getBossDate());
+            }
+        }));
+    }
+
     private List<ParticipationPeriod> resolveParticipationPeriods(List<Long> periodIds) {
         if (periodIds == null || periodIds.isEmpty()) {
             throw new IllegalArgumentException("분배 회차를 1개 이상 선택해 주세요.");
@@ -376,6 +417,7 @@ public class DistributionService {
                 .participationAmount(0L)
                 .powerAmount(0L)
                 .nonParticipationPenaltyDiamonds(row.getNonParticipationPenaltyDiamonds())
+                .nonParticipationPenaltyDetails(row.getNonParticipationPenaltyDetails())
                 .finalAmount(0L)
                 .distributed(false)
                 .build();
@@ -475,6 +517,7 @@ public class DistributionService {
                 .participationAmount(participationAmount)
                 .powerAmount(powerAmount)
                 .nonParticipationPenaltyDiamonds(row.getNonParticipationPenaltyDiamonds())
+                .nonParticipationPenaltyDetails(row.getNonParticipationPenaltyDetails())
                 .finalAmount(Math.max(0L, participationAmount + powerAmount - safeAmount(row.getNonParticipationPenaltyDiamonds())))
                 .distributed(Boolean.TRUE.equals(row.getDistributed()))
                 .build();
@@ -505,13 +548,6 @@ public class DistributionService {
                 ? safeAmount(request.getTotalPowerDiamonds())
                 : powerDiamonds.values().stream().mapToLong(Long::longValue).sum();
         long totalDiamonds = totalParticipationDiamonds + totalPowerDiamonds;
-        Map<Long, Long> nonParticipationPenaltyDiamonds = new LinkedHashMap<>();
-        periodIds.forEach(periodId -> nonParticipationPenaltyDiamonds.put(
-                periodId,
-                safeAmount(request.getNonParticipationPenaltyDiamonds() == null
-                        ? null
-                        : request.getNonParticipationPenaltyDiamonds().get(periodId))
-        ));
         clanDiamonds.replaceAll((clan, ignored) -> participationDiamonds.getOrDefault(clan, 0L) + powerDiamonds.getOrDefault(clan, 0L));
 
         return new DistributionSettings(
@@ -524,7 +560,6 @@ public class DistributionService {
                 powerDiamonds,
                 totalParticipationDiamonds,
                 totalPowerDiamonds,
-                nonParticipationPenaltyDiamonds,
                 periodIds
         );
     }
@@ -729,7 +764,6 @@ public class DistributionService {
                 .clanDiamonds(response.getClanDiamonds())
                 .participationDiamonds(response.getParticipationDiamonds())
                 .powerDiamonds(response.getPowerDiamonds())
-                .nonParticipationPenaltyDiamonds(response.getNonParticipationPenaltyDiamonds())
                 .periodIds(response.getPeriodIds())
                 .selectedPeriods(response.getSelectedPeriods())
                 .totalActivityCount(response.getTotalActivityCount())
@@ -753,7 +787,6 @@ public class DistributionService {
             Map<String, Long> powerDiamonds,
             long totalParticipationDiamonds,
             long totalPowerDiamonds,
-            Map<Long, Long> nonParticipationPenaltyDiamonds,
             List<Long> periodIds
     ) {
     }
@@ -774,6 +807,7 @@ public class DistributionService {
         private int minorityBonusScore = 0;
         private int finalParticipationScore = 0;
         private long nonParticipationPenaltyDiamonds = 0L;
+        private final List<DistributionPenaltyDetailDto> nonParticipationPenaltyDetails = new ArrayList<>();
         private final Map<Long, Long> activityCounts = new LinkedHashMap<>();
 
         private ParticipationAggregate(Member member) {
@@ -805,8 +839,13 @@ public class DistributionService {
             return finalParticipationScore;
         }
 
-        private void addNonParticipationPenalty(long amount) {
-            this.nonParticipationPenaltyDiamonds += Math.max(0L, amount);
+        private void addNonParticipationPenalty(String activityName, LocalDate missedDate) {
+            this.nonParticipationPenaltyDiamonds += ABSENCE_PENALTY_DIAMONDS;
+            this.nonParticipationPenaltyDetails.add(DistributionPenaltyDetailDto.builder()
+                    .activityName(activityName)
+                    .missedDate(missedDate)
+                    .amountDiamonds(ABSENCE_PENALTY_DIAMONDS)
+                    .build());
         }
 
         private ParticipationResponseDto.ParticipationMemberDto toDto(long topAttendanceCount, int topFinalScore) {
@@ -832,6 +871,7 @@ public class DistributionService {
                     .minorityBonusScore(minorityBonusScore)
                     .finalParticipationScore(Math.max(0, finalParticipationScore))
                     .nonParticipationPenaltyDiamonds(nonParticipationPenaltyDiamonds)
+                    .nonParticipationPenaltyDetails(nonParticipationPenaltyDetails)
                     .contributionRate(contributionRate)
                     .activityCounts(activityCounts)
                     .build();
