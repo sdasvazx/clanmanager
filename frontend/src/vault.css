@@ -11,6 +11,67 @@
   margin-bottom: 18px;
 }
 
+.vault-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: 20px;
+  padding: 28px 30px;
+  border: 1px solid #f5c5cf;
+  border-radius: 20px;
+  background: linear-gradient(115deg, #eefaff 0%, #fff 48%, #fff0f3 100%);
+}
+
+.vault-hero-copy > span {
+  color: #2384a9;
+  font-size: .76rem;
+  font-weight: 950;
+  letter-spacing: .2em;
+}
+
+.vault-hero h1 {
+  margin: 5px 0 2px;
+  color: #20181d;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.vault-hero p {
+  margin: 7px 0 10px;
+  color: #7c5964;
+}
+
+.vault-hero small {
+  display: inline-flex;
+  padding: 7px 11px;
+  border: 1px solid #f5c44d;
+  border-radius: 8px;
+  background: #fffdf4;
+  color: #98661b;
+  font-weight: 750;
+}
+
+.vault-hero-actions {
+  display: flex;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.vault-hero-actions button {
+  min-width: 136px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  color: #fff;
+  font-size: .95rem;
+  font-weight: 900;
+}
+
+.vault-hero-actions .deposit { background: #069b69; }
+.vault-hero-actions .withdraw { background: #e7194c; }
+.vault-hero-actions .reset { background: #354052; }
+.vault-hero-actions button:disabled { cursor: not-allowed; opacity: .72; }
+
 .vault-summary-cards > div {
   display: grid;
   gap: 8px;
@@ -20,30 +81,101 @@
   background: #fff;
 }
 
+.vault-summary-cards > div:nth-child(1) { border-color: #a9ddfa; background: #f0faff; }
+.vault-summary-cards > div:nth-child(2) { border-color: #f4bfd1; background: #fff3f7; }
+.vault-summary-cards > div:nth-child(3) { border-color: #9ee8ca; background: #ecfcf5; }
+.vault-summary-cards > div:nth-child(4) { border-color: #ffc7cf; background: #fff2f4; }
+
 .vault-summary-cards span {
   color: #64748b;
   font-weight: 800;
 }
 
 .vault-summary-cards strong {
-  color: #155eef;
+  color: #087db2;
   font-size: 1.35rem;
 }
 
+.vault-summary-cards > div:nth-child(2) strong,
+.vault-summary-cards > div:nth-child(4) strong { color: #e7194c; }
+.vault-summary-cards > div:nth-child(3) strong { color: #058c62; }
+
 .vault-accounts-card {
   margin-top: 18px;
+  padding: 0;
+  overflow: hidden;
+  border-color: #f1c3cd;
+}
+
+.vault-account-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 16px;
+  border-bottom: 1px solid #f2ccd4;
+}
+
+.vault-account-toolbar label {
+  position: relative;
+  flex: 1;
+}
+
+.vault-account-toolbar label span {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  color: #9c7180;
+  font-size: 1.35rem;
+  transform: translateY(-52%);
+}
+
+.vault-account-toolbar small {
+  color: #9c6475;
+  white-space: nowrap;
 }
 
 .vault-account-search {
-  width: min(100%, 360px);
-  margin-bottom: 16px;
-  padding: 11px 13px;
-  border: 1px solid #cbd8e8;
+  width: 100%;
+  padding: 13px 14px 13px 38px;
+  border: 1px solid #eca9b9;
   border-radius: 9px;
+  outline: 0;
 }
 
 .vault-account-table {
-  min-width: 760px;
+  min-width: 680px;
+}
+
+.vault-account-table th,
+.vault-account-table td {
+  padding: 17px 18px;
+  text-align: center;
+  border-color: #f4d2d8;
+}
+
+.vault-account-table th {
+  background: #fff7f9;
+  color: #5e3d47;
+}
+
+.vault-balance-value { color: #e7194c; font-weight: 850; }
+.vault-credit-value { color: #078b63; }
+.vault-withdraw-value { color: #e7194c; }
+
+.vault-history-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: transparent;
+  color: #805565;
+  font-size: 1.45rem;
+}
+
+.vault-form-modal {
+  position: relative;
+  width: min(680px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
 }
 
 .member-vault-history {
@@ -365,6 +497,18 @@
   margin-top: 16px;
 }
 
+.claim-approved-input {
+  width: 110px;
+  padding: 7px 9px;
+  border: 1px solid #cbd7e6;
+  border-radius: 8px;
+}
+
+.claim-custom-card { margin-bottom: 18px; }
+.claim-custom-form { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 12px; align-items: end; }
+.claim-custom-form label { display: grid; gap: 6px; color: #475569; font-weight: 800; }
+.claim-custom-form input { padding: 11px 12px; border: 1px solid #cbd7e6; border-radius: 9px; }
+
 .claim-request-actions {
   display: flex;
   gap: 6px;
@@ -425,8 +569,24 @@
 }
 
 @media (max-width: 800px) {
+  .vault-hero {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 22px;
+  }
+
+  .vault-hero-actions button {
+    flex: 1;
+    min-width: 0;
+  }
+
   .vault-summary-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vault-account-toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .vault-grid {
@@ -814,6 +974,22 @@
 
 .power-example.green {
   background: #eafaf1;
+}
+
+.period-penalty-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.period-penalty-grid label {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #f3c5ce;
+  border-radius: 10px;
+  background: #fff8fa;
 }
 
 @media (max-width: 800px) {

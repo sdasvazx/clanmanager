@@ -44,7 +44,7 @@ public class DistributionClaimRequest {
     private long version;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "source_transaction_id", nullable = false)
+    @JoinColumn(name = "source_transaction_id")
     private VaultTransaction sourceTransaction;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -56,6 +56,8 @@ public class DistributionClaimRequest {
 
     @Column(nullable = false)
     private Long amountDiamonds;
+
+    private Long approvedAmount;
 
     @Column(length = 200)
     private String memo;

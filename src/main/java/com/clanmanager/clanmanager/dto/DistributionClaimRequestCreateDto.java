@@ -12,8 +12,9 @@ public class DistributionClaimRequestCreateDto {
     @NotNull
     private Long requesterMemberId;
 
-    @NotNull
     private Long transactionId;
+
+    private Long requestedAmount;
 
     @Size(max = 200)
     private String memo;

@@ -16,6 +16,8 @@ public class DistributionClaimRequestProcessDto {
     @NotBlank
     private String status;
 
+    private Long approvedAmount;
+
     @Size(max = 200)
     private String processedMemo;
 }
