@@ -127,6 +127,31 @@ public class ClanVaultController {
                 .toList();
     }
 
+    @GetMapping("/member-balance/{memberId}")
+    @Transactional
+    public MemberVaultBalanceDto getMemberBalance(@PathVariable Long memberId, @RequestParam Long requesterMemberId) {
+        Member requester = findRequiredMember(requesterMemberId, "조회 회원 정보가 필요합니다.");
+        if (!memberId.equals(requesterMemberId) && requester.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("본인의 계좌만 조회할 수 있습니다.");
+        }
+        Member target = findRequiredMember(memberId, "존재하지 않는 회원입니다.");
+        initializeTransactionVersions();
+        VaultTransactionRepository.MemberBalanceProjection projection = transactionRepository.aggregateByMember().stream()
+                .filter(row -> memberId.equals(row.getMemberId()))
+                .findFirst()
+                .orElse(null);
+        long credited = projection == null ? 0L : projection.getTotalCredited();
+        long withdrawn = projection == null ? 0L : projection.getTotalWithdrawn();
+        return new MemberVaultBalanceDto(
+                target.getMemberId(),
+                target.getCharacterName(),
+                target.getGuildName(),
+                credited - withdrawn,
+                credited,
+                withdrawn
+        );
+    }
+
     @GetMapping("/distributions/summary-by-member")
     @Transactional
     public List<MemberVaultBalanceDto> getDistributionSummaryByMember(@RequestParam Long adminMemberId) {

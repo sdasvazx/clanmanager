@@ -51,7 +51,6 @@ public class DistributionService {
 
     private static final Long VAULT_ID = 1L;
     private static final long ABSENCE_PENALTY_DIAMONDS = 1_000L;
-    private static final Set<String> ABSENCE_PENALTY_ACTIVITIES = Set.of("결승전", "클랜수호");
     private static final List<String> CLAN_ORDER = List.of("귀신", "운좋은", "귀신Z", "로망");
 
     private final ParticipationService participationService;
@@ -172,6 +171,33 @@ public class DistributionService {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("분배 히스토리를 읽을 수 없습니다.", e);
         }
+    }
+
+    @Transactional(readOnly = true)
+    public DistributionResponseDto.ResultItemDto getLatestMemberDistribution(Long memberId) {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        return snapshotRepository.findTopByOrderByCreatedAtDesc()
+                .map(snapshot -> {
+                    try {
+                        DistributionResponseDto response = objectMapper.readValue(snapshot.getResponseJson(), DistributionResponseDto.class);
+                        return response.getResults() == null ? null : response.getResults().stream()
+                                .filter(row -> memberId.equals(row.getMemberId()))
+                                .findFirst()
+                                .orElse(null);
+                    } catch (JsonProcessingException e) {
+                        throw new IllegalStateException("최신 분배 결과를 읽을 수 없습니다.", e);
+                    }
+                })
+                .orElseGet(() -> DistributionResponseDto.ResultItemDto.builder()
+                        .memberId(memberId)
+                        .characterName(member.getCharacterName())
+                        .finalAmount(0L)
+                        .participationAmount(0L)
+                        .powerAmount(0L)
+                        .nonParticipationPenaltyDiamonds(0L)
+                        .distributed(false)
+                        .build());
     }
 
     @Transactional
@@ -338,7 +364,7 @@ public class DistributionService {
                 .stream()
                 .filter(record -> !Boolean.FALSE.equals(record.getAttendanceApplied()))
                 .filter(record -> record.getActivityType() != null)
-                .filter(record -> ABSENCE_PENALTY_ACTIVITIES.contains(record.getActivityType().getTypeName()))
+                .filter(this::isAutomaticPenaltyActivity)
                 .forEach(record -> penaltyEvents.putIfAbsent(
                         record.getActivityType().getActivityTypeId() + ":" + record.getBossDate(),
                         record
@@ -360,9 +386,34 @@ public class DistributionService {
         penaltyEvents.values().forEach(event -> aggregates.forEach((memberId, aggregate) -> {
             String attendanceKey = memberId + ":" + event.getActivityType().getActivityTypeId() + ":" + event.getBossDate();
             if (!attended.contains(attendanceKey)) {
-                aggregate.addNonParticipationPenalty(event.getActivityType().getTypeName(), event.getBossDate());
+                aggregate.addNonParticipationPenalty(automaticPenaltyActivityName(event), event.getBossDate());
             }
         }));
+    }
+
+    private boolean isAutomaticPenaltyActivity(BossParticipationRecord record) {
+        String typeName = compact(record.getActivityType() == null ? null : record.getActivityType().getTypeName());
+        String bossName = compact(record.getBossName());
+        return isFinalMatch(typeName) || isFinalMatch(bossName)
+                || isClanGuardMatch(typeName) || isClanGuardMatch(bossName);
+    }
+
+    private String automaticPenaltyActivityName(BossParticipationRecord record) {
+        String typeName = compact(record.getActivityType() == null ? null : record.getActivityType().getTypeName());
+        String bossName = compact(record.getBossName());
+        return isFinalMatch(typeName) || isFinalMatch(bossName) ? "\uACB0\uC2B9\uC804" : "\uD074\uB79C\uC218\uD638";
+    }
+
+    private boolean isFinalMatch(String value) {
+        return value.contains("\uACB0\uC2B9\uC804");
+    }
+
+    private boolean isClanGuardMatch(String value) {
+        return value.contains("\uD074\uB79C\uC218\uD638") || value.equals("\uC218\uD638");
+    }
+
+    private String compact(String value) {
+        return value == null ? "" : value.replaceAll("\\s+", "");
     }
 
     private List<ParticipationPeriod> resolveParticipationPeriods(List<Long> periodIds) {
