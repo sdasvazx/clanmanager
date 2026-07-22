@@ -35,6 +35,16 @@ public interface VaultTransactionRepository extends JpaRepository<VaultTransacti
 
     List<VaultTransaction> findByTypeAndTargetMember_MemberIdOrderByCreatedAtDesc(VaultTransactionType type, Long memberId);
 
+    @Query("""
+            select v from VaultTransaction v
+            where v.targetMember.memberId = :memberId
+              and (v.type = com.clanmanager.clanmanager.entity.VaultTransactionType.WITHDRAW
+                   or (v.type = com.clanmanager.clanmanager.entity.VaultTransactionType.DISTRIBUTION
+                       and (v.claimed is null or v.claimed = false)))
+            order by v.createdAt desc
+            """)
+    List<VaultTransaction> findMemberClaimHistory(Long memberId);
+
     List<VaultTransaction> findByTargetMember_MemberIdOrderByCreatedAtDesc(Long memberId);
 
     @Query("""
@@ -64,6 +74,8 @@ public interface VaultTransactionRepository extends JpaRepository<VaultTransacti
     List<MemberDistributionProjection> aggregateDistributionsByMember();
 
     long countByType(VaultTransactionType type);
+
+    boolean existsByTypeAndMemo(VaultTransactionType type, String memo);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<VaultTransaction> findWithLockByTransactionId(Long transactionId);
