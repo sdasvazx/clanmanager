@@ -991,6 +991,13 @@
   font-weight: 700;
 }
 
+.claim-admin-retention {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #64748b;
+}
+
 .data-table tbody tr:nth-child(odd) {
   background: #ffffff;
 }
