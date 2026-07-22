@@ -6031,12 +6031,8 @@ function PaymentClaimPage({ member }) {
       setMessage('원하는 금액의 수령 신청을 접수했습니다.');
     } catch (err) {
       const errorMessage = String(err.message || '');
-      if (errorMessage.includes('이미 존재하는 데이터') || errorMessage.includes('저장할 수 없는 값')) {
-        await load().catch(() => {});
-        setMessage('이미 동일한 신청이 접수되어 있습니다. 운영진 확인 후 처리 상태가 표시됩니다.');
-      } else {
-        setMessage(errorMessage);
-      }
+      await load().catch(() => {});
+      setMessage(errorMessage || '수령 신청을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     } finally {
       setClaimingId(null);
     }

@@ -53,8 +53,8 @@ public class DistributionClaimRequestCleanupService {
             initialDelayString = "${clanmanager.claim-request-cleanup-initial-delay-ms:60000}"
     )
     @Transactional
-    public long deleteExpiredProcessedRequests() {
-        return repository.deleteByStatusNotAndProcessedAtBefore(
+    public int deleteExpiredProcessedRequests() {
+        return repository.deleteProcessedBefore(
                 PENDING_STATUS,
                 LocalDateTime.now().minusHours(RETENTION_HOURS)
         );

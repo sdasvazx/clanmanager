@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.util.Locale;
 
 @Component
 @RequiredArgsConstructor
@@ -20,8 +21,11 @@ public class DistributionClaimSchemaMigration {
     public void allowMultipleCustomClaims() throws Exception {
         try (Connection connection = dataSource.getConnection()) {
             String product = connection.getMetaData().getDatabaseProductName();
-            if (product != null && product.toLowerCase().contains("postgresql")) {
+            String normalized = product == null ? "" : product.toLowerCase(Locale.ROOT);
+            if (normalized.contains("postgresql")) {
                 jdbcTemplate.execute("alter table distribution_claim_requests alter column source_transaction_id drop not null");
+            } else if (normalized.contains("mysql") || normalized.contains("mariadb")) {
+                jdbcTemplate.execute("alter table distribution_claim_requests modify source_transaction_id bigint null");
             }
         }
     }
