@@ -5958,7 +5958,10 @@ function PaymentClaimPage({ member }) {
     setRows(distributions);
     setClaimRequests(Array.isArray(requests) ? requests : []);
     setMemberBalance(account);
-    const suggestedAmount = Number(account?.balance || 0);
+    const waitingAmount = (Array.isArray(requests) ? requests : [])
+      .filter((item) => item.status === '접수')
+      .reduce((sum, item) => sum + Number(item.amountDiamonds || 0), 0);
+    const suggestedAmount = Math.max(0, Number(account?.balance || 0) - waitingAmount);
     if (suggestedAmount > 0) {
       setClaimForm((current) => ({ ...current, requestedAmount: current.requestedAmount || String(suggestedAmount) }));
     }
@@ -5970,14 +5973,36 @@ function PaymentClaimPage({ member }) {
 
   const pendingTotal = rows.filter((row) => !row.claimed).reduce((sum, row) => sum + Number(row.amountDiamonds || 0), 0);
   const claimedTotal = rows.filter((row) => row.claimed).reduce((sum, row) => sum + Number(row.amountDiamonds || 0), 0);
+  const processingTotal = claimRequests
+    .filter((item) => item.status === '접수')
+    .reduce((sum, item) => sum + Number(item.amountDiamonds || 0), 0);
+  const availableTotal = Math.max(0, Number(memberBalance?.balance ?? pendingTotal) - processingTotal);
   const claimRequestByTransactionId = claimRequests.reduce((map, item) => {
     if (item.transactionId && !map[item.transactionId]) map[item.transactionId] = item;
     return map;
   }, {});
+  const customClaimRows = claimRequests
+    .filter((item) => !item.transactionId)
+    .map((item) => ({
+      transactionId: `claim-${item.requestId}`,
+      amountDiamonds: item.amountDiamonds,
+      createdAt: item.createdAt,
+      claimedAt: item.processedAt,
+      memo: item.memo,
+      createdByMemberName: item.requesterName,
+      claimRequestStatus: item.status,
+      processedMemo: item.processedMemo,
+      syntheticClaim: true,
+    }));
+  const historyRows = [...rows, ...customClaimRows].sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  );
   const getClaimState = (row) => {
+    if (row.claimRequestStatus === '접수') return { label: '처리대기중', className: 'pending', disabled: true };
+    if (row.claimRequestStatus === '반려') return { label: '반려', className: 'rejected', disabled: true };
     if (row.claimed) return { label: '수령완료', className: 'done', disabled: true };
     const claimRequest = claimRequestByTransactionId[row.transactionId];
-    if (claimRequest?.status === '접수') return { label: '승인대기', className: 'pending', disabled: true };
+    if (claimRequest?.status === '접수') return { label: '처리대기중', className: 'pending', disabled: true };
     if (claimRequest?.status === '반려')
       return {
         label: '반려',
@@ -6045,7 +6070,8 @@ function PaymentClaimPage({ member }) {
         <p>클랜금고에서 내 캐릭터에게 배정된 분배금과 수령 여부를 확인합니다.</p>
       </div>
       <div className="metric-grid">
-        <Metric label="받을금액" value={money(memberBalance?.balance ?? pendingTotal)} caption="내 개인 계좌의 현재 수령 가능 금액" tone="green" />
+        <Metric label="받을금액" value={money(availableTotal)} caption="지금 새로 수령 신청할 수 있는 금액" tone="green" />
+        <Metric label="처리대기 금액" value={money(processingTotal)} caption="운영진 확인을 기다리는 신청 금액" tone="purple" />
         <Metric label="받은금액" value={money(claimedTotal)} caption="수령완료 처리된 금액" tone="blue" />
       </div>
       <section className="white-card claim-custom-card">
@@ -6060,6 +6086,7 @@ function PaymentClaimPage({ member }) {
               required
               type="number"
               min="1"
+              max={availableTotal || undefined}
               value={claimForm.requestedAmount}
               onChange={(event) =>
                 setClaimForm({
@@ -6082,7 +6109,7 @@ function PaymentClaimPage({ member }) {
       <section className="white-card">
         <div className="section-heading">
           <h2>내 분배금 내역</h2>
-          <span className="result-count">{rows.length}건</span>
+          <span className="result-count">{historyRows.length}건</span>
         </div>
         {message && <p className="claim-user-message">{message}</p>}
         <div className="table-wrap">
@@ -6099,7 +6126,7 @@ function PaymentClaimPage({ member }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {historyRows.map((row) => (
                 <tr key={row.transactionId}>
                   <td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td>
                   <td className="green-text">{money(row.amountDiamonds)}</td>
@@ -6107,10 +6134,10 @@ function PaymentClaimPage({ member }) {
                     <span className={'claim-pill ' + getClaimState(row).className}>{getClaimState(row).label}</span>
                   </td>
                   <td>{row.claimedAt ? new Date(row.claimedAt).toLocaleString('ko-KR') : '-'}</td>
-                  <td>{row.memo || '-'}</td>
+                  <td>{row.processedMemo || row.memo || '-'}</td>
                   <td>{row.createdByMemberName || '-'}</td>
                   <td>
-                    {getClaimState(row).disabled ? (
+                    {row.syntheticClaim || getClaimState(row).disabled ? (
                       '-'
                     ) : (
                       <button className="mini-button" disabled={claimingId === row.transactionId} onClick={() => claim(row)}>
@@ -6123,7 +6150,7 @@ function PaymentClaimPage({ member }) {
             </tbody>
           </table>
         </div>
-        {!rows.length && <div className="empty-state">아직 내게 배정된 분배금 기록이 없습니다.</div>}
+        {!historyRows.length && <div className="empty-state">아직 내게 배정된 분배금 기록이 없습니다.</div>}
       </section>
     </>
   );

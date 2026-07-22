@@ -44,6 +44,14 @@ public interface DistributionClaimRequestRepository extends JpaRepository<Distri
 
     boolean existsBySourceTransaction_TransactionIdAndStatus(Long transactionId, String status);
 
+    @Query("""
+            select coalesce(sum(request.amountDiamonds), 0)
+            from DistributionClaimRequest request
+            where request.requester.memberId = :memberId
+              and request.status = :status
+            """)
+    long sumAmountByRequesterAndStatus(@Param("memberId") Long memberId, @Param("status") String status);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from DistributionClaimRequest request where request.status <> :status and request.processedAt < :cutoff")
     int deleteProcessedBefore(@Param("status") String status, @Param("cutoff") LocalDateTime cutoff);
