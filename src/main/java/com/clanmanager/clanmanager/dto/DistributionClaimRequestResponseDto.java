@@ -17,6 +17,7 @@ public class DistributionClaimRequestResponseDto {
     private Long requesterMemberId;
     private String requesterName;
     private Long amountDiamonds;
+    private Long approvedAmount;
     private String memo;
     private String status;
     private Long processedByMemberId;
@@ -36,6 +37,7 @@ public class DistributionClaimRequestResponseDto {
                 .requesterMemberId(requester == null ? null : requester.getMemberId())
                 .requesterName(request.getRequesterName())
                 .amountDiamonds(request.getAmountDiamonds())
+                .approvedAmount(request.getApprovedAmount())
                 .memo(request.getMemo())
                 .status(request.getStatus())
                 .processedByMemberId(processedBy == null ? null : processedBy.getMemberId())

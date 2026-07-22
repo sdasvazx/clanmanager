@@ -20,6 +20,13 @@ public interface VaultTransactionRepository extends JpaRepository<VaultTransacti
         Long getTotalWithdrawn();
     }
 
+    interface MemberDistributionProjection {
+        Long getMemberId();
+        Long getTotalAmount();
+        Long getPendingAmount();
+        Long getClaimedAmount();
+    }
+
     @Modifying
     @Query(value = "update vault_transactions set version = 0 where version is null", nativeQuery = true)
     int initializeNullVersions();
@@ -43,6 +50,18 @@ public interface VaultTransactionRepository extends JpaRepository<VaultTransacti
             group by v.targetMember.memberId
             """)
     List<MemberBalanceProjection> aggregateByMember();
+
+    @Query("""
+            select v.targetMember.memberId as memberId,
+                   sum(v.amountDiamonds) as totalAmount,
+                   sum(case when v.claimed = false or v.claimed is null then v.amountDiamonds else 0 end) as pendingAmount,
+                   sum(case when v.claimed = true then v.amountDiamonds else 0 end) as claimedAmount
+            from VaultTransaction v
+            where v.type = com.clanmanager.clanmanager.entity.VaultTransactionType.DISTRIBUTION
+              and v.targetMember is not null
+            group by v.targetMember.memberId
+            """)
+    List<MemberDistributionProjection> aggregateDistributionsByMember();
 
     long countByType(VaultTransactionType type);
 

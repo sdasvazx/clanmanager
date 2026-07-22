@@ -74,7 +74,8 @@ public class ClanVaultController {
 
     @GetMapping("/transactions")
     @Transactional
-    public VaultTransactionPageResponseDto getTransactions(@RequestParam(defaultValue = "1") int page) {
+    public VaultTransactionPageResponseDto getTransactions(@RequestParam(defaultValue = "1") int page, @RequestParam Long adminMemberId) {
+        requireAdmin(adminMemberId);
         initializeTransactionVersions();
         int safePage = normalizeHistoryPage(page);
         Page<VaultTransaction> result = transactionRepository.findAll(PageRequest.of(
@@ -103,7 +104,8 @@ public class ClanVaultController {
 
     @GetMapping("/member-balances")
     @Transactional
-    public List<MemberVaultBalanceDto> getMemberBalances() {
+    public List<MemberVaultBalanceDto> getMemberBalances(@RequestParam Long adminMemberId) {
+        requireAdmin(adminMemberId);
         initializeTransactionVersions();
         Map<Long, VaultTransactionRepository.MemberBalanceProjection> byMemberId = transactionRepository.aggregateByMember().stream()
                 .collect(Collectors.toMap(VaultTransactionRepository.MemberBalanceProjection::getMemberId, projection -> projection));
@@ -125,9 +127,25 @@ public class ClanVaultController {
                 .toList();
     }
 
+    @GetMapping("/distributions/summary-by-member")
+    @Transactional
+    public List<MemberVaultBalanceDto> getDistributionSummaryByMember(@RequestParam Long adminMemberId) {
+        requireAdmin(adminMemberId);
+        Map<Long, VaultTransactionRepository.MemberDistributionProjection> byMemberId = transactionRepository.aggregateDistributionsByMember().stream()
+                .collect(Collectors.toMap(VaultTransactionRepository.MemberDistributionProjection::getMemberId, projection -> projection));
+        return memberRepository.findByActiveTrueOrderByMemberIdAsc().stream().map(member -> {
+            VaultTransactionRepository.MemberDistributionProjection projection = byMemberId.get(member.getMemberId());
+            long total = projection == null ? 0L : projection.getTotalAmount();
+            long pending = projection == null ? 0L : projection.getPendingAmount();
+            long claimed = projection == null ? 0L : projection.getClaimedAmount();
+            return new MemberVaultBalanceDto(member.getMemberId(), member.getCharacterName(), member.getGuildName(), pending, total, claimed);
+        }).toList();
+    }
+
     @GetMapping("/transactions/member/{memberId}")
     @Transactional
-    public List<VaultTransactionResponseDto> getMemberTransactions(@PathVariable Long memberId) {
+    public List<VaultTransactionResponseDto> getMemberTransactions(@PathVariable Long memberId, @RequestParam Long adminMemberId) {
+        requireAdmin(adminMemberId);
         initializeTransactionVersions();
         return transactionRepository.findByTargetMember_MemberIdOrderByCreatedAtDesc(memberId).stream()
                 .map(VaultTransactionResponseDto::from)
@@ -153,30 +171,34 @@ public class ClanVaultController {
     public DistributionClaimRequestResponseDto requestDistributionClaim(@Valid @RequestBody DistributionClaimRequestCreateDto request) {
         Member requester = findRequiredMember(request.getRequesterMemberId(), "수령 신청 회원 정보가 필요합니다.");
         initializeTransactionVersions();
-        VaultTransaction transaction = transactionRepository.findWithLockByTransactionId(request.getTransactionId())
+        VaultTransaction transaction = request.getTransactionId() == null ? null
+                : transactionRepository.findWithLockByTransactionId(request.getTransactionId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 분배 기록입니다."));
 
-        if (transaction.getType() != VaultTransactionType.DISTRIBUTION || transaction.getTargetMember() == null) {
+        if (transaction != null && (transaction.getType() != VaultTransactionType.DISTRIBUTION || transaction.getTargetMember() == null)) {
             throw new IllegalArgumentException("분배 기록만 수령 신청할 수 있습니다.");
         }
-        if (!transaction.getTargetMember().getMemberId().equals(requester.getMemberId())) {
+        if (transaction != null && !transaction.getTargetMember().getMemberId().equals(requester.getMemberId())) {
             throw new SecurityException("본인 분배금만 수령 신청할 수 있습니다.");
         }
-        if (Boolean.TRUE.equals(transaction.getClaimed())) {
+        if (transaction != null && Boolean.TRUE.equals(transaction.getClaimed())) {
             throw new IllegalArgumentException("이미 수령 완료된 분배금입니다.");
         }
-        if (distributionClaimRequestRepository.existsBySourceTransaction_TransactionIdAndStatus(
+        if (transaction != null && distributionClaimRequestRepository.existsBySourceTransaction_TransactionIdAndStatus(
                 transaction.getTransactionId(),
                 CLAIM_STATUS_PENDING
         )) {
             throw new IllegalArgumentException("이미 수령 신청이 접수된 분배금입니다.");
         }
+        long requestedAmount = transaction == null
+                ? requirePositiveAmount(request.getRequestedAmount())
+                : transaction.getAmountDiamonds();
 
         DistributionClaimRequest saved = distributionClaimRequestRepository.save(DistributionClaimRequest.builder()
                 .sourceTransaction(transaction)
                 .requester(requester)
                 .requesterName(requester.getCharacterName())
-                .amountDiamonds(transaction.getAmountDiamonds())
+                .amountDiamonds(requestedAmount)
                 .memo(request.getMemo())
                 .status(CLAIM_STATUS_PENDING)
                 .build());
@@ -206,17 +228,39 @@ public class ClanVaultController {
         }
 
         if (CLAIM_STATUS_APPROVED.equals(nextStatus)) {
-            initializeTransactionVersions();
-            VaultTransaction transaction = transactionRepository.findWithLockByTransactionId(
-                            claimRequest.getSourceTransaction().getTransactionId()
-                    )
-                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 분배 기록입니다."));
-            if (Boolean.TRUE.equals(transaction.getClaimed())) {
-                throw new IllegalArgumentException("이미 수령 완료된 분배금입니다.");
+            long approvedAmount = requirePositiveAmount(request.getApprovedAmount() == null
+                    ? claimRequest.getAmountDiamonds()
+                    : request.getApprovedAmount());
+            claimRequest.setApprovedAmount(approvedAmount);
+            if (claimRequest.getSourceTransaction() != null) {
+                initializeTransactionVersions();
+                VaultTransaction transaction = transactionRepository.findWithLockByTransactionId(claimRequest.getSourceTransaction().getTransactionId())
+                        .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 분배 기록입니다."));
+                if (Boolean.TRUE.equals(transaction.getClaimed())) {
+                    throw new IllegalArgumentException("이미 수령 완료된 분배금입니다.");
+                }
+                transaction.setClaimed(true);
+                transaction.setClaimedAt(LocalDateTime.now());
+                claimRequest.setSourceTransaction(transactionRepository.save(transaction));
+            } else {
+                ClanVault vault = getOrCreateVaultWithLock();
+                long available = getAvailableDiamonds(vault);
+                if (available < approvedAmount) {
+                    throw new IllegalArgumentException("클랜금고 가용 다이아가 부족합니다. 가용 다이아: " + available);
+                }
+                vault.setBalanceDiamonds(vault.getBalanceDiamonds() - approvedAmount);
+                vaultRepository.save(vault);
+                claimRequest.setSourceTransaction(transactionRepository.save(VaultTransaction.builder()
+                        .type(VaultTransactionType.DISTRIBUTION)
+                        .amountDiamonds(approvedAmount)
+                        .balanceAfter(vault.getBalanceDiamonds())
+                        .targetMember(claimRequest.getRequester())
+                        .createdBy(processor)
+                        .memo(claimRequest.getMemo())
+                        .claimed(true)
+                        .claimedAt(LocalDateTime.now())
+                        .build()));
             }
-            transaction.setClaimed(true);
-            transaction.setClaimedAt(LocalDateTime.now());
-            claimRequest.setSourceTransaction(transactionRepository.save(transaction));
         }
 
         claimRequest.setStatus(nextStatus);

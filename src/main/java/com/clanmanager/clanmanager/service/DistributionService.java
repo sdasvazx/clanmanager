@@ -101,6 +101,7 @@ public class DistributionService {
                 .clanDiamonds(settings.clanDiamonds())
                 .participationDiamonds(settings.participationDiamonds())
                 .powerDiamonds(settings.powerDiamonds())
+                .nonParticipationPenaltyDiamonds(settings.nonParticipationPenaltyDiamonds())
                 .periodIds(settings.periodIds())
                 .selectedPeriods(aggregation.selectedPeriods())
                 .totalActivityCount(aggregation.totalActivityCount())
@@ -156,6 +157,26 @@ public class DistributionService {
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 분배 히스토리입니다."));
         try {
             DistributionResponseDto response = objectMapper.readValue(snapshot.getResponseJson(), DistributionResponseDto.class);
+            return withSnapshotMeta(response, snapshot);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("분배 히스토리를 읽을 수 없습니다.", e);
+        }
+    }
+
+    @Transactional
+    public DistributionResponseDto updateDistributed(Long snapshotId, Long memberId, Long adminMemberId, boolean distributed) {
+        requireAdmin(adminMemberId);
+        DistributionSnapshot snapshot = snapshotRepository.findById(snapshotId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 분배 히스토리입니다."));
+        try {
+            DistributionResponseDto response = objectMapper.readValue(snapshot.getResponseJson(), DistributionResponseDto.class);
+            response.getResults().stream()
+                    .filter(row -> row.getMemberId().equals(memberId))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("분배 결과에서 회원을 찾을 수 없습니다."))
+                    .setDistributed(distributed);
+            snapshot.setResponseJson(writeJson(response));
+            snapshotRepository.save(snapshot);
             return withSnapshotMeta(response, snapshot);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("분배 히스토리를 읽을 수 없습니다.", e);
@@ -232,6 +253,15 @@ public class DistributionService {
             }
 
             if (periodParticipation.getRows() != null) {
+                Map<Long, ParticipationResponseDto.ParticipationMemberDto> periodRows = periodParticipation.getRows().stream()
+                        .collect(Collectors.toMap(ParticipationResponseDto.ParticipationMemberDto::getMemberId, Function.identity()));
+                long periodPenalty = settings.nonParticipationPenaltyDiamonds().getOrDefault(period.getPeriodId(), 0L);
+                aggregates.forEach((memberId, aggregate) -> {
+                    ParticipationResponseDto.ParticipationMemberDto periodRow = periodRows.get(memberId);
+                    if (periodPenalty > 0 && (periodRow == null || nullToZero(periodRow.getAttendanceCount()) <= 0)) {
+                        aggregate.addNonParticipationPenalty(periodPenalty);
+                    }
+                });
                 periodParticipation.getRows().forEach(row -> {
                     ParticipationAggregate aggregate = aggregates.get(row.getMemberId());
                     if (aggregate != null) {
@@ -339,12 +369,15 @@ public class DistributionService {
                 .totalActivityCount(row.getTotalActivityCount())
                 .integratedParticipationRate(row.getParticipationRate())
                 .participationRate(row.getParticipationRate())
+                .absencePenaltyScore(row.getAbsencePenaltyScore())
                 .finalParticipationScore(row.getFinalParticipationScore())
                 .participationEligible(participationEligible)
                 .powerEligible(powerEligible)
                 .participationAmount(0L)
                 .powerAmount(0L)
+                .nonParticipationPenaltyDiamonds(row.getNonParticipationPenaltyDiamonds())
                 .finalAmount(0L)
+                .distributed(false)
                 .build();
     }
 
@@ -435,12 +468,15 @@ public class DistributionService {
                 .totalActivityCount(row.getTotalActivityCount())
                 .integratedParticipationRate(row.getIntegratedParticipationRate())
                 .participationRate(row.getParticipationRate())
+                .absencePenaltyScore(row.getAbsencePenaltyScore())
                 .finalParticipationScore(row.getFinalParticipationScore())
                 .participationEligible(row.getParticipationEligible())
                 .powerEligible(row.getPowerEligible())
                 .participationAmount(participationAmount)
                 .powerAmount(powerAmount)
-                .finalAmount(participationAmount + powerAmount)
+                .nonParticipationPenaltyDiamonds(row.getNonParticipationPenaltyDiamonds())
+                .finalAmount(Math.max(0L, participationAmount + powerAmount - safeAmount(row.getNonParticipationPenaltyDiamonds())))
+                .distributed(Boolean.TRUE.equals(row.getDistributed()))
                 .build();
     }
 
@@ -469,6 +505,13 @@ public class DistributionService {
                 ? safeAmount(request.getTotalPowerDiamonds())
                 : powerDiamonds.values().stream().mapToLong(Long::longValue).sum();
         long totalDiamonds = totalParticipationDiamonds + totalPowerDiamonds;
+        Map<Long, Long> nonParticipationPenaltyDiamonds = new LinkedHashMap<>();
+        periodIds.forEach(periodId -> nonParticipationPenaltyDiamonds.put(
+                periodId,
+                safeAmount(request.getNonParticipationPenaltyDiamonds() == null
+                        ? null
+                        : request.getNonParticipationPenaltyDiamonds().get(periodId))
+        ));
         clanDiamonds.replaceAll((clan, ignored) -> participationDiamonds.getOrDefault(clan, 0L) + powerDiamonds.getOrDefault(clan, 0L));
 
         return new DistributionSettings(
@@ -481,6 +524,7 @@ public class DistributionService {
                 powerDiamonds,
                 totalParticipationDiamonds,
                 totalPowerDiamonds,
+                nonParticipationPenaltyDiamonds,
                 periodIds
         );
     }
@@ -685,6 +729,7 @@ public class DistributionService {
                 .clanDiamonds(response.getClanDiamonds())
                 .participationDiamonds(response.getParticipationDiamonds())
                 .powerDiamonds(response.getPowerDiamonds())
+                .nonParticipationPenaltyDiamonds(response.getNonParticipationPenaltyDiamonds())
                 .periodIds(response.getPeriodIds())
                 .selectedPeriods(response.getSelectedPeriods())
                 .totalActivityCount(response.getTotalActivityCount())
@@ -708,6 +753,7 @@ public class DistributionService {
             Map<String, Long> powerDiamonds,
             long totalParticipationDiamonds,
             long totalPowerDiamonds,
+            Map<Long, Long> nonParticipationPenaltyDiamonds,
             List<Long> periodIds
     ) {
     }
@@ -727,6 +773,7 @@ public class DistributionService {
         private int absencePenaltyScore = 0;
         private int minorityBonusScore = 0;
         private int finalParticipationScore = 0;
+        private long nonParticipationPenaltyDiamonds = 0L;
         private final Map<Long, Long> activityCounts = new LinkedHashMap<>();
 
         private ParticipationAggregate(Member member) {
@@ -758,6 +805,10 @@ public class DistributionService {
             return finalParticipationScore;
         }
 
+        private void addNonParticipationPenalty(long amount) {
+            this.nonParticipationPenaltyDiamonds += Math.max(0L, amount);
+        }
+
         private ParticipationResponseDto.ParticipationMemberDto toDto(long topAttendanceCount, int topFinalScore) {
             double participationRate = totalActivityCount <= 0
                     ? 0.0
@@ -780,6 +831,7 @@ public class DistributionService {
                     .absencePenaltyScore(absencePenaltyScore)
                     .minorityBonusScore(minorityBonusScore)
                     .finalParticipationScore(Math.max(0, finalParticipationScore))
+                    .nonParticipationPenaltyDiamonds(nonParticipationPenaltyDiamonds)
                     .contributionRate(contributionRate)
                     .activityCounts(activityCounts)
                     .build();

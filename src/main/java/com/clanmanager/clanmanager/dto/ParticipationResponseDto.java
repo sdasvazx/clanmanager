@@ -47,6 +47,7 @@ public class ParticipationResponseDto {
         private Double participationRate;
         private Integer baseParticipationScore;
         private Integer absencePenaltyScore;
+        private Long nonParticipationPenaltyDiamonds;
         private Integer minorityBonusScore;
         private Integer finalParticipationScore;
         private Double contributionRate;
