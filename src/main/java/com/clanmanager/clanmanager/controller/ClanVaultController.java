@@ -99,7 +99,7 @@ public class ClanVaultController {
     @Transactional
     public List<VaultTransactionResponseDto> getMemberDistributions(@PathVariable Long memberId) {
         initializeTransactionVersions();
-        return transactionRepository.findByTypeAndTargetMember_MemberIdOrderByCreatedAtDesc(VaultTransactionType.DISTRIBUTION, memberId).stream()
+        return transactionRepository.findMemberClaimHistory(memberId).stream()
                 .map(VaultTransactionResponseDto::from)
                 .toList();
     }
@@ -260,6 +260,10 @@ public class ClanVaultController {
                     ? claimRequest.getAmountDiamonds()
                     : request.getApprovedAmount());
             claimRequest.setApprovedAmount(approvedAmount);
+            long memberBalance = memberBalance(claimRequest.getRequester().getMemberId());
+            if (memberBalance < approvedAmount) {
+                throw new IllegalArgumentException("회원 계좌의 받을금액이 부족합니다. 현재 받을금액: " + memberBalance);
+            }
             if (claimRequest.getSourceTransaction() != null) {
                 initializeTransactionVersions();
                 VaultTransaction transaction = transactionRepository.findWithLockByTransactionId(claimRequest.getSourceTransaction().getTransactionId())
@@ -270,6 +274,7 @@ public class ClanVaultController {
                 transaction.setClaimed(true);
                 transaction.setClaimedAt(LocalDateTime.now());
                 claimRequest.setSourceTransaction(transactionRepository.save(transaction));
+                saveClaimWithdrawal(claimRequest, processor, approvedAmount, transaction.getBalanceAfter());
             } else {
                 ClanVault vault = getOrCreateVaultWithLock();
                 long available = getAvailableDiamonds(vault);
@@ -278,16 +283,12 @@ public class ClanVaultController {
                 }
                 vault.setBalanceDiamonds(vault.getBalanceDiamonds() - approvedAmount);
                 vaultRepository.save(vault);
-                claimRequest.setSourceTransaction(transactionRepository.save(VaultTransaction.builder()
-                        .type(VaultTransactionType.DISTRIBUTION)
-                        .amountDiamonds(approvedAmount)
-                        .balanceAfter(vault.getBalanceDiamonds())
-                        .targetMember(claimRequest.getRequester())
-                        .createdBy(processor)
-                        .memo(claimRequest.getMemo())
-                        .claimed(true)
-                        .claimedAt(LocalDateTime.now())
-                        .build()));
+                claimRequest.setSourceTransaction(saveClaimWithdrawal(
+                        claimRequest,
+                        processor,
+                        approvedAmount,
+                        vault.getBalanceDiamonds()
+                ));
             }
         }
 
@@ -501,6 +502,32 @@ public class ClanVaultController {
             return null;
         }
         return memberRepository.findById(memberId).orElse(null);
+    }
+
+    private VaultTransaction saveClaimWithdrawal(
+            DistributionClaimRequest claimRequest,
+            Member processor,
+            long amount,
+            long vaultBalanceAfter
+    ) {
+        return transactionRepository.save(VaultTransaction.builder()
+                .type(VaultTransactionType.WITHDRAW)
+                .amountDiamonds(amount)
+                .balanceAfter(vaultBalanceAfter)
+                .targetMember(claimRequest.getRequester())
+                .createdBy(processor)
+                .memo("수령완료 정산 #" + claimRequest.getRequestId())
+                .claimed(true)
+                .claimedAt(LocalDateTime.now())
+                .build());
+    }
+
+    private long memberBalance(Long memberId) {
+        return transactionRepository.aggregateByMember().stream()
+                .filter(row -> memberId.equals(row.getMemberId()))
+                .map(row -> row.getTotalCredited() - row.getTotalWithdrawn())
+                .findFirst()
+                .orElse(0L);
     }
 
     public record MemberVaultBalanceDto(

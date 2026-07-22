@@ -15,6 +15,8 @@ public interface DistributionClaimRequestRepository extends JpaRepository<Distri
 
     List<DistributionClaimRequest> findByRequester_MemberIdOrderByCreatedAtDesc(Long memberId);
 
+    List<DistributionClaimRequest> findByStatusAndSourceTransactionIsNotNull(String status);
+
     boolean existsBySourceTransaction_TransactionIdAndStatus(Long transactionId, String status);
 
     long deleteByStatusNotAndProcessedAtBefore(String status, LocalDateTime cutoff);

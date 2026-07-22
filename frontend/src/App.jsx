@@ -5037,15 +5037,15 @@ function ClanVaultPage({ member, readonly = false }) {
         </div>
         <div>
           <span>{readonly ? '총 미수령액' : '총 잔액'}</span>
-          <strong>{money(totals.balance)} 💎</strong>
+          <strong>{money(totals.balance)}</strong>
         </div>
         <div>
           <span>{readonly ? '누적 지급액' : '총 적립액'}</span>
-          <strong>{money(totals.credited)} 💎</strong>
+          <strong>{money(totals.credited)}</strong>
         </div>
         <div>
           <span>{readonly ? '수령완료액' : '총 출금액'}</span>
-          <strong>{money(totals.withdrawn)} 💎</strong>
+          <strong>{money(totals.withdrawn)}</strong>
         </div>
       </div>
       {!readonly && member.role === 'ADMIN' && <DistributionClaimRequestAdminPanel member={member} />}
@@ -5145,7 +5145,7 @@ function ClanVaultPage({ member, readonly = false }) {
                   <td>
                     <b>{row.characterName}</b>
                   </td>
-                  <td className="vault-balance-value">💎 {money(row.balance)} 다이아</td>
+                  <td className="vault-balance-value">{money(row.balance)}</td>
                   <td className="vault-credit-value">{money(row.totalCredited)}</td>
                   <td className="vault-withdraw-value">{money(row.totalWithdrawn)}</td>
                   <td>
@@ -5168,7 +5168,7 @@ function ClanVaultPage({ member, readonly = false }) {
             </button>
             <h2>{history.account.characterName} 계좌 내역</h2>
             <p>
-              현재 잔액 <b>{money(history.account.balance)} 💎</b>
+              현재 잔액 <b>{money(history.account.balance)}</b>
             </p>
             <div className="table-wrap">
               <table className="data-table vault-history-table">
@@ -5943,7 +5943,6 @@ function DistributionClaimRequestAdminPanel({ member }) {
 
 function PaymentClaimPage({ member }) {
   const [rows, setRows] = useState([]);
-  const [latestDistribution, setLatestDistribution] = useState(null);
   const [memberBalance, setMemberBalance] = useState(null);
   const [claimRequests, setClaimRequests] = useState([]);
   const [message, setMessage] = useState('');
@@ -5951,17 +5950,15 @@ function PaymentClaimPage({ member }) {
   const [claimForm, setClaimForm] = useState({ requestedAmount: '', memo: '' });
 
   const load = async () => {
-    const [distributions, requests, calculated, account] = await Promise.all([
+    const [distributions, requests, account] = await Promise.all([
       request('/vault/distributions/member/' + member.memberId),
       request('/vault/distribution-claim-requests?memberId=' + member.memberId).catch(() => []),
-      request(`/distributions/member/${member.memberId}/latest`).catch(() => null),
       request(`/vault/member-balance/${member.memberId}?requesterMemberId=${member.memberId}`).catch(() => null),
     ]);
     setRows(distributions);
     setClaimRequests(Array.isArray(requests) ? requests : []);
-    setLatestDistribution(calculated);
     setMemberBalance(account);
-    const suggestedAmount = Number(account?.balance || calculated?.finalAmount || 0);
+    const suggestedAmount = Number(account?.balance || 0);
     if (suggestedAmount > 0) {
       setClaimForm((current) => ({ ...current, requestedAmount: current.requestedAmount || String(suggestedAmount) }));
     }
@@ -6052,7 +6049,6 @@ function PaymentClaimPage({ member }) {
         <p>클랜금고에서 내 캐릭터에게 배정된 분배금과 수령 여부를 확인합니다.</p>
       </div>
       <div className="metric-grid">
-        <Metric label="계산된 받을금액" value={money(latestDistribution?.finalAmount)} caption="최신 저장된 분배 결과" tone="purple" />
         <Metric label="받을금액" value={money(memberBalance?.balance ?? pendingTotal)} caption="내 개인 계좌의 현재 수령 가능 금액" tone="green" />
         <Metric label="받은금액" value={money(claimedTotal)} caption="수령완료 처리된 금액" tone="blue" />
       </div>
