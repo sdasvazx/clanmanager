@@ -12,6 +12,14 @@ import java.util.List;
 import java.util.Optional;
 
 public interface VaultTransactionRepository extends JpaRepository<VaultTransaction, Long> {
+    interface MemberBalanceProjection {
+        Long getMemberId();
+
+        Long getTotalCredited();
+
+        Long getTotalWithdrawn();
+    }
+
     @Modifying
     @Query(value = "update vault_transactions set version = 0 where version is null", nativeQuery = true)
     int initializeNullVersions();
@@ -19,6 +27,22 @@ public interface VaultTransactionRepository extends JpaRepository<VaultTransacti
     List<VaultTransaction> findTop50ByOrderByCreatedAtDesc();
 
     List<VaultTransaction> findByTypeAndTargetMember_MemberIdOrderByCreatedAtDesc(VaultTransactionType type, Long memberId);
+
+    List<VaultTransaction> findByTargetMember_MemberIdOrderByCreatedAtDesc(Long memberId);
+
+    @Query("""
+            select
+                v.targetMember.memberId as memberId,
+                sum(case when v.type in (com.clanmanager.clanmanager.entity.VaultTransactionType.DEPOSIT,
+                                          com.clanmanager.clanmanager.entity.VaultTransactionType.DISTRIBUTION)
+                         then v.amountDiamonds else 0 end) as totalCredited,
+                sum(case when v.type = com.clanmanager.clanmanager.entity.VaultTransactionType.WITHDRAW
+                         then v.amountDiamonds else 0 end) as totalWithdrawn
+            from VaultTransaction v
+            where v.targetMember is not null
+            group by v.targetMember.memberId
+            """)
+    List<MemberBalanceProjection> aggregateByMember();
 
     long countByType(VaultTransactionType type);
 

@@ -34,6 +34,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/vault")
@@ -95,6 +97,39 @@ public class ClanVaultController {
     public List<VaultTransactionResponseDto> getMemberDistributions(@PathVariable Long memberId) {
         initializeTransactionVersions();
         return transactionRepository.findByTypeAndTargetMember_MemberIdOrderByCreatedAtDesc(VaultTransactionType.DISTRIBUTION, memberId).stream()
+                .map(VaultTransactionResponseDto::from)
+                .toList();
+    }
+
+    @GetMapping("/member-balances")
+    @Transactional
+    public List<MemberVaultBalanceDto> getMemberBalances() {
+        initializeTransactionVersions();
+        Map<Long, VaultTransactionRepository.MemberBalanceProjection> byMemberId = transactionRepository.aggregateByMember().stream()
+                .collect(Collectors.toMap(VaultTransactionRepository.MemberBalanceProjection::getMemberId, projection -> projection));
+
+        return memberRepository.findByActiveTrueOrderByMemberIdAsc().stream()
+                .map(member -> {
+                    VaultTransactionRepository.MemberBalanceProjection projection = byMemberId.get(member.getMemberId());
+                    long credited = projection == null ? 0L : projection.getTotalCredited();
+                    long withdrawn = projection == null ? 0L : projection.getTotalWithdrawn();
+                    return new MemberVaultBalanceDto(
+                            member.getMemberId(),
+                            member.getCharacterName(),
+                            member.getGuildName(),
+                            credited - withdrawn,
+                            credited,
+                            withdrawn
+                    );
+                })
+                .toList();
+    }
+
+    @GetMapping("/transactions/member/{memberId}")
+    @Transactional
+    public List<VaultTransactionResponseDto> getMemberTransactions(@PathVariable Long memberId) {
+        initializeTransactionVersions();
+        return transactionRepository.findByTargetMember_MemberIdOrderByCreatedAtDesc(memberId).stream()
                 .map(VaultTransactionResponseDto::from)
                 .toList();
     }
@@ -200,7 +235,10 @@ public class ClanVaultController {
         ClanVault vault = getOrCreateVaultWithLock();
         vault.setBalanceDiamonds(vault.getBalanceDiamonds() + amount);
         vaultRepository.save(vault);
-        return saveTransaction(VaultTransactionType.DEPOSIT, amount, vault, null, request);
+        Member targetMember = request.getTargetMemberId() == null
+                ? null
+                : findRequiredMember(request.getTargetMemberId(), "입금 대상 클랜원을 찾을 수 없습니다.");
+        return saveTransaction(VaultTransactionType.DEPOSIT, amount, vault, targetMember, request);
     }
 
     @PostMapping("/distribute")
@@ -272,7 +310,10 @@ public class ClanVaultController {
         }
         vault.setBalanceDiamonds(vault.getBalanceDiamonds() - amount);
         vaultRepository.save(vault);
-        return saveTransaction(VaultTransactionType.WITHDRAW, amount, vault, null, request);
+        Member targetMember = request.getTargetMemberId() == null
+                ? null
+                : findRequiredMember(request.getTargetMemberId(), "출금 대상 클랜원을 찾을 수 없습니다.");
+        return saveTransaction(VaultTransactionType.WITHDRAW, amount, vault, targetMember, request);
     }
 
     @PatchMapping("/balance")
@@ -388,5 +429,15 @@ public class ClanVaultController {
             return null;
         }
         return memberRepository.findById(memberId).orElse(null);
+    }
+
+    public record MemberVaultBalanceDto(
+            Long memberId,
+            String characterName,
+            String clanName,
+            long balance,
+            long totalCredited,
+            long totalWithdrawn
+    ) {
     }
 }
