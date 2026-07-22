@@ -3555,7 +3555,7 @@ function LegacyAttendance({ member }) {
   return <><div className="page-title"><h1>보스 참여내역 조회</h1><p>활동 참석 여부를 기록하고 조회합니다.</p></div>{member.role === 'ADMIN' && <section className="white-card"><h2>출석 기록 추가</h2><form className="record-form" onSubmit={save}><input type="date" value={form.attendanceDate} onChange={(e) => setForm({ ...form, attendanceDate: e.target.value })} /><select required value={form.activityTypeId} onChange={(e) => setForm({ ...form, activityTypeId: e.target.value })}><option value="">활동 선택</option>{activities.map((a) => <option key={a.activityTypeId} value={a.activityTypeId}>{a.typeName}</option>)}</select><select required value={form.memberId} onChange={(e) => setForm({ ...form, memberId: e.target.value })}><option value="">클랜원 선택</option>{members.map((m) => <option key={m.memberId} value={m.memberId}>{m.characterName}</option>)}</select><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="ATTENDED">참석</option><option value="ABSENT">불참</option></select><button className="primary-button">저장</button></form>{message && <p className="vault-message">{message}</p>}</section>}<section className="white-card"><div className="filters"><select><option>전체 날짜</option></select><input placeholder="보스명" /><button className="dark-button">조회</button><button className="orange-button">주간 정산</button></div><div className="table-wrap"><table className="data-table"><thead><tr><th>날짜</th><th>활동</th><th>출석회원</th><th>상태</th></tr></thead><tbody>{rows.map((row) => <tr key={row.attendanceId}><td>{row.attendanceDate}</td><td>{row.activityType?.typeName ?? '-'}</td><td>{row.member?.characterName ?? '-'}</td><td><span className="status-pill">{row.status === 'ATTENDED' ? '참석' : '불참'}</span></td></tr>)}</tbody></table></div>{!rows.length && <div className="empty-state">등록된 출석 기록이 없습니다.</div>}</section></>;
 }
 
-function ClanVaultPage({ member, readonly = false }) {
+function LegacyClanVaultPage({ member, readonly = false }) {
   const [summary, setSummary] = useState(null);
   const [members, setMembers] = useState([]);
   const [mode, setMode] = useState('deposit');
@@ -3672,6 +3672,108 @@ function ClanVaultPage({ member, readonly = false }) {
   };
   const transactions = transactionPageInfo.transactions ?? summary?.recentTransactions ?? [];
   return <><div className="page-title"><h1>{readonly ? '장부 조회' : '통장현황'}</h1><p>클랜 금고의 💎 잔액과 입금·분배·차감 기록을 관리합니다.</p></div><div className="vault-grid"><section className="white-card vault-balance"><span className="vault-icon">💎</span><p>현재 클랜금고 잔액</p><strong>{money(summary?.balanceDiamonds)}</strong><small>입금 {summary?.depositCount ?? 0}건 · 분배 {summary?.distributionCount ?? 0}건</small></section>{!readonly && <section className="white-card vault-form-card"><div className="section-heading"><h2>금고 기록 추가</h2></div><div className="vault-tabs"><button type="button" className={mode === 'deposit' ? 'active' : ''} onClick={() => setMode('deposit')}>입금</button><button type="button" className={mode === 'distribute' ? 'active' : ''} onClick={() => setMode('distribute')}>분배</button><button type="button" className={mode === 'withdraw' ? 'active' : ''} onClick={() => setMode('withdraw')}>차감</button><button type="button" className={mode === 'adjust' ? 'active' : ''} onClick={() => setMode('adjust')}>잔액수정</button></div><form className="vault-form" onSubmit={submit}>{mode === 'distribute' && <div className="vault-target-picker"><label>받는 클랜원 검색<input value={targetSearch} onChange={(e) => setTargetSearch(e.target.value)} placeholder="닉네임/클랜명으로 필터링" /></label><div className="vault-target-actions"><button type="button" className="mini-button" onClick={selectFilteredTargets}>현재 필터 전체선택</button><button type="button" className="mini-button" onClick={() => setSelectedTargetIds([])}>선택해제</button><span>{selectedTargetIds.length}명 선택됨</span></div><div className="vault-selected-targets">{selectedTargets.map((target) => <span key={target.memberId}>{target.characterName}<button type="button" onClick={() => toggleTarget(target.memberId)}>×</button></span>)}</div><div className="vault-target-list">{filteredTargets.map((target) => <label key={target.memberId} className={selectedTargetIds.includes(String(target.memberId)) ? 'selected' : ''}><input type="checkbox" checked={selectedTargetIds.includes(String(target.memberId))} onChange={() => toggleTarget(target.memberId)} /><b>{target.characterName}</b><small>{canonicalClanName(target.guildName)}</small></label>)}</div></div>}{mode === 'adjust' ? <label>새 금고 잔액<input required min="0" type="number" value={form.balanceDiamonds} onChange={(e) => setForm({ ...form, balanceDiamonds: e.target.value })} placeholder="현재 총 💎 개수" /></label> : <label>💎 수량<input required min="1" type="number" value={form.amountDiamonds} onChange={(e) => setForm({ ...form, amountDiamonds: e.target.value })} placeholder="기록할 💎 수량" /></label>}<label>메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="예: 에노크 분배, 보스 수익 입금" /></label><button className="primary-button" disabled={loading}>{loading ? '저장 중...' : '금고 기록 저장'}</button>{message && <p className="vault-message">{message}</p>}</form></section>}</div><section className="white-card"><div className="section-heading"><h2>거래내역</h2><span className="result-count">{transactionPageInfo.totalElements ?? transactions.length}건</span></div><div className="table-wrap"><table className="data-table vault-table"><thead><tr><th>시간</th><th>종류</th><th>대상</th><th>수량</th><th>처리 후 잔액</th><th>메모</th><th>기록자</th>{!readonly && <th>처리</th>}</tr></thead><tbody>{transactions.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td><span className={`vault-type ${typeTone[row.type]}`}>{typeText[row.type] ?? row.type}</span></td><td>{row.targetMemberName ?? '-'}</td><td>{money(row.amountDiamonds)}</td><td><b>{money(row.balanceAfter)}</b></td><td>{row.memo || '-'}</td><td>{row.createdByMemberName ?? '-'}</td>{!readonly && <td>{row.type === 'DISTRIBUTION' && row.claimed ? <button type="button" className="mini-button" disabled={loading} onClick={() => cancelClaim(row)}>수령취소</button> : '-'}</td>}</tr>)}</tbody></table></div><PaginationControls page={transactionPageInfo.page} totalPages={transactionPageInfo.totalPages} totalElements={transactionPageInfo.totalElements} pageSize={transactionPageInfo.pageSize} onChange={(nextPage) => load(nextPage)} />{!transactions.length && <div className="empty-state">아직 금고 거래내역이 없습니다.</div>}</section>{confirmVaultAction && <div className="confirm-modal-backdrop" role="dialog" aria-modal="true"><div className="confirm-modal"><span>💎</span><h2>금고 기록을 저장할까요?</h2><p>{confirmVaultAction.confirmText}</p><div className="confirm-modal-actions"><button type="button" className="outline-button no-margin" disabled={loading} onClick={() => setConfirmVaultAction(null)}>취소</button><button type="button" className="primary-button no-margin" disabled={loading} onClick={executeVaultAction}>{loading ? '저장 중...' : '확인'}</button></div></div></div>}</>;
+}
+
+function ClanVaultPage({ member, readonly = false }) {
+  const [balances, setBalances] = useState([]);
+  const [mode, setMode] = useState('deposit');
+  const [form, setForm] = useState({ amountDiamonds: '', balanceDiamonds: '', targetMemberId: '', memo: '' });
+  const [selectedTargetIds, setSelectedTargetIds] = useState([]);
+  const [search, setSearch] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState(null);
+  const typeText = { DEPOSIT: '입금', DISTRIBUTION: '분배', WITHDRAW: '차감', ADJUSTMENT: '잔액수정' };
+  const typeTone = { DEPOSIT: 'green', DISTRIBUTION: 'blue', WITHDRAW: 'red', ADJUSTMENT: 'purple' };
+
+  const load = () => request('/vault/member-balances').then(setBalances);
+  useEffect(() => { load().catch((err) => setMessage(err.message)); }, []);
+
+  const filteredBalances = balances.filter((row) => normalize(row.characterName).includes(normalize(search)));
+  const totals = balances.reduce((sum, row) => ({
+    balance: sum.balance + Number(row.balance || 0),
+    credited: sum.credited + Number(row.totalCredited || 0),
+    withdrawn: sum.withdrawn + Number(row.totalWithdrawn || 0),
+  }), { balance: 0, credited: 0, withdrawn: 0 });
+
+  const openMemberHistory = async (account) => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const transactions = await request(`/vault/transactions/member/${account.memberId}`);
+      setHistory({ account, transactions });
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (mode === 'distribute' && selectedTargetIds.length === 0) {
+      setMessage('분배받을 클랜원을 한 명 이상 선택해 주세요.');
+      return;
+    }
+    const amount = Number(form.amountDiamonds || 0);
+    const balance = Number(form.balanceDiamonds || 0);
+    const targetIds = mode === 'distribute' ? selectedTargetIds : [form.targetMemberId];
+    if (!window.confirm(mode === 'adjust' ? `클랜금고 잔액을 ${money(balance)}로 수정할까요?` : `${typeText[mode.toUpperCase()]} ${money(amount)} 기록을 저장할까요?`)) return;
+    setLoading(true);
+    setMessage('');
+    try {
+      const path = mode === 'deposit' ? '/vault/deposit' : mode === 'distribute' ? '/vault/distribute' : mode === 'withdraw' ? '/vault/withdraw' : '/vault/balance';
+      const method = mode === 'adjust' ? 'PATCH' : 'POST';
+      const body = { memo: form.memo, createdByMemberId: member.memberId };
+      if (mode === 'adjust') body.balanceDiamonds = balance;
+      else body.amountDiamonds = amount;
+      for (const targetMemberId of targetIds) {
+        await request(path, {
+          method,
+          body: JSON.stringify({ ...body, targetMemberId: targetMemberId ? Number(targetMemberId) : null }),
+        });
+      }
+      setForm({ amountDiamonds: '', balanceDiamonds: '', targetMemberId: '', memo: '' });
+      setSelectedTargetIds([]);
+      await load();
+      setMessage('금고 내용을 저장했습니다.');
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return <>
+    <div className="page-title"><h1>{readonly ? '장부 조회' : '통장현황'}</h1><p>활성 클랜원별 잔액과 입금·분배·차감 내역을 확인합니다.</p></div>
+    <div className="vault-summary-cards">
+      <div><span>클랜원 수</span><strong>{balances.length}명</strong></div>
+      <div><span>총 잔액</span><strong>{money(totals.balance)} 💎</strong></div>
+      <div><span>총 적립액</span><strong>{money(totals.credited)} 💎</strong></div>
+      <div><span>총 출금액</span><strong>{money(totals.withdrawn)} 💎</strong></div>
+    </div>
+    {!readonly && <section className="white-card vault-form-card">
+      <div className="section-heading"><h2>계좌 기록 추가</h2></div>
+      <div className="vault-tabs">
+        {['deposit', 'distribute', 'withdraw', 'adjust'].map((item) => <button key={item} type="button" className={mode === item ? 'active' : ''} onClick={() => setMode(item)}>{typeText[item.toUpperCase()]}</button>)}
+      </div>
+      <form className="vault-form" onSubmit={submit}>
+        {(mode === 'deposit' || mode === 'withdraw') && <label>대상 클랜원<select value={form.targetMemberId} onChange={(e) => setForm({ ...form, targetMemberId: e.target.value })}><option value="">클랜 공용 — 특정 회원 아님</option>{balances.map((row) => <option key={row.memberId} value={row.memberId}>{row.characterName}</option>)}</select></label>}
+        {mode === 'distribute' && <div className="vault-target-picker"><b>분배 대상 클랜원</b><div className="vault-target-list">{balances.map((row) => { const id = String(row.memberId); return <label key={id} className={selectedTargetIds.includes(id) ? 'selected' : ''}><input type="checkbox" checked={selectedTargetIds.includes(id)} onChange={() => setSelectedTargetIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id])} />{row.characterName}</label>; })}</div></div>}
+        {mode === 'adjust' ? <label>새 금고 잔액<input required min="0" type="number" value={form.balanceDiamonds} onChange={(e) => setForm({ ...form, balanceDiamonds: e.target.value })} /></label> : <label>💎 수량<input required min="1" type="number" value={form.amountDiamonds} onChange={(e) => setForm({ ...form, amountDiamonds: e.target.value })} /></label>}
+        <label>메모<input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} /></label>
+        <button className="primary-button" disabled={loading}>{loading ? '저장 중...' : '금고 기록 저장'}</button>
+      </form>
+    </section>}
+    {message && <p className="vault-message">{message}</p>}
+    <section className="white-card vault-accounts-card">
+      <div className="section-heading"><h2>회원별 계좌</h2><span className="result-count">{filteredBalances.length}명</span></div>
+      <input className="vault-account-search" placeholder="닉네임 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="table-wrap"><table className="data-table vault-account-table"><thead><tr><th>닉네임</th><th>클랜</th><th>잔액</th><th>총 적립액</th><th>총 출금액</th><th>내역확인</th></tr></thead><tbody>{filteredBalances.map((row) => <tr key={row.memberId}><td><b>{row.characterName}</b></td><td>{canonicalClanName(row.clanName)}</td><td className={Number(row.balance) < 0 ? 'red-text' : 'green-text'}><b>{money(row.balance)} 💎</b></td><td>{money(row.totalCredited)}</td><td>{money(row.totalWithdrawn)}</td><td><button type="button" className="mini-button" disabled={loading} onClick={() => openMemberHistory(row)}>내역 보기</button></td></tr>)}</tbody></table></div>
+      {!filteredBalances.length && <div className="empty-state">조건에 맞는 클랜원이 없습니다.</div>}
+    </section>
+    {history && <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setHistory(null)}><div className="member-vault-history" onClick={(e) => e.stopPropagation()}><button type="button" className="modal-close" onClick={() => setHistory(null)}>×</button><h2>{history.account.characterName} 계좌 내역</h2><p>현재 잔액 <b>{money(history.account.balance)} 💎</b></p><div className="table-wrap"><table className="data-table vault-history-table"><thead><tr><th>시간</th><th>종류</th><th>수량</th><th>메모</th><th>기록자</th></tr></thead><tbody>{history.transactions.map((row) => <tr key={row.transactionId}><td>{new Date(row.createdAt).toLocaleString('ko-KR')}</td><td><span className={`vault-type ${typeTone[row.type]}`}>{typeText[row.type] ?? row.type}</span></td><td>{money(row.amountDiamonds)}</td><td>{row.memo || '-'}</td><td>{row.createdByMemberName || '-'}</td></tr>)}</tbody></table></div>{!history.transactions.length && <div className="empty-state">이 회원의 거래내역이 없습니다.</div>}</div></div>}
+  </>;
 }
 
 function PaymentPage({ member }) {
