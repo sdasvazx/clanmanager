@@ -35,7 +35,9 @@ public class VaultTransaction {
     private Long transactionId;
 
     @Version
-    private Long version;
+    @Column(nullable = false, columnDefinition = "bigint default 0")
+    @Builder.Default
+    private Long version = 0L;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
@@ -67,6 +69,7 @@ public class VaultTransaction {
 
     @PrePersist
     public void prePersist() {
+        this.version = this.version == null ? 0L : this.version;
         this.createdAt = LocalDateTime.now();
     }
 }

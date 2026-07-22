@@ -31,7 +31,9 @@ public class ClanVault {
     private Long balanceDiamonds;
 
     @Version
-    private long version;
+    @Column(nullable = false, columnDefinition = "bigint default 0")
+    @Builder.Default
+    private Long version = 0L;
 
     private LocalDateTime createdAt;
 
@@ -41,6 +43,7 @@ public class ClanVault {
     public void prePersist() {
         this.vaultId = this.vaultId == null ? 1L : this.vaultId;
         this.balanceDiamonds = this.balanceDiamonds == null ? 0L : this.balanceDiamonds;
+        this.version = this.version == null ? 0L : this.version;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }

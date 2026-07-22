@@ -250,9 +250,25 @@
   color: #ffd58a;
 }
 
+[data-theme="dark"] .claim-pill.waiting {
+  background: #172554;
+  color: #bfdbfe;
+}
+
 [data-theme="dark"] .claim-pill.done {
   background: #12351f;
   color: #95f0b4;
+}
+
+[data-theme="dark"] .claim-pill.rejected {
+  background: #3f1518;
+  color: #fecaca;
+}
+
+[data-theme="dark"] .claim-request-actions .mini-button.danger {
+  background: #3f1518;
+  border-color: #7f1d1d;
+  color: #fecaca;
 }
 
 [data-theme="dark"] .menu-row {

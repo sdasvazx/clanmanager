@@ -270,9 +270,19 @@
   color: #b77900;
 }
 
+.claim-pill.waiting {
+  background: #eef2ff;
+  color: #2563eb;
+}
+
 .claim-pill.done {
   background: #e9fbea;
   color: #14934a;
+}
+
+.claim-pill.rejected {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .mini-button {
@@ -288,6 +298,23 @@
 .mini-button:disabled {
   cursor: not-allowed;
   opacity: .55;
+}
+
+.claim-request-admin-card {
+  margin-top: 16px;
+}
+
+.claim-request-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.claim-request-actions .mini-button.danger {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #b91c1c;
 }
 
 .role-card {
