@@ -219,6 +219,14 @@ public class ClanVaultController {
         long requestedAmount = transaction == null
                 ? requirePositiveAmount(request.getRequestedAmount())
                 : transaction.getAmountDiamonds();
+        long pendingAmount = distributionClaimRequestRepository.sumAmountByRequesterAndStatus(
+                requester.getMemberId(),
+                CLAIM_STATUS_PENDING
+        );
+        long availableAmount = Math.max(0L, memberBalance(requester.getMemberId()) - pendingAmount);
+        if (requestedAmount > availableAmount) {
+            throw new IllegalArgumentException("현재 신청 가능한 금액은 " + availableAmount + " 다이아입니다.");
+        }
 
         DistributionClaimRequest saved = distributionClaimRequestRepository.save(DistributionClaimRequest.builder()
                 .sourceTransaction(transaction)
