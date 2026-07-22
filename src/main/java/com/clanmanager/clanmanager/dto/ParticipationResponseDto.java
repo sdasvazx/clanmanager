@@ -48,6 +48,7 @@ public class ParticipationResponseDto {
         private Integer baseParticipationScore;
         private Integer absencePenaltyScore;
         private Long nonParticipationPenaltyDiamonds;
+        private List<DistributionPenaltyDetailDto> nonParticipationPenaltyDetails;
         private Integer minorityBonusScore;
         private Integer finalParticipationScore;
         private Double contributionRate;

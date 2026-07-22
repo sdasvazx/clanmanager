@@ -17,6 +17,8 @@ public interface BossParticipationRecordRepository
 
     Page<BossParticipationRecord> findAllByOrderByBossDateDescCutTimeDescCreatedAtDesc(Pageable pageable);
 
+    List<BossParticipationRecord> findByBossDateBetweenOrderByBossDateAscCutTimeAsc(LocalDate startDate, LocalDate endDate);
+
     @Query("""
             select
                 r.activityType.activityTypeId as activityTypeId,

@@ -28,7 +28,6 @@ public class DistributionResponseDto {
     private Map<String, Long> clanDiamonds;
     private Map<String, Long> participationDiamonds;
     private Map<String, Long> powerDiamonds;
-    private Map<Long, Long> nonParticipationPenaltyDiamonds;
     private List<Long> periodIds;
     private List<PeriodSummaryDto> selectedPeriods;
     private Integer totalActivityCount;
@@ -87,6 +86,7 @@ public class DistributionResponseDto {
         private Long participationAmount;
         private Long powerAmount;
         private Long nonParticipationPenaltyDiamonds;
+        private List<DistributionPenaltyDetailDto> nonParticipationPenaltyDetails;
         private Long finalAmount;
         private Boolean distributed;
     }

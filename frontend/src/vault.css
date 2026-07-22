@@ -976,20 +976,9 @@
   background: #eafaf1;
 }
 
-.period-penalty-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.period-penalty-grid label {
-  display: grid;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid #f3c5ce;
-  border-radius: 10px;
-  background: #fff8fa;
+.penalty-with-tooltip {
+  cursor: help;
+  border-bottom: 1px dotted currentColor;
 }
 
 @media (max-width: 800px) {
