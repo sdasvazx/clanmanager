@@ -5048,6 +5048,7 @@ function ClanVaultPage({ member, readonly = false }) {
           <strong>{money(totals.withdrawn)} 💎</strong>
         </div>
       </div>
+      {!readonly && member.role === 'ADMIN' && <DistributionClaimRequestAdminPanel member={member} />}
       {!readonly && formOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setFormOpen(false)}>
           <section className="white-card vault-form-card vault-form-modal" onClick={(event) => event.stopPropagation()}>
@@ -5732,7 +5733,6 @@ function DistributionAdminPage({ member }) {
         </div>
         {!rows.length && <div className="empty-state">분배 결과가 없습니다.</div>}
       </section>
-      {member.role === 'ADMIN' && <DistributionClaimRequestAdminPanel member={member} />}
       {basisOpen && <PowerScoreModal onClose={() => setBasisOpen(false)} />}
     </>
   );
@@ -6030,7 +6030,13 @@ function PaymentClaimPage({ member }) {
       await load();
       setMessage('원하는 금액의 수령 신청을 접수했습니다.');
     } catch (err) {
-      setMessage(err.message);
+      const errorMessage = String(err.message || '');
+      if (errorMessage.includes('이미 존재하는 데이터') || errorMessage.includes('저장할 수 없는 값')) {
+        await load().catch(() => {});
+        setMessage('이미 동일한 신청이 접수되어 있습니다. 운영진 확인 후 처리 상태가 표시됩니다.');
+      } else {
+        setMessage(errorMessage);
+      }
     } finally {
       setClaimingId(null);
     }
@@ -6083,7 +6089,7 @@ function PaymentClaimPage({ member }) {
           <h2>내 분배금 내역</h2>
           <span className="result-count">{rows.length}건</span>
         </div>
-        {message && <p className="vault-message">{message}</p>}
+        {message && <p className="claim-user-message">{message}</p>}
         <div className="table-wrap">
           <table className="data-table">
             <thead>
