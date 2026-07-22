@@ -174,6 +174,33 @@ public class DistributionService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public DistributionResponseDto.ResultItemDto getLatestMemberDistribution(Long memberId) {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        return snapshotRepository.findTopByOrderByCreatedAtDesc()
+                .map(snapshot -> {
+                    try {
+                        DistributionResponseDto response = objectMapper.readValue(snapshot.getResponseJson(), DistributionResponseDto.class);
+                        return response.getResults() == null ? null : response.getResults().stream()
+                                .filter(row -> memberId.equals(row.getMemberId()))
+                                .findFirst()
+                                .orElse(null);
+                    } catch (JsonProcessingException e) {
+                        throw new IllegalStateException("최신 분배 결과를 읽을 수 없습니다.", e);
+                    }
+                })
+                .orElseGet(() -> DistributionResponseDto.ResultItemDto.builder()
+                        .memberId(memberId)
+                        .characterName(member.getCharacterName())
+                        .finalAmount(0L)
+                        .participationAmount(0L)
+                        .powerAmount(0L)
+                        .nonParticipationPenaltyDiamonds(0L)
+                        .distributed(false)
+                        .build());
+    }
+
     @Transactional
     public DistributionResponseDto updateDistributed(Long snapshotId, Long memberId, Long adminMemberId, boolean distributed) {
         requireAdmin(adminMemberId);

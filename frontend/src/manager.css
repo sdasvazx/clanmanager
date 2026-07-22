@@ -2624,8 +2624,14 @@
   z-index: 5;
 }
 
-.collection-wide-table tr.below-distribution-cut td {
-  background: #fde2e1;
+.collection-wide-table tbody tr:nth-child(odd) td,
+.collection-wide-table tbody tr:nth-child(odd) .collection-member-name {
+  background: #ffffff;
+}
+
+.collection-wide-table tbody tr:nth-child(even) td,
+.collection-wide-table tbody tr:nth-child(even) .collection-member-name {
+  background: #eef7ff;
 }
 
 .collection-wide-table tr.below-distribution-cut td:first-child {

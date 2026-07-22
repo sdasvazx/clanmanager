@@ -5940,15 +5940,28 @@ function DistributionClaimRequestAdminPanel({ member }) {
 
 function PaymentClaimPage({ member }) {
   const [rows, setRows] = useState([]);
+  const [latestDistribution, setLatestDistribution] = useState(null);
+  const [memberBalance, setMemberBalance] = useState(null);
   const [claimRequests, setClaimRequests] = useState([]);
   const [message, setMessage] = useState('');
   const [claimingId, setClaimingId] = useState(null);
   const [claimForm, setClaimForm] = useState({ requestedAmount: '', memo: '' });
 
   const load = async () => {
-    const [distributions, requests] = await Promise.all([request('/vault/distributions/member/' + member.memberId), request('/vault/distribution-claim-requests?memberId=' + member.memberId).catch(() => [])]);
+    const [distributions, requests, calculated, account] = await Promise.all([
+      request('/vault/distributions/member/' + member.memberId),
+      request('/vault/distribution-claim-requests?memberId=' + member.memberId).catch(() => []),
+      request(`/distributions/member/${member.memberId}/latest`).catch(() => null),
+      request(`/vault/member-balance/${member.memberId}?requesterMemberId=${member.memberId}`).catch(() => null),
+    ]);
     setRows(distributions);
     setClaimRequests(Array.isArray(requests) ? requests : []);
+    setLatestDistribution(calculated);
+    setMemberBalance(account);
+    const suggestedAmount = Number(account?.balance || calculated?.finalAmount || 0);
+    if (suggestedAmount > 0) {
+      setClaimForm((current) => ({ ...current, requestedAmount: current.requestedAmount || String(suggestedAmount) }));
+    }
   };
 
   useEffect(() => {
@@ -6030,7 +6043,8 @@ function PaymentClaimPage({ member }) {
         <p>클랜금고에서 내 캐릭터에게 배정된 분배금과 수령 여부를 확인합니다.</p>
       </div>
       <div className="metric-grid">
-        <Metric label="받을금액" value={money(pendingTotal)} caption="아직 수령 처리하지 않은 금액" tone="green" />
+        <Metric label="계산된 받을금액" value={money(latestDistribution?.finalAmount)} caption="최신 저장된 분배 결과" tone="purple" />
+        <Metric label="받을금액" value={money(memberBalance?.balance ?? pendingTotal)} caption="내 개인 계좌의 현재 수령 가능 금액" tone="green" />
         <Metric label="받은금액" value={money(claimedTotal)} caption="수령완료 처리된 금액" tone="blue" />
       </div>
       <section className="white-card claim-custom-card">

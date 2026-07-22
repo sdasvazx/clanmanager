@@ -48,6 +48,11 @@ public class DistributionController {
         return distributionService.getSnapshot(snapshotId);
     }
 
+    @GetMapping("/member/{memberId}/latest")
+    public DistributionResponseDto.ResultItemDto getLatestMemberDistribution(@PathVariable Long memberId) {
+        return distributionService.getLatestMemberDistribution(memberId);
+    }
+
     @PatchMapping("/snapshots/{snapshotId}/members/{memberId}/distributed")
     public DistributionResponseDto updateDistributed(@PathVariable Long snapshotId, @PathVariable Long memberId,
                                                       @RequestParam Long adminMemberId,

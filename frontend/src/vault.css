@@ -981,6 +981,18 @@
   border-bottom: 1px dotted currentColor;
 }
 
+.data-table tbody tr:nth-child(odd) {
+  background: #ffffff;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: #f1f7ff;
+}
+
+.data-table tbody tr:hover {
+  background: #e8f2ff;
+}
+
 @media (max-width: 800px) {
   .distribution-title {
     display: grid;
