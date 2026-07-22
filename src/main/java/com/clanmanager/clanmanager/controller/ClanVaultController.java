@@ -17,6 +17,7 @@ import com.clanmanager.clanmanager.repository.ClanVaultRepository;
 import com.clanmanager.clanmanager.repository.DistributionClaimRequestRepository;
 import com.clanmanager.clanmanager.repository.MemberRepository;
 import com.clanmanager.clanmanager.repository.VaultTransactionRepository;
+import com.clanmanager.clanmanager.service.DistributionClaimRequestCleanupService;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,7 @@ public class ClanVaultController {
     private final VaultTransactionRepository transactionRepository;
     private final MemberRepository memberRepository;
     private final DistributionClaimRequestRepository distributionClaimRequestRepository;
+    private final DistributionClaimRequestCleanupService distributionClaimRequestCleanupService;
 
     @GetMapping
     @Transactional
@@ -180,6 +182,7 @@ public class ClanVaultController {
     @GetMapping("/distribution-claim-requests")
     @Transactional
     public List<DistributionClaimRequestResponseDto> getDistributionClaimRequests(@RequestParam Long memberId) {
+        distributionClaimRequestCleanupService.deleteExpiredProcessedRequests();
         initializeTransactionVersions();
         Member requester = findRequiredMember(memberId, "수령 신청 조회 회원 정보가 필요합니다.");
         List<DistributionClaimRequest> requests = requester.getRole() == MemberRole.ADMIN

@@ -5846,7 +5846,10 @@ function DistributionClaimRequestAdminPanel({ member }) {
     <section className="white-card claim-request-admin-card">
       <div className="section-heading">
         <h2>분배금 수령 신청 관리</h2>
-        <span className="result-count">{requests.length}건</span>
+        <div className="claim-admin-retention">
+          <small>지급완료·반려 기록은 처리 24시간 후 자동 삭제</small>
+          <span className="result-count">{requests.length}건</span>
+        </div>
       </div>
       {message && <p className="vault-message">{message}</p>}
       <div className="table-wrap">
