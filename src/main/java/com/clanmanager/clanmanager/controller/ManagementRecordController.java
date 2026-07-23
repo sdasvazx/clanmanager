@@ -315,9 +315,12 @@ public class ManagementRecordController {
 
     @PatchMapping("/collection-statuses")
     public CollectionStatusDto updateCollectionStatus(@Valid @RequestBody CollectionStatusRequest request) {
-        Member actor = validateAdmin(request.getActorMemberId());
+        Member actor = validateMember(request.getActorMemberId());
         Member target = memberRepository.findById(request.getMemberId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 클랜원입니다."));
+        if (actor.getRole() != MemberRole.ADMIN && !actor.getMemberId().equals(target.getMemberId())) {
+            throw new SecurityException("일반 클랜원은 본인의 컬렉템 지급 상태만 수정할 수 있습니다.");
+        }
         CollectionItem item = collectionItemRepository.findById(request.getItemId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 컬렉템 항목입니다."));
         String nextState = cleanRequired(request.getState(), "상태를 선택해 주세요.");
@@ -328,6 +331,9 @@ public class ManagementRecordController {
                         .state("미완료")
                         .build());
         String previousState = status.getCollectionStatusId() == null ? "미완료" : status.getState();
+        if (actor.getRole() != MemberRole.ADMIN && Boolean.TRUE.equals(status.getLocked())) {
+            throw new SecurityException("운영자가 잠근 항목은 수정할 수 없습니다.");
+        }
         status.setState(nextState);
         status.setMemo(request.getMemo());
         status.setUpdatedByMemberId(actor.getMemberId());
@@ -342,6 +348,43 @@ public class ManagementRecordController {
                 .previousState(previousState)
                 .nextState(nextState)
                 .memo(request.getMemo())
+                .editedByMemberId(actor.getMemberId())
+                .editedByName(actor.getCharacterName())
+                .build());
+        return CollectionStatusDto.from(saved);
+    }
+
+    @PatchMapping("/collection-statuses/self")
+    public CollectionStatusDto updateOwnCollectionStatus(@Valid @RequestBody CollectionStatusRequest request) {
+        return updateCollectionStatus(request);
+    }
+
+    @PatchMapping("/collection-statuses/lock")
+    public CollectionStatusDto updateCollectionStatusLock(@Valid @RequestBody CollectionStatusLockRequest request) {
+        Member actor = validateAdmin(request.getActorMemberId());
+        Member target = validateMember(request.getMemberId());
+        CollectionItem item = collectionItemRepository.findById(request.getItemId())
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 컬렉템 항목입니다."));
+        CollectionStatus status = collectionStatusRepository.findByMemberAndItem(target, item)
+                .orElseGet(() -> CollectionStatus.builder()
+                        .member(target)
+                        .item(item)
+                        .state("\uBBF8\uC644\uB8CC")
+                        .locked(false)
+                        .build());
+        boolean previousLocked = Boolean.TRUE.equals(status.getLocked());
+        status.setLocked(request.getLocked());
+        status.setUpdatedByMemberId(actor.getMemberId());
+        status.setUpdatedByName(actor.getCharacterName());
+        CollectionStatus saved = collectionStatusRepository.save(status);
+        collectionHistoryRepository.save(CollectionHistory.builder()
+                .memberId(target.getMemberId())
+                .characterName(target.getCharacterName())
+                .collectionItemId(item.getCollectionItemId())
+                .itemName(item.getItemName())
+                .action("\uC7A0\uAE08\uBCC0\uACBD")
+                .previousState(previousLocked ? "\uC7A0\uAE08" : "\uC218\uC815\uAC00\uB2A5")
+                .nextState(request.getLocked() ? "\uC7A0\uAE08" : "\uC218\uC815\uAC00\uB2A5")
                 .editedByMemberId(actor.getMemberId())
                 .editedByName(actor.getCharacterName())
                 .build());
@@ -638,6 +681,22 @@ public class ManagementRecordController {
         private Long actorMemberId;
     }
 
+    @Getter
+    @Setter
+    public static class CollectionStatusLockRequest {
+        @NotNull(message = "클랜원을 선택해 주세요.")
+        private Long memberId;
+
+        @NotNull(message = "컬렉템을 선택해 주세요.")
+        private Long itemId;
+
+        @NotNull(message = "잠금 상태를 선택해 주세요.")
+        private Boolean locked;
+
+        @NotNull(message = "운영자 정보가 필요합니다.")
+        private Long actorMemberId;
+    }
+
     public record ItemRequestDto(
             Long requestId,
             Long requesterMemberId,
@@ -700,6 +759,7 @@ public class ManagementRecordController {
             Long itemId,
             String state,
             String memo,
+            Boolean locked,
             Long updatedByMemberId,
             String updatedByName,
             java.time.LocalDateTime updatedAt
@@ -711,6 +771,7 @@ public class ManagementRecordController {
                     status.getItem().getCollectionItemId(),
                     status.getState(),
                     status.getMemo(),
+                    Boolean.TRUE.equals(status.getLocked()),
                     status.getUpdatedByMemberId(),
                     status.getUpdatedByName(),
                     status.getUpdatedAt()
