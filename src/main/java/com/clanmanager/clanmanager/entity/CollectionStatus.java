@@ -35,6 +35,10 @@ public class CollectionStatus {
     @Column(length = 255)
     private String memo;
 
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private Boolean locked = false;
+
     private Long updatedByMemberId;
 
     @Column(length = 50)
@@ -45,6 +49,7 @@ public class CollectionStatus {
     @PrePersist
     public void prePersist() {
         this.state = this.state == null ? "미완료" : this.state;
+        this.locked = this.locked == null ? false : this.locked;
         this.updatedAt = LocalDateTime.now();
     }
 

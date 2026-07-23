@@ -6552,15 +6552,20 @@ function CollectionPage({ member }) {
     }
   };
   const updateStatus = async (targetMember, item, state) => {
-    if (!isAdmin) {
-      setMessage('운영자만 컬렉템 지급 상태를 수정할 수 있습니다.');
+    const existingStatus = statusMap.get(`${targetMember.memberId}:${item.itemId}`);
+    if (!isAdmin && Number(targetMember.memberId) !== Number(member.memberId)) {
+      setMessage('본인의 컬렉템 지급 상태만 수정할 수 있습니다.');
+      return;
+    }
+    if (!isAdmin && existingStatus?.locked) {
+      setMessage('운영자가 잠근 항목은 수정할 수 없습니다.');
       return;
     }
     const key = `${targetMember.memberId}:${item.itemId}`;
     setSavingCell(key);
     setMessage('');
     try {
-      await request('/management/collection-statuses', {
+      await request(isAdmin ? '/management/collection-statuses' : '/management/collection-statuses/self', {
         method: 'PATCH',
         body: JSON.stringify({
           memberId: targetMember.memberId,
@@ -6572,6 +6577,30 @@ function CollectionPage({ member }) {
       });
       setMemoByCell((prev) => ({ ...prev, [key]: '' }));
       await load();
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSavingCell('');
+    }
+  };
+  const toggleCollectionLock = async (targetMember, item) => {
+    if (!isAdmin) return;
+    const key = `${targetMember.memberId}:${item.itemId}`;
+    const status = statusMap.get(key);
+    setSavingCell(key);
+    setMessage('');
+    try {
+      await request('/management/collection-statuses/lock', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          memberId: targetMember.memberId,
+          itemId: item.itemId,
+          locked: !Boolean(status?.locked),
+          actorMemberId: member.memberId,
+        }),
+      });
+      await load();
+      setMessage(status?.locked ? '컬렉템 수정을 허용했습니다.' : '컬렉템을 수정 불가로 잠갔습니다.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -6676,7 +6705,7 @@ function CollectionPage({ member }) {
       <section className="white-card collection-toolbar">
         <div>
           <h2>스킬현황 아이템 관리</h2>
-          <p className="subtle">운영자만 수정할 수 있으며, 변경 내역은 로그에 기록됩니다.</p>
+          <p className="subtle">본인 항목은 직접 변경할 수 있고, 운영자는 항목별 수정 잠금을 설정할 수 있습니다. 모든 변경은 로그에 기록됩니다.</p>
         </div>
         <form className="collection-add-form" onSubmit={addItem}>
           <input disabled={!isAdmin} value={itemName} onChange={(event) => setItemName(event.target.value)} placeholder="새 컬렉템/스킬명" />
@@ -6690,7 +6719,7 @@ function CollectionPage({ member }) {
         <div className="section-heading">
           <div>
             <h2>지급현황</h2>
-            <p className="subtle">아이템별로 완료/미완료 인원을 나눠서 보여줍니다. 사람 이름 옆 상태를 바꾸면 바로 저장됩니다.</p>
+            <p className="subtle">일반 클랜원은 본인의 잠기지 않은 항목만 변경할 수 있습니다. 🔒 항목은 운영자만 수정할 수 있습니다.</p>
           </div>
           <span className="result-count">
             완료 {completedCount} / {totalCount}
@@ -6833,11 +6862,37 @@ function CollectionPage({ member }) {
                     {visibleItems.map((item) => {
                       const { key, status, state } = collectionCell(targetMember, item);
                       const done = state === '완료';
+                      const canEditStatus = isAdmin || (Number(targetMember.memberId) === Number(member.memberId) && !status?.locked);
                       return (
                         <td key={key}>
-                          <button type="button" className={`collection-status-cell ${done ? 'complete' : 'incomplete'}`} disabled={!isAdmin || savingCell === key} title={status?.updatedByName ? `${status.updatedByName} · ${new Date(status.updatedAt).toLocaleString('ko-KR')}` : '클릭해서 완료/미완료 변경'} onClick={() => toggleCollectionStatus(targetMember, item)}>
-                            {savingCell === key ? '저장중' : done ? '완료' : '미완료'}
-                          </button>
+                          <div className="collection-cell-actions">
+                            <button
+                              type="button"
+                              className={`collection-status-cell ${done ? 'complete' : 'incomplete'} ${status?.locked ? 'locked' : ''}`}
+                              disabled={!canEditStatus || savingCell === key}
+                              title={
+                                status?.locked
+                                  ? '운영자가 잠근 항목입니다.'
+                                  : status?.updatedByName
+                                    ? `${status.updatedByName} · ${new Date(status.updatedAt).toLocaleString('ko-KR')}`
+                                    : '클릭해서 완료/미완료 변경'
+                              }
+                              onClick={() => toggleCollectionStatus(targetMember, item)}
+                            >
+                              {savingCell === key ? '저장중' : done ? '완료' : '미완료'}
+                            </button>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                className={`collection-lock-toggle ${status?.locked ? 'locked' : ''}`}
+                                disabled={savingCell === key}
+                                title={status?.locked ? '잠금 해제' : '수정 불가로 잠금'}
+                                onClick={() => toggleCollectionLock(targetMember, item)}
+                              >
+                                {status?.locked ? '🔒' : '🔓'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       );
                     })}
