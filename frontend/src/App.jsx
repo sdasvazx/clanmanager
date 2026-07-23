@@ -6773,7 +6773,6 @@ function CollectionPage({ member }) {
               <tr>
                 <SortableHeader className="collection-member-head" label="클랜원" field="sortableCharacterName" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
                 <SortableHeader label="클랜" field="sortableClanName" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
-                <SortableHeader label="전투력" field="sortableCombatPower" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
                 <SortableHeader label="현재참여율" field="sortableCurrentParticipation" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
                 <SortableHeader label="과거평균참여율(2주)" field="sortablePastParticipation" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
                 {visibleItems.map((item) => (
@@ -6829,7 +6828,6 @@ function CollectionPage({ member }) {
                     <td>
                       <span className={`clan-badge ${normalize(canonicalClanName(targetMember.guildName))}`}>{canonicalClanName(targetMember.guildName)}</span>
                     </td>
-                    <td>{formatNumber(targetMember.sortableCombatPower)}</td>
                     <td className={belowCut ? 'rate-below-cut' : ''}>{Number(participation.current || 0).toFixed(1)}%</td>
                     <td>{Number(participation.pastAverage || 0).toFixed(1)}%</td>
                     {visibleItems.map((item) => {
