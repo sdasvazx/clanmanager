@@ -59,8 +59,20 @@ public class AuthController {
             throw new IllegalArgumentException("비활성화된 계정입니다. 운영진에게 문의해 주세요.");
         }
 
+        boolean usesInitialPassword = PasswordSupport.matches(
+                PasswordSupport.DEFAULT_INITIAL_PASSWORD,
+                member.getPassword()
+        );
+        boolean memberChanged = false;
         if (!PasswordSupport.isEncoded(member.getPassword())) {
             member.setPassword(PasswordSupport.encode(request.getPassword()));
+            memberChanged = true;
+        }
+        if (usesInitialPassword && !Boolean.TRUE.equals(member.getMustChangePassword())) {
+            member.setMustChangePassword(true);
+            memberChanged = true;
+        }
+        if (memberChanged) {
             memberRepository.save(member);
         }
 
