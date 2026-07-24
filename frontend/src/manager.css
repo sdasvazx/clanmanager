@@ -4757,6 +4757,123 @@
   color: #64748b;
 }
 
+.sidebar-alert-wrap {
+  position: relative;
+  margin: auto 12px 0;
+}
+
+.sidebar .item-request-shortcut {
+  margin: 8px 12px 18px;
+}
+
+.sidebar-alert-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 50px;
+  padding: 10px 12px;
+  border: 1px solid #dbe5f1;
+  border-radius: 13px;
+  background: #fff;
+  color: #334155;
+  font-weight: 850;
+}
+
+.sidebar-alert-button.active {
+  border-color: #fbbf24;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.sidebar-alert-bell {
+  font-size: 1.25rem;
+}
+
+.sidebar-alert-button > b {
+  display: grid;
+  place-items: center;
+  min-width: 23px;
+  height: 23px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: .75rem;
+}
+
+.sidebar-alert-popover {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 260px;
+  overflow: hidden;
+  border: 1px solid #dbe5f1;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 16px 40px #17233a30;
+}
+
+.sidebar-alert-popover > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 14px;
+  background: #f8fafc;
+}
+
+.sidebar-alert-popover small {
+  color: #64748b;
+}
+
+.sidebar-alert-popover button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 14px;
+  border-top: 1px solid #edf2f7;
+  background: #fff;
+  color: #334155;
+  text-align: left;
+}
+
+.sidebar-alert-popover button:hover {
+  background: #eff6ff;
+}
+
+.sidebar-alert-popover button b {
+  color: #dc2626;
+}
+
+.collapsed .sidebar-alert-wrap {
+  margin-right: 6px;
+  margin-left: 6px;
+}
+
+.collapsed .sidebar-alert-button {
+  justify-content: center;
+  padding: 8px 4px;
+}
+
+.collapsed .sidebar-alert-label {
+  display: none;
+}
+
+.collapsed .sidebar-alert-button > b {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+}
+
+.collapsed .sidebar-alert-popover {
+  bottom: 0;
+  left: 54px;
+}
+
 @media (max-width: 800px) {
   .admin-alert-grid {
     grid-template-columns: 1fr;
@@ -4765,5 +4882,10 @@
   .registration-approval-list > div {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .sidebar-alert-popover {
+    bottom: 0;
+    left: 54px;
   }
 }
