@@ -5515,30 +5515,45 @@ function DistributionAdminPage({ member }) {
   const { sortedRows: sortedDistributionRows, sortKey: distributionSortKey, sortDirection: distributionSortDirection, toggleSort: toggleDistributionSort } = useSortableRows(sortableDistributionRows, 'sortableFinalAmount', 'desc');
 
   const toggleDistributed = async (row, checked) => {
-    setLoading(true);
     setMessage('');
+    const applyLocalExclusion = (source) => {
+      if (!source) return source;
+      const nextResults = (source.results || []).map((item) => {
+        if (Number(item.memberId) !== Number(row.memberId)) return item;
+        const restoredAmount = Math.max(0, Number(item.participationAmount || 0) + Number(item.powerAmount || 0) - Number(item.nonParticipationPenaltyDiamonds || 0));
+        return { ...item, distributed: checked, finalAmount: checked ? 0 : restoredAmount };
+      });
+      const allocatedDiamonds = nextResults.reduce((sum, item) => sum + Number(item.finalAmount || 0), 0);
+      const clanSummaries = (source.clanSummaries || []).map((summary) => {
+        const clanAllocated = nextResults.filter((item) => item.clanName === summary.clanName).reduce((sum, item) => sum + Number(item.finalAmount || 0), 0);
+        return {
+          ...summary,
+          allocatedDiamonds: clanAllocated,
+          remainingDiamonds: Math.max(0, Number(summary.totalDiamonds || 0) - clanAllocated),
+        };
+      });
+      return {
+        ...source,
+        results: nextResults,
+        clanSummaries,
+        allocatedDiamonds,
+        remainingDiamonds: Math.max(0, Number(source.totalDiamonds || 0) - allocatedDiamonds),
+      };
+    };
+    setResult((current) => applyLocalExclusion(current));
+    if (!result?.snapshotId) {
+      setMessage(`${row.characterName}님을 분배 대상에서 ${checked ? '제외했습니다.' : '다시 포함했습니다.'}`);
+      return;
+    }
     try {
-      let snapshotId = result?.snapshotId;
-      if (!snapshotId) {
-        const saved = await request('/distributions/snapshots', {
-          method: 'POST',
-          body: JSON.stringify(buildPayload()),
-        });
-        snapshotId = saved.snapshotId;
-        setHistoryId(String(snapshotId));
-        setEditing(false);
-        await loadHistory();
-      }
-      const updated = await request(`/distributions/snapshots/${snapshotId}/members/${row.memberId}/distributed?adminMemberId=${member.memberId}`, {
+      const updated = await request(`/distributions/snapshots/${result.snapshotId}/members/${row.memberId}/distributed?adminMemberId=${member.memberId}`, {
         method: 'PATCH',
         body: JSON.stringify({ distributed: checked }),
       });
-      setResult(updated);
+      setResult(applyLocalExclusion(updated));
       setMessage(`${row.characterName}님을 분배 대상에서 ${checked ? '제외했습니다.' : '다시 포함했습니다.'}`);
     } catch (err) {
       setMessage(err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -5779,7 +5794,7 @@ function DistributionAdminPage({ member }) {
                     <b>{money(row.finalAmount)}</b>
                   </td>
                   <td>
-                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={loading} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배 제외`} />
+                    <input type="checkbox" checked={Boolean(row.distributed)} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배 제외`} />
                   </td>
                 </tr>
               ))}
