@@ -2077,9 +2077,13 @@ function Participation({ member, setPage }) {
         .map((option) => {
           const periodRecords = bossRecords.filter((record) => record.bossDate >= option.start && record.bossDate < option.end);
           const periodHistory = detailHistory.filter((record) => record.bossDate >= option.start && record.bossDate < option.end);
-          const total = periodRecords.length;
-          const attended = periodHistory.length;
-          const score = periodHistory.reduce((sum, row) => sum + Number(row.score || 1), 0);
+          const recordKey = (record) => String(record.recordId ?? `${record.bossDate}|${record.cutTime || ''}|${record.bossName || record.activityTypeName || ''}`);
+          const uniqueRecords = [...new Map(periodRecords.map((record) => [recordKey(record), record])).values()];
+          const uniqueHistory = [...new Map(periodHistory.map((record) => [recordKey(record), record])).values()];
+          const attended = uniqueHistory.length;
+          // 수동 참여 기록도 지난 회차에 포함되므로 분모가 참여 횟수보다 작아지지 않게 보정한다.
+          const total = Math.max(uniqueRecords.length, attended);
+          const score = uniqueHistory.reduce((sum, row) => sum + Number(row.score || 1), 0);
           const rate = total ? Math.round((attended / total) * 1000) / 10 : 0;
           return {
             ...option,
@@ -2249,7 +2253,7 @@ function Participation({ member, setPage }) {
               <h2>{clan}</h2>
               <span className="result-count">{list.length}명</span>
             </div>
-            <div className="table-wrap">
+            <div className="table-wrap participation-table-scroll">
               <table className="data-table participation-ranking-table wide">
                 <thead>
                   <tr>
@@ -2437,6 +2441,8 @@ function Attendance({ member, setPage, mode = 'check' }) {
     totalPages: 1,
     totalElements: 0,
   });
+  const [historySearch, setHistorySearch] = useState({ date: '', bossName: '' });
+  const [appliedHistorySearch, setAppliedHistorySearch] = useState({ date: '', bossName: '' });
   const [members, setMembers] = useState([]);
   const [batchRows, setBatchRows] = useState(() => buildBatchRowsFromActivitySettings());
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -2980,8 +2986,11 @@ function Attendance({ member, setPage, mode = 'check' }) {
     setReviewEdit(null);
   };
 
-  const load = (nextPage = recordPage) => {
-    const jobs = showCheck ? [request('/members'), request('/activities/settings')] : [request(`/boss-participations/page?page=${nextPage}`), request('/members')];
+  const load = (nextPage = recordPage, filters = appliedHistorySearch) => {
+    const historyParams = new URLSearchParams({ page: String(nextPage) });
+    if (filters.date) historyParams.set('date', filters.date);
+    if (filters.bossName.trim()) historyParams.set('bossName', filters.bossName.trim());
+    const jobs = showCheck ? [request('/members'), request('/activities/settings')] : [request(`/boss-participations/page?${historyParams.toString()}`), request('/members')];
     return Promise.all(jobs)
       .then((rows) => {
         if (showCheck) {
@@ -3014,6 +3023,23 @@ function Attendance({ member, setPage, mode = 'check' }) {
         setMembers(memberRows);
       })
       .catch((err) => setMessage(err.message));
+  };
+
+  const searchBossHistory = async (event) => {
+    event.preventDefault();
+    const nextFilters = {
+      date: historySearch.date,
+      bossName: historySearch.bossName.trim(),
+    };
+    setAppliedHistorySearch(nextFilters);
+    await load(1, nextFilters);
+  };
+
+  const resetBossHistorySearch = async () => {
+    const emptyFilters = { date: '', bossName: '' };
+    setHistorySearch(emptyFilters);
+    setAppliedHistorySearch(emptyFilters);
+    await load(1, emptyFilters);
   };
 
   useEffect(() => {
@@ -3907,13 +3933,25 @@ function Attendance({ member, setPage, mode = 'check' }) {
 
       {showHistory && (
         <section className="white-card boss-history-card">
-          <div className="filters">
-            <select>
-              <option>전체 날짜</option>
-            </select>
-            <input placeholder="보스명" />
+          <form className="filters boss-history-search" onSubmit={searchBossHistory}>
+            <label>
+              날짜
+              <input type="date" value={historySearch.date} onChange={(event) => setHistorySearch({ ...historySearch, date: event.target.value })} />
+            </label>
+            <label>
+              보스명
+              <input value={historySearch.bossName} onChange={(event) => setHistorySearch({ ...historySearch, bossName: event.target.value })} placeholder="보스명 일부 입력" />
+            </label>
             <button className="dark-button">조회</button>
-          </div>
+            <button type="button" className="outline-button no-margin" onClick={resetBossHistorySearch}>
+              전체 보기
+            </button>
+          </form>
+          {(appliedHistorySearch.date || appliedHistorySearch.bossName) && (
+            <p className="active-search-summary">
+              조회 조건: {appliedHistorySearch.date || '전체 날짜'} · {appliedHistorySearch.bossName || '전체 보스'}
+            </p>
+          )}
           <p className="subtle">
             조회 결과 {recordPageInfo.totalElements}건 · {recordPageInfo.page}/{recordPageInfo.totalPages}페이지
           </p>
@@ -4955,6 +4993,10 @@ function ClanVaultPage({ member, readonly = false }) {
       setMessage('분배받을 클랜원을 한 명 이상 선택해 주세요.');
       return;
     }
+    if ((mode === 'deposit' || mode === 'withdraw') && !form.targetMemberId) {
+      setMessage(`${mode === 'deposit' ? '입금' : '출금'} 대상 클랜원을 선택해 주세요.`);
+      return;
+    }
     const amount = Number(form.amountDiamonds || 0);
     const balance = Number(form.balanceDiamonds || 0);
     const targetIds = mode === 'distribute' ? selectedTargetIds : [form.targetMemberId];
@@ -5069,8 +5111,8 @@ function ClanVaultPage({ member, readonly = false }) {
               {(mode === 'deposit' || mode === 'withdraw') && (
                 <label>
                   대상 클랜원
-                  <select value={form.targetMemberId} onChange={(e) => setForm({ ...form, targetMemberId: e.target.value })}>
-                    <option value="">클랜 공용 — 특정 회원 아님</option>
+                  <select required value={form.targetMemberId} onChange={(e) => setForm({ ...form, targetMemberId: e.target.value })}>
+                    <option value="">클랜원을 선택해 주세요</option>
                     {balances.map((row) => (
                       <option key={row.memberId} value={row.memberId}>
                         {row.characterName}
@@ -5472,18 +5514,30 @@ function DistributionAdminPage({ member }) {
   const { sortedRows: sortedDistributionRows, sortKey: distributionSortKey, sortDirection: distributionSortDirection, toggleSort: toggleDistributionSort } = useSortableRows(sortableDistributionRows, 'sortableFinalAmount', 'desc');
 
   const toggleDistributed = async (row, checked) => {
-    if (!result?.snapshotId) {
-      setMessage('분배 여부는 히스토리를 저장한 뒤 체크할 수 있습니다.');
-      return;
-    }
+    setLoading(true);
+    setMessage('');
     try {
-      const updated = await request(`/distributions/snapshots/${result.snapshotId}/members/${row.memberId}/distributed?adminMemberId=${member.memberId}`, {
+      let snapshotId = result?.snapshotId;
+      if (!snapshotId) {
+        const saved = await request('/distributions/snapshots', {
+          method: 'POST',
+          body: JSON.stringify(buildPayload()),
+        });
+        snapshotId = saved.snapshotId;
+        setHistoryId(String(snapshotId));
+        setEditing(false);
+        await loadHistory();
+      }
+      const updated = await request(`/distributions/snapshots/${snapshotId}/members/${row.memberId}/distributed?adminMemberId=${member.memberId}`, {
         method: 'PATCH',
         body: JSON.stringify({ distributed: checked }),
       });
       setResult(updated);
+      setMessage(`${row.characterName}님의 분배여부를 ${checked ? '완료' : '미완료'}로 변경했습니다.`);
     } catch (err) {
       setMessage(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -5724,7 +5778,7 @@ function DistributionAdminPage({ member }) {
                     <b>{money(row.finalAmount)}</b>
                   </td>
                   <td>
-                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={Number(row.finalAmount || 0) <= 0 || !result?.snapshotId} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배여부`} />
+                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={loading} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배여부`} />
                   </td>
                 </tr>
               ))}

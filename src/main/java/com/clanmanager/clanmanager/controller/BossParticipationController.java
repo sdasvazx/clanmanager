@@ -67,9 +67,15 @@ public class BossParticipationController {
     }
 
     @GetMapping("/page")
-    public BossParticipationPageResponseDto getRecordPage(@RequestParam(defaultValue = "1") int page) {
+    public BossParticipationPageResponseDto getRecordPage(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(defaultValue = "") String bossName
+    ) {
         int safePage = normalizeHistoryPage(page);
-        Page<BossParticipationRecord> result = recordRepository.findAllByOrderByBossDateDescCutTimeDescCreatedAtDesc(
+        Page<BossParticipationRecord> result = recordRepository.searchHistory(
+                date,
+                clean(bossName),
                 PageRequest.of(safePage - 1, HISTORY_PAGE_SIZE)
         );
 
