@@ -1418,7 +1418,6 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
               onClick={() => setAlertOpen((current) => !current)}
             >
               <span className="sidebar-alert-bell">🔔</span>
-              <span className="sidebar-alert-label">운영자 알림</span>
               {totalAdminAlerts > 0 && <b>{totalAdminAlerts > 99 ? '99+' : totalAdminAlerts}</b>}
             </button>
             {alertOpen && (
@@ -7746,6 +7745,23 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
       setLoadingId(null);
     }
   };
+
+  const rejectRegistration = async (targetMember) => {
+    if (!window.confirm(`${targetMember.characterName}님의 회원가입 신청을 거절할까요?`)) return;
+    setLoadingId(`reject-${targetMember.memberId}`);
+    setMessage('');
+    try {
+      await request(`/members/${targetMember.memberId}/reject-registration?adminMemberId=${member.memberId}`, {
+        method: 'DELETE',
+      });
+      await load();
+      setMessage(`${targetMember.characterName}님의 회원가입 신청을 거절했습니다.`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoadingId(null);
+    }
+  };
   const formFromMember = (targetMember) => ({
     characterName: targetMember.characterName ?? '',
     guildName: targetMember.guildName ?? '',
@@ -8045,13 +8061,22 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
                   <b>{row.characterName}</b>
                   <small>전투력 {formatNumber(row.combatPower)} · 신청 {row.createdAt ? new Date(row.createdAt).toLocaleString('ko-KR') : '-'}</small>
                 </span>
-                <button
-                  className="primary-button"
-                  disabled={loadingId === `approve-${row.memberId}`}
-                  onClick={() => approveRegistration(row)}
-                >
-                  {loadingId === `approve-${row.memberId}` ? '승인 중...' : '가입 승인'}
-                </button>
+                <span className="registration-approval-actions">
+                  <button
+                    className="primary-button"
+                    disabled={loadingId === `approve-${row.memberId}` || loadingId === `reject-${row.memberId}`}
+                    onClick={() => approveRegistration(row)}
+                  >
+                    {loadingId === `approve-${row.memberId}` ? '승인 중...' : '가입 승인'}
+                  </button>
+                  <button
+                    className="role-button danger"
+                    disabled={loadingId === `approve-${row.memberId}` || loadingId === `reject-${row.memberId}`}
+                    onClick={() => rejectRegistration(row)}
+                  >
+                    {loadingId === `reject-${row.memberId}` ? '거절 중...' : '거절'}
+                  </button>
+                </span>
               </div>
             ))}
           </div>

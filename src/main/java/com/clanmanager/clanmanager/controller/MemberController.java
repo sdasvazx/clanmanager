@@ -86,6 +86,25 @@ public class MemberController {
         return memberRepository.save(target);
     }
 
+    @DeleteMapping("/{memberId}/reject-registration")
+    public Map<String, Object> rejectRegistration(
+            @PathVariable Long memberId,
+            @RequestParam Long adminMemberId
+    ) {
+        requireAdmin(adminMemberId);
+        Member target = findMember(memberId);
+        if (!REGISTRATION_PENDING_STATUS.equals(target.getStatus()) || !Boolean.FALSE.equals(target.getActive())) {
+            throw new IllegalArgumentException("승인 대기 중인 회원가입 신청이 아닙니다.");
+        }
+        String characterName = target.getCharacterName();
+        memberRepository.delete(target);
+        return Map.of(
+                "message", "회원가입 신청을 거절했습니다.",
+                "memberId", memberId,
+                "characterName", characterName
+        );
+    }
+
     @GetMapping("/spec-histories")
     public List<MemberSpecHistoryDto> getSpecHistories() {
         return memberSpecHistoryRepository.findTop100ByOrderByCreatedAtDesc()
