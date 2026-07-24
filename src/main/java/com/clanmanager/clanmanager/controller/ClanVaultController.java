@@ -516,13 +516,16 @@ public class ClanVaultController {
             long amount,
             long vaultBalanceAfter
     ) {
+        String requestMemo = claimRequest.getMemo() == null || claimRequest.getMemo().isBlank()
+                ? "수령완료 정산 #" + claimRequest.getRequestId()
+                : claimRequest.getMemo().trim();
         return transactionRepository.save(VaultTransaction.builder()
                 .type(VaultTransactionType.WITHDRAW)
                 .amountDiamonds(amount)
                 .balanceAfter(vaultBalanceAfter)
                 .targetMember(claimRequest.getRequester())
                 .createdBy(processor)
-                .memo("수령완료 정산 #" + claimRequest.getRequestId())
+                .memo(requestMemo)
                 .claimed(true)
                 .claimedAt(LocalDateTime.now())
                 .build());

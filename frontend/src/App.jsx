@@ -5933,6 +5933,7 @@ function DistributionClaimRequestAdminPanel({ member }) {
               <th>신청일</th>
               <th>신청자</th>
               <th>신청금액</th>
+              <th>신청 메모</th>
               <th>승인금액</th>
               <th>처리 메모</th>
               <th>상태</th>
@@ -5949,6 +5950,7 @@ function DistributionClaimRequestAdminPanel({ member }) {
                   <td>{row.createdAt ? new Date(row.createdAt).toLocaleString('ko-KR') : '-'}</td>
                   <td>{row.requesterName || '-'}</td>
                   <td className="green-text">{money(row.amountDiamonds)}</td>
+                  <td className="claim-request-memo">{row.memo || '-'}</td>
                   <td>
                     {pending ? (
                       <input
