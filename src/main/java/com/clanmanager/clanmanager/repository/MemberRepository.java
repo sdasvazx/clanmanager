@@ -26,4 +26,6 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     List<Member> findByCharacterNameContaining(String keyword);
 
     List<Member> findByActiveTrueOrderByMemberIdAsc();
+
+    List<Member> findByActiveFalseAndStatusOrderByCreatedAtAsc(String status);
 }

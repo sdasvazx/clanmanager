@@ -35,6 +35,7 @@ import java.util.Objects;
 public class MemberController {
 
     private static final String RESERVED_ACTIVITY_MEMBER_NAME = "\uC18C\uC218\uC7C1";
+    private static final String REGISTRATION_PENDING_STATUS = "가입승인대기";
 
     private final MemberRepository memberRepository;
     private final MemberSpecHistoryRepository memberSpecHistoryRepository;
@@ -62,6 +63,27 @@ public class MemberController {
     @GetMapping
     public List<Member> getAllMembers() {
         return memberRepository.findByActiveTrueOrderByMemberIdAsc();
+    }
+
+    @GetMapping("/pending-registrations")
+    public List<Member> getPendingRegistrations(@RequestParam Long adminMemberId) {
+        requireAdmin(adminMemberId);
+        return memberRepository.findByActiveFalseAndStatusOrderByCreatedAtAsc(REGISTRATION_PENDING_STATUS);
+    }
+
+    @PatchMapping("/{memberId}/approve-registration")
+    public Member approveRegistration(
+            @PathVariable Long memberId,
+            @RequestParam Long adminMemberId
+    ) {
+        requireAdmin(adminMemberId);
+        Member target = findMember(memberId);
+        if (!REGISTRATION_PENDING_STATUS.equals(target.getStatus()) || !Boolean.FALSE.equals(target.getActive())) {
+            throw new IllegalArgumentException("승인 대기 중인 회원가입 신청이 아닙니다.");
+        }
+        target.setActive(true);
+        target.setStatus("활동중");
+        return memberRepository.save(target);
     }
 
     @GetMapping("/spec-histories")
@@ -488,6 +510,14 @@ public class MemberController {
     private Member findMember(Long memberId) {
         return memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+    }
+
+    private Member requireAdmin(Long memberId) {
+        Member member = findMember(memberId);
+        if (member.getRole() != MemberRole.ADMIN) {
+            throw new SecurityException("운영자만 회원가입 신청을 관리할 수 있습니다.");
+        }
+        return member;
     }
 
     private void validateMemberNameAllowed(String characterName) {
