@@ -391,13 +391,14 @@ public class ManagementRecordController {
         return CollectionStatusDto.from(saved);
     }
 
-    @PatchMapping("/collection-statuses/lock-member")
+    @PatchMapping("/collection-statuses/lock-item")
     @Transactional
-    public List<CollectionStatusDto> updateMemberCollectionStatusLocks(@Valid @RequestBody CollectionMemberLockRequest request) {
+    public List<CollectionStatusDto> updateItemCollectionStatusLocks(@Valid @RequestBody CollectionItemLockRequest request) {
         Member actor = validateAdmin(request.getActorMemberId());
-        Member target = validateMember(request.getMemberId());
+        CollectionItem item = collectionItemRepository.findById(request.getItemId())
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 컬렉템 항목입니다."));
         List<CollectionStatusDto> updated = new ArrayList<>();
-        for (CollectionItem item : collectionItemRepository.findActiveItems()) {
+        for (Member target : memberRepository.findByActiveTrueOrderByMemberIdAsc()) {
             CollectionStatus status = collectionStatusRepository.findByMemberAndItem(target, item)
                     .orElseGet(() -> CollectionStatus.builder()
                             .member(target)
@@ -419,7 +420,7 @@ public class ManagementRecordController {
                     .characterName(target.getCharacterName())
                     .collectionItemId(item.getCollectionItemId())
                     .itemName(item.getItemName())
-                    .action("\uC77C\uAD04\uC7A0\uAE08\uBCC0\uACBD")
+                    .action("항목일괄잠금변경")
                     .previousState(previousLocked ? "\uC7A0\uAE08" : "\uC218\uC815\uAC00\uB2A5")
                     .nextState(request.getLocked() ? "\uC7A0\uAE08" : "\uC218\uC815\uAC00\uB2A5")
                     .editedByMemberId(actor.getMemberId())
@@ -738,9 +739,9 @@ public class ManagementRecordController {
 
     @Getter
     @Setter
-    public static class CollectionMemberLockRequest {
-        @NotNull(message = "클랜원을 선택해 주세요.")
-        private Long memberId;
+    public static class CollectionItemLockRequest {
+        @NotNull(message = "컬렉템을 선택해 주세요.")
+        private Long itemId;
 
         @NotNull(message = "잠금 상태를 선택해 주세요.")
         private Boolean locked;

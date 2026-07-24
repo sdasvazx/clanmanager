@@ -6846,25 +6846,25 @@ function CollectionPage({ member }) {
       setSavingCell('');
     }
   };
-  const toggleMemberRowLock = async (targetMember) => {
+  const toggleItemColumnLock = async (item) => {
     if (!isAdmin) return;
     const allLocked =
-      data.items.length > 0 &&
-      data.items.every((item) => Boolean(statusMap.get(`${targetMember.memberId}:${item.itemId}`)?.locked));
-    const rowKey = `row-lock:${targetMember.memberId}`;
-    setSavingCell(rowKey);
+      data.members.length > 0 &&
+      data.members.every((targetMember) => Boolean(statusMap.get(`${targetMember.memberId}:${item.itemId}`)?.locked));
+    const columnKey = `item-lock:${item.itemId}`;
+    setSavingCell(columnKey);
     setMessage('');
     try {
-      await request('/management/collection-statuses/lock-member', {
+      await request('/management/collection-statuses/lock-item', {
         method: 'PATCH',
         body: JSON.stringify({
-          memberId: targetMember.memberId,
+          itemId: item.itemId,
           locked: !allLocked,
           actorMemberId: member.memberId,
         }),
       });
       await load();
-      setMessage(allLocked ? `${targetMember.characterName}님의 전체 잠금을 해제했습니다.` : `${targetMember.characterName}님의 전체 항목을 잠갔습니다.`);
+      setMessage(allLocked ? `${item.itemName} 항목 전체 잠금을 해제했습니다.` : `${item.itemName} 항목을 모든 회원에게 잠갔습니다.`);
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -7102,6 +7102,21 @@ function CollectionPage({ member }) {
                             <button type="button" onClick={() => deleteItem(item)}>
                               숨김
                             </button>
+                            <button
+                              type="button"
+                              disabled={savingCell === `item-lock:${item.itemId}`}
+                              title="운영자 전용: 이 항목을 모든 회원에게 잠금/해제"
+                              onClick={() => toggleItemColumnLock(item)}
+                            >
+                              {savingCell === `item-lock:${item.itemId}`
+                                ? '처리중'
+                                : data.members.length > 0 &&
+                                    data.members.every((targetMember) =>
+                                      Boolean(statusMap.get(`${targetMember.memberId}:${item.itemId}`)?.locked),
+                                    )
+                                  ? '🔒 전체 해제'
+                                  : '🔓 전체 잠금'}
+                            </button>
                           </span>
                         )}
                       </span>
@@ -7114,26 +7129,11 @@ function CollectionPage({ member }) {
               {sortedCollectionMembers.map((targetMember) => {
                 const participation = participationByMember[Number(targetMember.memberId)] || { current: 0, pastAverage: 0 };
                 const belowCut = Number(participation.current || 0) < Number(distributionCut || 0);
-                const rowLocked =
-                  data.items.length > 0 &&
-                  data.items.every((item) => Boolean(statusMap.get(`${targetMember.memberId}:${item.itemId}`)?.locked));
-                const rowLockKey = `row-lock:${targetMember.memberId}`;
                 return (
                   <tr key={targetMember.memberId} className={belowCut ? 'below-distribution-cut' : ''}>
                     <td className="collection-member-name">
                       <b>{targetMember.characterName}</b>
                       <small>{targetMember.characterClass || '-'}</small>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          className={`collection-row-lock ${rowLocked ? 'locked' : ''}`}
-                          disabled={savingCell === rowLockKey}
-                          title="운영자 전용: 이 회원의 전체 컬렉템 잠금/해제"
-                          onClick={() => toggleMemberRowLock(targetMember)}
-                        >
-                          {savingCell === rowLockKey ? '처리중' : rowLocked ? '🔒 전체 해제' : '🔓 전체 잠금'}
-                        </button>
-                      )}
                     </td>
                     <td>
                       <span className={`clan-badge ${normalize(canonicalClanName(targetMember.guildName))}`}>{canonicalClanName(targetMember.guildName)}</span>
