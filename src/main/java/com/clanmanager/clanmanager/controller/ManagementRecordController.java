@@ -391,6 +391,45 @@ public class ManagementRecordController {
         return CollectionStatusDto.from(saved);
     }
 
+    @PatchMapping("/collection-statuses/lock-member")
+    @Transactional
+    public List<CollectionStatusDto> updateMemberCollectionStatusLocks(@Valid @RequestBody CollectionMemberLockRequest request) {
+        Member actor = validateAdmin(request.getActorMemberId());
+        Member target = validateMember(request.getMemberId());
+        List<CollectionStatusDto> updated = new ArrayList<>();
+        for (CollectionItem item : collectionItemRepository.findActiveItems()) {
+            CollectionStatus status = collectionStatusRepository.findByMemberAndItem(target, item)
+                    .orElseGet(() -> CollectionStatus.builder()
+                            .member(target)
+                            .item(item)
+                            .state("\uBBF8\uC644\uB8CC")
+                            .locked(false)
+                            .build());
+            boolean previousLocked = Boolean.TRUE.equals(status.getLocked());
+            if (previousLocked == request.getLocked()) {
+                updated.add(CollectionStatusDto.from(status));
+                continue;
+            }
+            status.setLocked(request.getLocked());
+            status.setUpdatedByMemberId(actor.getMemberId());
+            status.setUpdatedByName(actor.getCharacterName());
+            CollectionStatus saved = collectionStatusRepository.save(status);
+            collectionHistoryRepository.save(CollectionHistory.builder()
+                    .memberId(target.getMemberId())
+                    .characterName(target.getCharacterName())
+                    .collectionItemId(item.getCollectionItemId())
+                    .itemName(item.getItemName())
+                    .action("\uC77C\uAD04\uC7A0\uAE08\uBCC0\uACBD")
+                    .previousState(previousLocked ? "\uC7A0\uAE08" : "\uC218\uC815\uAC00\uB2A5")
+                    .nextState(request.getLocked() ? "\uC7A0\uAE08" : "\uC218\uC815\uAC00\uB2A5")
+                    .editedByMemberId(actor.getMemberId())
+                    .editedByName(actor.getCharacterName())
+                    .build());
+            updated.add(CollectionStatusDto.from(saved));
+        }
+        return updated;
+    }
+
     @PostMapping("/collections")
     public CollectionRecord createCollection(@Valid @RequestBody CollectionRequest request) {
         validateAdmin(request.getAdminMemberId());
@@ -689,6 +728,19 @@ public class ManagementRecordController {
 
         @NotNull(message = "컬렉템을 선택해 주세요.")
         private Long itemId;
+
+        @NotNull(message = "잠금 상태를 선택해 주세요.")
+        private Boolean locked;
+
+        @NotNull(message = "운영자 정보가 필요합니다.")
+        private Long actorMemberId;
+    }
+
+    @Getter
+    @Setter
+    public static class CollectionMemberLockRequest {
+        @NotNull(message = "클랜원을 선택해 주세요.")
+        private Long memberId;
 
         @NotNull(message = "잠금 상태를 선택해 주세요.")
         private Boolean locked;

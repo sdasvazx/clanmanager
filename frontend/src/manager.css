@@ -2768,6 +2768,29 @@
   background: #fff7ed;
 }
 
+.collection-row-lock {
+  margin-top: 6px;
+  padding: 4px 7px;
+  border: 1px solid #93c5fd;
+  border-radius: 7px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .7rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.collection-row-lock.locked {
+  border-color: #f59e0b;
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.collection-admin-power {
+  color: #1d4ed8;
+  font-weight: 850;
+}
+
 .my-collection-alert {
   display: grid;
   gap: 12px;
