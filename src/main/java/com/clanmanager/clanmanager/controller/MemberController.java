@@ -115,12 +115,14 @@ public class MemberController {
             member = Member.builder()
                     .characterName(characterName)
                     .password(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD))
+                    .mustChangePassword(true)
                     .role(MemberRole.MEMBER)
                     .build();
         } else {
             // 삭제는 비활성 처리이므로 같은 닉네임을 다시 등록할 때 기존 계정을 복구한다.
             // 기존 행을 재사용하면 출석/금고 등 연관 기록의 참조도 유지된다.
             member.setPassword(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD));
+            member.setMustChangePassword(true);
             member.setRole(MemberRole.MEMBER);
         }
 
@@ -272,6 +274,7 @@ public class MemberController {
                 member = Member.builder()
                         .characterName(characterName)
                         .password(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD))
+                        .mustChangePassword(true)
                         .active(true)
                         .build();
             }
@@ -318,7 +321,11 @@ public class MemberController {
             throw new IllegalArgumentException("새 비밀번호는 4자리 이상으로 입력해 주세요.");
         }
 
+        if (PasswordSupport.matches(request.getNewPassword(), member.getPassword())) {
+            throw new IllegalArgumentException("새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.");
+        }
         member.setPassword(PasswordSupport.encode(request.getNewPassword()));
+        member.setMustChangePassword(false);
         memberRepository.save(member);
         return Map.of("message", "비밀번호 변경 완료", "memberId", member.getMemberId());
     }
@@ -344,6 +351,7 @@ public class MemberController {
 
         Member member = findMember(memberId);
         member.setPassword(PasswordSupport.encode(nextPassword.trim()));
+        member.setMustChangePassword(true);
         memberRepository.save(member);
 
         return Map.of(
@@ -373,7 +381,10 @@ public class MemberController {
 
         String encodedPassword = PasswordSupport.encode(nextPassword.trim());
         List<Member> members = memberRepository.findAll();
-        members.forEach(member -> member.setPassword(encodedPassword));
+        members.forEach(member -> {
+            member.setPassword(encodedPassword);
+            member.setMustChangePassword(true);
+        });
         memberRepository.saveAll(members);
 
         return Map.of(

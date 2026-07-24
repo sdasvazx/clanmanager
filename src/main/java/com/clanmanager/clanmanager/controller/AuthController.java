@@ -31,6 +31,7 @@ public class AuthController {
         Member savedMember = memberRepository.save(Member.builder()
                 .characterName(request.getCharacterName())
                 .password(PasswordSupport.encode(PasswordSupport.DEFAULT_INITIAL_PASSWORD))
+                .mustChangePassword(true)
                 .combatPower(request.getCombatPower())
                 .role(memberRepository.count() == 0 ? MemberRole.ADMIN : MemberRole.MEMBER)
                 .active(true)
@@ -40,7 +41,8 @@ public class AuthController {
                 "message", "회원가입 성공",
                 "memberId", savedMember.getMemberId(),
                 "characterName", savedMember.getCharacterName(),
-                "role", savedMember.getRole().name()
+                "role", savedMember.getRole().name(),
+                "mustChangePassword", Boolean.TRUE.equals(savedMember.getMustChangePassword())
         );
     }
 
@@ -66,7 +68,8 @@ public class AuthController {
                 "message", "로그인 성공",
                 "memberId", member.getMemberId(),
                 "characterName", member.getCharacterName(),
-                "role", member.getRole().name()
+                "role", member.getRole().name(),
+                "mustChangePassword", Boolean.TRUE.equals(member.getMustChangePassword())
         );
     }
 }

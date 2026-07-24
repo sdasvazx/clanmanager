@@ -66,11 +66,18 @@ const readFavorites = (member) => {
 const writeFavorites = (member, ids) => localStorage.setItem(favoriteStorageKey(member), JSON.stringify(ids));
 
 async function request(path, options = {}) {
+  const storedMember = JSON.parse(sessionStorage.getItem('clanMember') || 'null');
+  const memberHeader = storedMember?.memberId && !path.startsWith('/auth/') ? { 'X-Clan-Member-Id': String(storedMember.memberId) } : {};
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers: { 'Content-Type': 'application/json', ...memberHeader, ...options.headers },
   });
   const body = await response.json().catch(() => ({}));
+  if (response.status === 403 && body.code === 'PASSWORD_CHANGE_REQUIRED' && storedMember) {
+    const forcedMember = { ...storedMember, mustChangePassword: true };
+    sessionStorage.setItem('clanMember', JSON.stringify(forcedMember));
+    window.dispatchEvent(new CustomEvent('clan-password-change-required', { detail: forcedMember }));
+  }
   if (!response.ok) throw new Error(body.message ?? '요청 처리 중 오류가 발생했습니다.');
   return body;
 }
@@ -1102,6 +1109,66 @@ function splitDateTimeKoreanTime(value) {
   const match = String(value).match(/T(\d{2}:\d{2})/);
   if (match) return splitKoreanTime(match[1]);
   return splitKoreanTime(new Date(value).toTimeString().slice(0, 5));
+}
+
+function ForcedPasswordChangeScreen({ member, onComplete, onLogout }) {
+  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    if (form.newPassword !== form.confirmPassword) {
+      setMessage('새 비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await request(`/members/${member.memberId}/password`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          currentPassword: form.currentPassword,
+          newPassword: form.newPassword,
+        }),
+      });
+      onComplete({ ...member, mustChangePassword: false });
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card light-auth">
+        <div className="auth-mark">🔑</div>
+        <p className="auth-kicker">PASSWORD UPDATE</p>
+        <h1>비밀번호를 변경해 주세요</h1>
+        <p>임시 비밀번호로 로그인했습니다. 계속 이용하려면 본인만 아는 새 비밀번호로 변경해야 합니다.</p>
+        <form onSubmit={submit}>
+          <label>
+            현재 임시 비밀번호
+            <input required type="password" value={form.currentPassword} onChange={(event) => setForm({ ...form, currentPassword: event.target.value })} />
+          </label>
+          <label>
+            새 비밀번호
+            <input required type="password" minLength="4" value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} />
+          </label>
+          <label>
+            새 비밀번호 확인
+            <input required type="password" minLength="4" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+          </label>
+          {message && <p className="form-error">{message}</p>}
+          <button className="primary-button" disabled={loading}>
+            {loading ? '변경 중...' : '비밀번호 변경 후 시작'}
+          </button>
+        </form>
+        <button className="link-button" onClick={onLogout}>로그아웃</button>
+      </section>
+    </main>
+  );
 }
 
 function AuthScreen({ onLogin }) {
@@ -7389,6 +7456,7 @@ function MyPage({ member, setPage, favoritePages = [], onMemberUpdate }) {
           newPassword: passwordForm.newPassword,
         }),
       });
+      onMemberUpdate?.({ ...member, mustChangePassword: false });
       setPasswordForm({
         currentPassword: '',
         newPassword: '',
@@ -8913,6 +8981,11 @@ export default function App() {
   useEffect(() => {
     if (member) setFavorites(readFavorites(member));
   }, [member?.memberId]);
+  useEffect(() => {
+    const requirePasswordChange = (event) => setMember(event.detail);
+    window.addEventListener('clan-password-change-required', requirePasswordChange);
+    return () => window.removeEventListener('clan-password-change-required', requirePasswordChange);
+  }, []);
   const visibleFavoritePages = favorites.filter((id) => member?.role === 'ADMIN' || !adminOnlyPages.has(id)).map(pageMeta);
   const toggleFavorite = (targetPage) => {
     setFavorites((prev) => {
@@ -8922,6 +8995,9 @@ export default function App() {
     });
   };
   if (!member) return <AuthScreen onLogin={login} />;
+  if (member.mustChangePassword) {
+    return <ForcedPasswordChangeScreen member={member} onComplete={updateCurrentMember} onLogout={logout} />;
+  }
   if (member.role !== 'ADMIN' && adminOnlyPages.has(page))
     return (
       <Shell member={member} page={page} setPage={setPage} onLogout={logout} favorites={favorites} toggleFavorite={toggleFavorite}>

@@ -3,12 +3,19 @@ package com.clanmanager.clanmanager.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.Arrays;
 
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
+
+    private final PasswordChangeRequiredInterceptor passwordChangeRequiredInterceptor;
+
+    public CorsConfig(PasswordChangeRequiredInterceptor passwordChangeRequiredInterceptor) {
+        this.passwordChangeRequiredInterceptor = passwordChangeRequiredInterceptor;
+    }
 
     @Value("${app.cors.allowed-origins:http://localhost:5173}")
     private String allowedOrigins;
@@ -19,6 +26,12 @@ public class CorsConfig implements WebMvcConfigurer {
                 .allowedOrigins(parseAllowedOrigins())
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*");
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(passwordChangeRequiredInterceptor)
+                .addPathPatterns("/api/**");
     }
 
     private String[] parseAllowedOrigins() {
