@@ -470,8 +470,8 @@ public class DistributionService {
     ) {
         double currentPower = toMan(member.getCombatPower());
         double previousPower = previousPowerMan(member, currentPower);
-        double growthScore = growthScoreBetween(previousPower, currentPower);
-        double currentPowerScore = scoreBetween(0.0, currentPower);
+        double growthScore = round1(Math.max(0.0, currentPower - previousPower) * 3.0);
+        double currentPowerScore = growthScoreBetween(0.0, previousPower);
         double powerScore = round1(growthScore + currentPowerScore);
         boolean participationEligible = nullToZero(row.getParticipationRate()) >= settings.participationCut();
         boolean powerEligible = powerCutEligible(currentPower, settings.powerScoreCut());
