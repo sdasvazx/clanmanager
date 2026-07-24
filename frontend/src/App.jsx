@@ -5477,12 +5477,13 @@ function DistributionAdminPage({ member }) {
     try {
       await request('/distributions/deposit', {
         method: 'POST',
-        body: JSON.stringify(
-          buildPayload({
+        body: JSON.stringify({
+          ...buildPayload({
             ...settings,
             memo: settings.memo || '분배금 자동 적립',
-          })
-        ),
+          }),
+          excludedMemberIds: (result?.results || []).filter((row) => Boolean(row.distributed)).map((row) => Number(row.memberId)),
+        }),
       });
       setMessage('분배금 적립이 완료되었습니다. 회원은 마이페이지에서 수령 처리할 수 있습니다.');
     } catch (err) {
@@ -5533,7 +5534,7 @@ function DistributionAdminPage({ member }) {
         body: JSON.stringify({ distributed: checked }),
       });
       setResult(updated);
-      setMessage(`${row.characterName}님의 분배여부를 ${checked ? '완료' : '미완료'}로 변경했습니다.`);
+      setMessage(`${row.characterName}님을 분배 대상에서 ${checked ? '제외했습니다.' : '다시 포함했습니다.'}`);
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -5738,7 +5739,7 @@ function DistributionAdminPage({ member }) {
                 <SortableHeader label="투력점수" field="sortablePowerScore" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} />
                 <SortableHeader label="투력분배" field="sortablePowerAmount" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} />
                 <SortableHeader label="최종 지급" field="sortableFinalAmount" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} />
-                <th>분배여부</th>
+                <th>분배 제외</th>
               </tr>
             </thead>
             <tbody>
@@ -5778,7 +5779,7 @@ function DistributionAdminPage({ member }) {
                     <b>{money(row.finalAmount)}</b>
                   </td>
                   <td>
-                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={loading} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배여부`} />
+                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={loading} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배 제외`} />
                   </td>
                 </tr>
               ))}

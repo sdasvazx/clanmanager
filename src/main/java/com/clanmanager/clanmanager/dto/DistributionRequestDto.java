@@ -24,4 +24,5 @@ public class DistributionRequestDto {
     private Integer periodIndex;
     private Long createdByMemberId;
     private String memo;
+    private List<Long> excludedMemberIds;
 }

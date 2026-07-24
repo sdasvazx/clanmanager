@@ -212,7 +212,33 @@ public class DistributionService {
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("분배 결과에서 회원을 찾을 수 없습니다."))
                     .setDistributed(distributed);
+            DistributionResponseDto.ResultItemDto targetRow = response.getResults().stream()
+                    .filter(row -> row.getMemberId().equals(memberId))
+                    .findFirst()
+                    .orElseThrow();
+            targetRow.setFinalAmount(distributed
+                    ? 0L
+                    : Math.max(0L, safeAmount(targetRow.getParticipationAmount())
+                            + safeAmount(targetRow.getPowerAmount())
+                            - safeAmount(targetRow.getNonParticipationPenaltyDiamonds())));
+            long allocated = response.getResults().stream()
+                    .mapToLong(row -> safeAmount(row.getFinalAmount()))
+                    .sum();
+            response.setAllocatedDiamonds(allocated);
+            response.setRemainingDiamonds(Math.max(0L, safeAmount(response.getTotalDiamonds()) - allocated));
+            if (response.getClanSummaries() != null) {
+                response.getClanSummaries().forEach(summary -> {
+                    long clanAllocated = response.getResults().stream()
+                            .filter(row -> Objects.equals(row.getClanName(), summary.getClanName()))
+                            .mapToLong(row -> safeAmount(row.getFinalAmount()))
+                            .sum();
+                    summary.setAllocatedDiamonds(clanAllocated);
+                    summary.setRemainingDiamonds(Math.max(0L, safeAmount(summary.getTotalDiamonds()) - clanAllocated));
+                });
+            }
             snapshot.setResponseJson(writeJson(response));
+            snapshot.setAllocatedDiamonds(allocated);
+            snapshot.setRemainingDiamonds(response.getRemainingDiamonds());
             snapshotRepository.save(snapshot);
             return withSnapshotMeta(response, snapshot);
         } catch (JsonProcessingException e) {
@@ -224,7 +250,11 @@ public class DistributionService {
     public DistributionResponseDto depositDistributions(DistributionRequestDto request) {
         Member admin = requireAdmin(request.getCreatedByMemberId());
         DistributionResponseDto response = calculate(request);
+        Set<Long> excludedMemberIds = request.getExcludedMemberIds() == null
+                ? Set.of()
+                : new HashSet<>(request.getExcludedMemberIds());
         long totalAmount = response.getResults().stream()
+                .filter(row -> !excludedMemberIds.contains(row.getMemberId()))
                 .mapToLong(DistributionResponseDto.ResultItemDto::getFinalAmount)
                 .sum();
         if (totalAmount <= 0) {
@@ -243,6 +273,7 @@ public class DistributionService {
 
         AtomicLong runningBalance = new AtomicLong(vault.getBalanceDiamonds());
         response.getResults().stream()
+                .filter(row -> !excludedMemberIds.contains(row.getMemberId()))
                 .filter(row -> row.getFinalAmount() != null && row.getFinalAmount() > 0)
                 .forEach(row -> {
                     Member target = memberMap.get(row.getMemberId());
