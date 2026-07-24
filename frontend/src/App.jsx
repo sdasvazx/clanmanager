@@ -6607,6 +6607,31 @@ function CollectionPage({ member }) {
       setSavingCell('');
     }
   };
+  const toggleMemberRowLock = async (targetMember) => {
+    if (!isAdmin) return;
+    const allLocked =
+      data.items.length > 0 &&
+      data.items.every((item) => Boolean(statusMap.get(`${targetMember.memberId}:${item.itemId}`)?.locked));
+    const rowKey = `row-lock:${targetMember.memberId}`;
+    setSavingCell(rowKey);
+    setMessage('');
+    try {
+      await request('/management/collection-statuses/lock-member', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          memberId: targetMember.memberId,
+          locked: !allLocked,
+          actorMemberId: member.memberId,
+        }),
+      });
+      await load();
+      setMessage(allLocked ? `${targetMember.characterName}님의 전체 잠금을 해제했습니다.` : `${targetMember.characterName}님의 전체 항목을 잠갔습니다.`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setSavingCell('');
+    }
+  };
   const completedCount = data.statuses.filter((row) => row.state === '완료').length;
   const totalCount = data.members.length * data.items.length;
   const itemSummaries = useMemo(
@@ -6704,7 +6729,7 @@ function CollectionPage({ member }) {
       </div>
       <section className="white-card collection-toolbar">
         <div>
-          <h2>스킬현황 아이템 관리</h2>
+          <h2>스킬현황 아이템 관리 {isAdmin && <span className="admin-badge">운영자 전용</span>}</h2>
           <p className="subtle">본인 항목은 직접 변경할 수 있고, 운영자는 항목별 수정 잠금을 설정할 수 있습니다. 모든 변경은 로그에 기록됩니다.</p>
         </div>
         <form className="collection-add-form" onSubmit={addItem}>
@@ -6720,6 +6745,7 @@ function CollectionPage({ member }) {
           <div>
             <h2>지급현황</h2>
             <p className="subtle">일반 클랜원은 본인의 잠기지 않은 항목만 변경할 수 있습니다. 🔒 항목은 운영자만 수정할 수 있습니다.</p>
+            {isAdmin && <span className="admin-badge">전투력·잠금 기능 운영자 전용</span>}
           </div>
           <span className="result-count">
             완료 {completedCount} / {totalCount}
@@ -6803,6 +6829,7 @@ function CollectionPage({ member }) {
                 <SortableHeader className="collection-member-head" label="클랜원" field="sortableCharacterName" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
                 <SortableHeader label="클랜" field="sortableClanName" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
                 <SortableHeader label="현재참여율" field="sortableCurrentParticipation" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
+                {isAdmin && <SortableHeader label="전투력 · 운영자 전용" field="sortableCombatPower" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />}
                 <SortableHeader label="과거평균참여율(2주)" field="sortablePastParticipation" sortKey={collectionSortKey} sortDirection={collectionSortDirection} onSort={toggleCollectionSort} />
                 {visibleItems.map((item) => (
                   <th key={item.itemId}>
@@ -6848,16 +6875,32 @@ function CollectionPage({ member }) {
               {sortedCollectionMembers.map((targetMember) => {
                 const participation = participationByMember[Number(targetMember.memberId)] || { current: 0, pastAverage: 0 };
                 const belowCut = Number(participation.current || 0) < Number(distributionCut || 0);
+                const rowLocked =
+                  data.items.length > 0 &&
+                  data.items.every((item) => Boolean(statusMap.get(`${targetMember.memberId}:${item.itemId}`)?.locked));
+                const rowLockKey = `row-lock:${targetMember.memberId}`;
                 return (
                   <tr key={targetMember.memberId} className={belowCut ? 'below-distribution-cut' : ''}>
                     <td className="collection-member-name">
                       <b>{targetMember.characterName}</b>
                       <small>{targetMember.characterClass || '-'}</small>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className={`collection-row-lock ${rowLocked ? 'locked' : ''}`}
+                          disabled={savingCell === rowLockKey}
+                          title="운영자 전용: 이 회원의 전체 컬렉템 잠금/해제"
+                          onClick={() => toggleMemberRowLock(targetMember)}
+                        >
+                          {savingCell === rowLockKey ? '처리중' : rowLocked ? '🔒 전체 해제' : '🔓 전체 잠금'}
+                        </button>
+                      )}
                     </td>
                     <td>
                       <span className={`clan-badge ${normalize(canonicalClanName(targetMember.guildName))}`}>{canonicalClanName(targetMember.guildName)}</span>
                     </td>
                     <td className={belowCut ? 'rate-below-cut' : ''}>{Number(participation.current || 0).toFixed(1)}%</td>
+                    {isAdmin && <td className="collection-admin-power">{formatNumber(targetMember.sortableCombatPower)}</td>}
                     <td>{Number(participation.pastAverage || 0).toFixed(1)}%</td>
                     {visibleItems.map((item) => {
                       const { key, status, state } = collectionCell(targetMember, item);
