@@ -522,6 +522,12 @@
   color: #b91c1c;
 }
 
+.claim-cancel-button {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
 .role-card {
   margin-top: 20px;
 }

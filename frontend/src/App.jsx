@@ -5881,7 +5881,6 @@ function DistributionClaimRequestAdminPanel({ member }) {
   const [message, setMessage] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [approvedAmounts, setApprovedAmounts] = useState({});
-  const [processedMemos, setProcessedMemos] = useState({});
 
   const load = async () => {
     const rows = await request('/vault/distribution-claim-requests?memberId=' + member.memberId);
@@ -5902,7 +5901,6 @@ function DistributionClaimRequestAdminPanel({ member }) {
           processorMemberId: member.memberId,
           status,
           approvedAmount: status === '지급완료' ? Number(approvedAmounts[requestId] || 0) || null : null,
-          processedMemo: processedMemos[requestId]?.trim() || null,
         }),
       });
       await load();
@@ -5933,9 +5931,8 @@ function DistributionClaimRequestAdminPanel({ member }) {
               <th>신청일</th>
               <th>신청자</th>
               <th>신청금액</th>
-              <th>신청 메모</th>
+              <th>메모</th>
               <th>승인금액</th>
-              <th>처리 메모</th>
               <th>상태</th>
               <th>처리자</th>
               <th>처리일</th>
@@ -5968,23 +5965,6 @@ function DistributionClaimRequestAdminPanel({ member }) {
                       />
                     ) : (
                       money(row.approvedAmount ?? row.amountDiamonds)
-                    )}
-                  </td>
-                  <td>
-                    {pending ? (
-                      <input
-                        className="claim-approved-input"
-                        placeholder="반려 사유 또는 처리 메모"
-                        value={processedMemos[row.requestId] ?? ''}
-                        onChange={(event) =>
-                          setProcessedMemos({
-                            ...processedMemos,
-                            [row.requestId]: event.target.value,
-                          })
-                        }
-                      />
-                    ) : (
-                      row.processedMemo || '-'
                     )}
                   </td>
                   <td>
@@ -6060,6 +6040,7 @@ function PaymentClaimPage({ member }) {
   const customClaimRows = claimRequests
     .filter((item) => !item.transactionId)
     .map((item) => ({
+      requestId: item.requestId,
       transactionId: `claim-${item.requestId}`,
       amountDiamonds: item.amountDiamonds,
       createdAt: item.createdAt,
@@ -6092,6 +6073,11 @@ function PaymentClaimPage({ member }) {
       disabled: false,
       buttonLabel: '수령 신청',
     };
+  };
+  const getPendingRequestId = (row) => {
+    if (row.claimRequestStatus === '접수' && row.requestId) return row.requestId;
+    const claimRequest = claimRequestByTransactionId[row.transactionId];
+    return claimRequest?.status === '접수' ? claimRequest.requestId : null;
   };
 
   const claim = async (row) => {
@@ -6134,6 +6120,23 @@ function PaymentClaimPage({ member }) {
       const errorMessage = String(err.message || '');
       await load().catch(() => {});
       setMessage(errorMessage || '수령 신청을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  const cancelClaimRequest = async (requestId) => {
+    if (!requestId || !window.confirm('처리대기 중인 수령 신청을 취소할까요?')) return;
+    setClaimingId(`cancel-${requestId}`);
+    setMessage('');
+    try {
+      await request(`/vault/distribution-claim-requests/${requestId}?memberId=${member.memberId}`, {
+        method: 'DELETE',
+      });
+      await load();
+      setMessage('수령 신청을 취소했습니다. 신청 금액이 받을금액으로 돌아갔습니다.');
+    } catch (err) {
+      setMessage(err.message);
     } finally {
       setClaimingId(null);
     }
@@ -6210,10 +6213,18 @@ function PaymentClaimPage({ member }) {
                     <span className={'claim-pill ' + getClaimState(row).className}>{getClaimState(row).label}</span>
                   </td>
                   <td>{row.claimedAt ? new Date(row.claimedAt).toLocaleString('ko-KR') : '-'}</td>
-                  <td>{row.processedMemo || row.memo || '-'}</td>
+                  <td>{row.memo || row.processedMemo || '-'}</td>
                   <td>{row.createdByMemberName || '-'}</td>
                   <td>
-                    {row.syntheticClaim || getClaimState(row).disabled ? (
+                    {getPendingRequestId(row) ? (
+                      <button
+                        className="mini-button claim-cancel-button"
+                        disabled={claimingId === `cancel-${getPendingRequestId(row)}`}
+                        onClick={() => cancelClaimRequest(getPendingRequestId(row))}
+                      >
+                        {claimingId === `cancel-${getPendingRequestId(row)}` ? '취소 중' : '신청 취소'}
+                      </button>
+                    ) : row.syntheticClaim || getClaimState(row).disabled ? (
                       '-'
                     ) : (
                       <button className="mini-button" disabled={claimingId === row.transactionId} onClick={() => claim(row)}>
