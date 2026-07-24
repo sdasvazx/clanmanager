@@ -5514,18 +5514,30 @@ function DistributionAdminPage({ member }) {
   const { sortedRows: sortedDistributionRows, sortKey: distributionSortKey, sortDirection: distributionSortDirection, toggleSort: toggleDistributionSort } = useSortableRows(sortableDistributionRows, 'sortableFinalAmount', 'desc');
 
   const toggleDistributed = async (row, checked) => {
-    if (!result?.snapshotId) {
-      setMessage('분배 여부는 히스토리를 저장한 뒤 체크할 수 있습니다.');
-      return;
-    }
+    setLoading(true);
+    setMessage('');
     try {
-      const updated = await request(`/distributions/snapshots/${result.snapshotId}/members/${row.memberId}/distributed?adminMemberId=${member.memberId}`, {
+      let snapshotId = result?.snapshotId;
+      if (!snapshotId) {
+        const saved = await request('/distributions/snapshots', {
+          method: 'POST',
+          body: JSON.stringify(buildPayload()),
+        });
+        snapshotId = saved.snapshotId;
+        setHistoryId(String(snapshotId));
+        setEditing(false);
+        await loadHistory();
+      }
+      const updated = await request(`/distributions/snapshots/${snapshotId}/members/${row.memberId}/distributed?adminMemberId=${member.memberId}`, {
         method: 'PATCH',
         body: JSON.stringify({ distributed: checked }),
       });
       setResult(updated);
+      setMessage(`${row.characterName}님의 분배여부를 ${checked ? '완료' : '미완료'}로 변경했습니다.`);
     } catch (err) {
       setMessage(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -5766,7 +5778,7 @@ function DistributionAdminPage({ member }) {
                     <b>{money(row.finalAmount)}</b>
                   </td>
                   <td>
-                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={Number(row.finalAmount || 0) <= 0 || !result?.snapshotId} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배여부`} />
+                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={loading} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배여부`} />
                   </td>
                 </tr>
               ))}
