@@ -1179,15 +1179,17 @@ function AuthScreen({ onLogin }) {
     combatPower: '',
   });
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
     setLoading(true);
     setError('');
+    setNotice('');
     try {
       if (isRegister) {
-        await request('/auth/register', {
+        const registration = await request('/auth/register', {
           method: 'POST',
           body: JSON.stringify({
             ...form,
@@ -1195,6 +1197,12 @@ function AuthScreen({ onLogin }) {
             combatPower: Number(form.combatPower || 0),
           }),
         });
+        if (registration.approvalPending) {
+          setNotice(registration.message);
+          setIsRegister(false);
+          setForm((current) => ({ ...current, password: '', combatPower: '' }));
+          return;
+        }
       }
       const loggedIn = await request('/auth/login', {
         method: 'POST',
@@ -1240,11 +1248,16 @@ function AuthScreen({ onLogin }) {
             </label>
           )}
           {error && <p className="form-error">{error}</p>}
+          {notice && <p className="auth-success">{notice}</p>}
           <button className="primary-button" disabled={loading}>
             {loading ? '처리 중...' : isRegister ? '회원가입' : '로그인'}
           </button>
         </form>
-        <button className="link-button" onClick={() => setIsRegister(!isRegister)}>
+        <button className="link-button" onClick={() => {
+          setIsRegister(!isRegister);
+          setError('');
+          setNotice('');
+        }}>
           {isRegister ? '이미 계정이 있어요' : '처음 오셨나요? 회원가입'}
         </button>
       </section>
@@ -1509,6 +1522,11 @@ function Lobby({ member, setPage, favoritePages = [] }) {
   const [members, setMembers] = useState([]);
   const [participationSummary, setParticipationSummary] = useState(null);
   const [message, setMessage] = useState('');
+  const [adminAlerts, setAdminAlerts] = useState({
+    registrations: [],
+    distributionClaims: [],
+    itemRequests: [],
+  });
   const currentPeriod = getParticipationPeriod(getCurrentParticipationPeriodIndex());
   const load = async () => {
     const [noticeResult, memberResult, participationResult] = await Promise.allSettled([request('/notices'), request('/members'), request(`/participation?startDate=${currentPeriod.start}&endDate=${currentPeriod.end}`)]);
@@ -1523,6 +1541,38 @@ function Lobby({ member, setPage, favoritePages = [] }) {
   useEffect(() => {
     load();
   }, []);
+  useEffect(() => {
+    if (member.role !== 'ADMIN') return undefined;
+    let active = true;
+    const loadAdminAlerts = async () => {
+      const [registrations, distributionClaims, itemRequests] = await Promise.all([
+        request(`/members/pending-registrations?adminMemberId=${member.memberId}`).catch(() => []),
+        request(`/vault/distribution-claim-requests?memberId=${member.memberId}`).catch(() => []),
+        request('/management/item-requests').catch(() => []),
+      ]);
+      if (!active) return;
+      setAdminAlerts({
+        registrations: Array.isArray(registrations) ? registrations : [],
+        distributionClaims: (Array.isArray(distributionClaims) ? distributionClaims : []).filter((row) => row.status === '접수'),
+        itemRequests: (Array.isArray(itemRequests) ? itemRequests : []).filter((row) => row.status === '접수'),
+      });
+    };
+    loadAdminAlerts();
+    const timer = window.setInterval(loadAdminAlerts, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [member.memberId, member.role]);
+  const totalAdminAlerts = adminAlerts.registrations.length + adminAlerts.distributionClaims.length + adminAlerts.itemRequests.length;
+  useEffect(() => {
+    if (member.role !== 'ADMIN') return undefined;
+    const originalTitle = document.title;
+    document.title = totalAdminAlerts ? `(${totalAdminAlerts}) 클랜 매니저` : '클랜 매니저';
+    return () => {
+      document.title = originalTitle;
+    };
+  }, [member.role, totalAdminAlerts]);
   const participationRows = useMemo(() => participationSummary?.rows || [], [participationSummary]);
   const quickActions = [
     ['participation', '참여율 조회'],
@@ -1540,6 +1590,34 @@ function Lobby({ member, setPage, favoritePages = [] }) {
   return (
     <>
       <NoticePanel member={member} notices={notices} onReload={load} />
+      {member.role === 'ADMIN' && (
+        <section className={`white-card admin-alert-card ${totalAdminAlerts ? 'has-alerts' : ''}`}>
+          <div className="section-heading">
+            <div>
+              <h2>🔔 운영자 알림</h2>
+              <p className="subtle">새 신청을 30초마다 자동으로 확인합니다.</p>
+            </div>
+            <span className={`admin-alert-total ${totalAdminAlerts ? 'active' : ''}`}>{totalAdminAlerts}건</span>
+          </div>
+          <div className="admin-alert-grid">
+            <button type="button" onClick={() => setPage('member-admin')}>
+              <span>회원가입 승인</span>
+              <b>{adminAlerts.registrations.length}건</b>
+              <small>{adminAlerts.registrations[0]?.characterName || '대기 신청 없음'}</small>
+            </button>
+            <button type="button" onClick={() => setPage('ledger')}>
+              <span>분배금 수령 신청</span>
+              <b>{adminAlerts.distributionClaims.length}건</b>
+              <small>{adminAlerts.distributionClaims[0]?.requesterName || '대기 신청 없음'}</small>
+            </button>
+            <button type="button" onClick={() => setPage('item-request')}>
+              <span>아이템 신청</span>
+              <b>{adminAlerts.itemRequests.length}건</b>
+              <small>{adminAlerts.itemRequests[0]?.requesterName || '대기 신청 없음'}</small>
+            </button>
+          </div>
+        </section>
+      )}
       {message && <div className="info-banner warning-banner">{message}</div>}
       <div className="page-title center">
         <h1>클랜 종합정보</h1>
@@ -7603,6 +7681,7 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
     active: true,
   };
   const [members, setMembers] = useState([]);
+  const [pendingRegistrations, setPendingRegistrations] = useState([]);
   const [message, setMessage] = useState('');
   const [loadingId, setLoadingId] = useState(null);
   const [editId, setEditId] = useState(null);
@@ -7622,10 +7701,18 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
   const [rosterSettings] = useRosterSettings();
   const managedClanOptions = rosterSettings.clans.map((item) => item.name);
   const managedClassOptions = rosterSettings.classes.map((item) => item.name);
-  const load = () =>
-    request('/members')
-      .then(setMembers)
-      .catch((err) => setMessage(err.message));
+  const load = async () => {
+    try {
+      const [memberRows, pendingRows] = await Promise.all([
+        request('/members'),
+        request(`/members/pending-registrations?adminMemberId=${member.memberId}`),
+      ]);
+      setMembers(Array.isArray(memberRows) ? memberRows : []);
+      setPendingRegistrations(Array.isArray(pendingRows) ? pendingRows : []);
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
   useEffect(() => {
     load();
   }, []);
@@ -7635,6 +7722,22 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
     combatPower: Number(form.combatPower || 0),
     level: Number(form.level || 0),
   });
+
+  const approveRegistration = async (targetMember) => {
+    setLoadingId(`approve-${targetMember.memberId}`);
+    setMessage('');
+    try {
+      await request(`/members/${targetMember.memberId}/approve-registration?adminMemberId=${member.memberId}`, {
+        method: 'PATCH',
+      });
+      await load();
+      setMessage(`${targetMember.characterName}님의 회원가입을 승인했습니다.`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setLoadingId(null);
+    }
+  };
   const formFromMember = (targetMember) => ({
     characterName: targetMember.characterName ?? '',
     guildName: targetMember.guildName ?? '',
@@ -7917,6 +8020,37 @@ function Admin({ member, setPage, onMemberUpdate, memberOnly = false, favorites 
       <button className="outline-button no-margin" onClick={() => setPage('admin')}>
         ← 관리자 설정으로
       </button>
+
+      <section className={`white-card role-card registration-approval-card ${pendingRegistrations.length ? 'has-pending' : ''}`}>
+        <div className="section-heading">
+          <div>
+            <h2>🔔 회원가입 승인 대기</h2>
+            <p className="subtle">승인 전에는 로그인할 수 없습니다.</p>
+          </div>
+          <span className="result-count">{pendingRegistrations.length}건</span>
+        </div>
+        {pendingRegistrations.length ? (
+          <div className="registration-approval-list">
+            {pendingRegistrations.map((row) => (
+              <div key={row.memberId}>
+                <span>
+                  <b>{row.characterName}</b>
+                  <small>전투력 {formatNumber(row.combatPower)} · 신청 {row.createdAt ? new Date(row.createdAt).toLocaleString('ko-KR') : '-'}</small>
+                </span>
+                <button
+                  className="primary-button"
+                  disabled={loadingId === `approve-${row.memberId}`}
+                  onClick={() => approveRegistration(row)}
+                >
+                  {loadingId === `approve-${row.memberId}` ? '승인 중...' : '가입 승인'}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state compact">승인을 기다리는 회원가입 신청이 없습니다.</div>
+        )}
+      </section>
 
       <section className="white-card role-card">
         <div className="section-heading">
