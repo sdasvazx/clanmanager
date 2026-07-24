@@ -17,6 +17,19 @@ public interface BossParticipationRecordRepository
 
     Page<BossParticipationRecord> findAllByOrderByBossDateDescCutTimeDescCreatedAtDesc(Pageable pageable);
 
+    @Query("""
+            select r
+            from BossParticipationRecord r
+            where (:bossDate is null or r.bossDate = :bossDate)
+              and (:bossName = '' or lower(r.bossName) like lower(concat('%', :bossName, '%')))
+            order by r.bossDate desc, r.cutTime desc, r.createdAt desc
+            """)
+    Page<BossParticipationRecord> searchHistory(
+            @Param("bossDate") LocalDate bossDate,
+            @Param("bossName") String bossName,
+            Pageable pageable
+    );
+
     List<BossParticipationRecord> findByBossDateBetweenOrderByBossDateAscCutTimeAsc(LocalDate startDate, LocalDate endDate);
 
     @Query("""

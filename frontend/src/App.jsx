@@ -2249,7 +2249,7 @@ function Participation({ member, setPage }) {
               <h2>{clan}</h2>
               <span className="result-count">{list.length}명</span>
             </div>
-            <div className="table-wrap">
+            <div className="table-wrap participation-table-scroll">
               <table className="data-table participation-ranking-table wide">
                 <thead>
                   <tr>
@@ -2437,6 +2437,8 @@ function Attendance({ member, setPage, mode = 'check' }) {
     totalPages: 1,
     totalElements: 0,
   });
+  const [historySearch, setHistorySearch] = useState({ date: '', bossName: '' });
+  const [appliedHistorySearch, setAppliedHistorySearch] = useState({ date: '', bossName: '' });
   const [members, setMembers] = useState([]);
   const [batchRows, setBatchRows] = useState(() => buildBatchRowsFromActivitySettings());
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -2980,8 +2982,11 @@ function Attendance({ member, setPage, mode = 'check' }) {
     setReviewEdit(null);
   };
 
-  const load = (nextPage = recordPage) => {
-    const jobs = showCheck ? [request('/members'), request('/activities/settings')] : [request(`/boss-participations/page?page=${nextPage}`), request('/members')];
+  const load = (nextPage = recordPage, filters = appliedHistorySearch) => {
+    const historyParams = new URLSearchParams({ page: String(nextPage) });
+    if (filters.date) historyParams.set('date', filters.date);
+    if (filters.bossName.trim()) historyParams.set('bossName', filters.bossName.trim());
+    const jobs = showCheck ? [request('/members'), request('/activities/settings')] : [request(`/boss-participations/page?${historyParams.toString()}`), request('/members')];
     return Promise.all(jobs)
       .then((rows) => {
         if (showCheck) {
@@ -3014,6 +3019,23 @@ function Attendance({ member, setPage, mode = 'check' }) {
         setMembers(memberRows);
       })
       .catch((err) => setMessage(err.message));
+  };
+
+  const searchBossHistory = async (event) => {
+    event.preventDefault();
+    const nextFilters = {
+      date: historySearch.date,
+      bossName: historySearch.bossName.trim(),
+    };
+    setAppliedHistorySearch(nextFilters);
+    await load(1, nextFilters);
+  };
+
+  const resetBossHistorySearch = async () => {
+    const emptyFilters = { date: '', bossName: '' };
+    setHistorySearch(emptyFilters);
+    setAppliedHistorySearch(emptyFilters);
+    await load(1, emptyFilters);
   };
 
   useEffect(() => {
@@ -3907,13 +3929,25 @@ function Attendance({ member, setPage, mode = 'check' }) {
 
       {showHistory && (
         <section className="white-card boss-history-card">
-          <div className="filters">
-            <select>
-              <option>전체 날짜</option>
-            </select>
-            <input placeholder="보스명" />
+          <form className="filters boss-history-search" onSubmit={searchBossHistory}>
+            <label>
+              날짜
+              <input type="date" value={historySearch.date} onChange={(event) => setHistorySearch({ ...historySearch, date: event.target.value })} />
+            </label>
+            <label>
+              보스명
+              <input value={historySearch.bossName} onChange={(event) => setHistorySearch({ ...historySearch, bossName: event.target.value })} placeholder="보스명 일부 입력" />
+            </label>
             <button className="dark-button">조회</button>
-          </div>
+            <button type="button" className="outline-button no-margin" onClick={resetBossHistorySearch}>
+              전체 보기
+            </button>
+          </form>
+          {(appliedHistorySearch.date || appliedHistorySearch.bossName) && (
+            <p className="active-search-summary">
+              조회 조건: {appliedHistorySearch.date || '전체 날짜'} · {appliedHistorySearch.bossName || '전체 보스'}
+            </p>
+          )}
           <p className="subtle">
             조회 결과 {recordPageInfo.totalElements}건 · {recordPageInfo.page}/{recordPageInfo.totalPages}페이지
           </p>
