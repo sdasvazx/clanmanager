@@ -2077,9 +2077,13 @@ function Participation({ member, setPage }) {
         .map((option) => {
           const periodRecords = bossRecords.filter((record) => record.bossDate >= option.start && record.bossDate < option.end);
           const periodHistory = detailHistory.filter((record) => record.bossDate >= option.start && record.bossDate < option.end);
-          const total = periodRecords.length;
-          const attended = periodHistory.length;
-          const score = periodHistory.reduce((sum, row) => sum + Number(row.score || 1), 0);
+          const recordKey = (record) => String(record.recordId ?? `${record.bossDate}|${record.cutTime || ''}|${record.bossName || record.activityTypeName || ''}`);
+          const uniqueRecords = [...new Map(periodRecords.map((record) => [recordKey(record), record])).values()];
+          const uniqueHistory = [...new Map(periodHistory.map((record) => [recordKey(record), record])).values()];
+          const attended = uniqueHistory.length;
+          // 수동 참여 기록도 지난 회차에 포함되므로 분모가 참여 횟수보다 작아지지 않게 보정한다.
+          const total = Math.max(uniqueRecords.length, attended);
+          const score = uniqueHistory.reduce((sum, row) => sum + Number(row.score || 1), 0);
           const rate = total ? Math.round((attended / total) * 1000) / 10 : 0;
           return {
             ...option,
@@ -4989,6 +4993,10 @@ function ClanVaultPage({ member, readonly = false }) {
       setMessage('분배받을 클랜원을 한 명 이상 선택해 주세요.');
       return;
     }
+    if ((mode === 'deposit' || mode === 'withdraw') && !form.targetMemberId) {
+      setMessage(`${mode === 'deposit' ? '입금' : '출금'} 대상 클랜원을 선택해 주세요.`);
+      return;
+    }
     const amount = Number(form.amountDiamonds || 0);
     const balance = Number(form.balanceDiamonds || 0);
     const targetIds = mode === 'distribute' ? selectedTargetIds : [form.targetMemberId];
@@ -5103,8 +5111,8 @@ function ClanVaultPage({ member, readonly = false }) {
               {(mode === 'deposit' || mode === 'withdraw') && (
                 <label>
                   대상 클랜원
-                  <select value={form.targetMemberId} onChange={(e) => setForm({ ...form, targetMemberId: e.target.value })}>
-                    <option value="">클랜 공용 — 특정 회원 아님</option>
+                  <select required value={form.targetMemberId} onChange={(e) => setForm({ ...form, targetMemberId: e.target.value })}>
+                    <option value="">클랜원을 선택해 주세요</option>
                     {balances.map((row) => (
                       <option key={row.memberId} value={row.memberId}>
                         {row.characterName}
