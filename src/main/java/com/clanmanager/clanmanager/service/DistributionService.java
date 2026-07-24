@@ -470,7 +470,7 @@ public class DistributionService {
     ) {
         double currentPower = toMan(member.getCombatPower());
         double previousPower = previousPowerMan(member, currentPower);
-        double growthScore = scoreBetween(previousPower, currentPower);
+        double growthScore = growthScoreBetween(previousPower, currentPower);
         double currentPowerScore = scoreBetween(0.0, currentPower);
         double powerScore = round1(growthScore + currentPowerScore);
         boolean participationEligible = nullToZero(row.getParticipationRate()) >= settings.participationCut();
@@ -722,6 +722,26 @@ public class DistributionService {
         score += segmentScore(fromPower, toPower, 105, 110, 7);
         score += segmentScore(fromPower, toPower, 110, 115, 9);
         score += segmentScore(fromPower, toPower, 115, Double.MAX_VALUE, 12);
+        return round1(score);
+    }
+
+    private double growthScoreBetween(double fromPower, double toPower) {
+        if (toPower <= fromPower) {
+            return 0.0;
+        }
+        double score = 0.0;
+        score += segmentScore(fromPower, toPower, 0, 110, 1);
+        score += segmentScore(fromPower, toPower, 110, 120, 1);
+        score += segmentScore(fromPower, toPower, 120, 125, 2);
+        score += segmentScore(fromPower, toPower, 125, 135, 3);
+        score += segmentScore(fromPower, toPower, 135, 140, 4);
+        score += segmentScore(fromPower, toPower, 140, 145, 5);
+        score += segmentScore(fromPower, toPower, 145, 150, 6);
+        score += segmentScore(fromPower, toPower, 150, 155, 7);
+        score += segmentScore(fromPower, toPower, 155, 160, 8);
+        score += segmentScore(fromPower, toPower, 160, 165, 9);
+        score += segmentScore(fromPower, toPower, 165, 170, 10);
+        score += segmentScore(fromPower, toPower, 170, Double.MAX_VALUE, 12);
         return round1(score);
     }
 
