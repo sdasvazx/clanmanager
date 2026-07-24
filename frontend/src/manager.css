@@ -4757,6 +4757,13 @@
   color: #64748b;
 }
 
+.registration-approval-actions {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin: 0 !important;
+}
+
 .sidebar-alert-wrap {
   position: relative;
   margin: auto 12px 0;
@@ -4768,12 +4775,11 @@
 
 .sidebar-alert-button {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  min-height: 50px;
-  padding: 10px 12px;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
   border: 1px solid #dbe5f1;
   border-radius: 13px;
   background: #fff;
@@ -4788,15 +4794,17 @@
 }
 
 .sidebar-alert-bell {
-  font-size: 1.25rem;
+  font-size: 1.45rem;
 }
 
 .sidebar-alert-button > b {
+  position: absolute;
+  top: -7px;
+  right: -8px;
   display: grid;
   place-items: center;
   min-width: 23px;
   height: 23px;
-  margin-left: auto;
   padding: 0 6px;
   border-radius: 999px;
   background: #ef4444;
@@ -4855,12 +4863,9 @@
 }
 
 .collapsed .sidebar-alert-button {
-  justify-content: center;
+  width: 48px;
+  height: 48px;
   padding: 8px 4px;
-}
-
-.collapsed .sidebar-alert-label {
-  display: none;
 }
 
 .collapsed .sidebar-alert-button > b {
