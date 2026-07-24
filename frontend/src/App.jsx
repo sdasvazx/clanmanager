@@ -5477,12 +5477,13 @@ function DistributionAdminPage({ member }) {
     try {
       await request('/distributions/deposit', {
         method: 'POST',
-        body: JSON.stringify(
-          buildPayload({
+        body: JSON.stringify({
+          ...buildPayload({
             ...settings,
             memo: settings.memo || '분배금 자동 적립',
-          })
-        ),
+          }),
+          excludedMemberIds: (result?.results || []).filter((row) => Boolean(row.distributed)).map((row) => Number(row.memberId)),
+        }),
       });
       setMessage('분배금 적립이 완료되었습니다. 회원은 마이페이지에서 수령 처리할 수 있습니다.');
     } catch (err) {
@@ -5533,7 +5534,7 @@ function DistributionAdminPage({ member }) {
         body: JSON.stringify({ distributed: checked }),
       });
       setResult(updated);
-      setMessage(`${row.characterName}님의 분배여부를 ${checked ? '완료' : '미완료'}로 변경했습니다.`);
+      setMessage(`${row.characterName}님을 분배 대상에서 ${checked ? '제외했습니다.' : '다시 포함했습니다.'}`);
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -5738,7 +5739,7 @@ function DistributionAdminPage({ member }) {
                 <SortableHeader label="투력점수" field="sortablePowerScore" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} />
                 <SortableHeader label="투력분배" field="sortablePowerAmount" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} />
                 <SortableHeader label="최종 지급" field="sortableFinalAmount" sortKey={distributionSortKey} sortDirection={distributionSortDirection} onSort={toggleDistributionSort} />
-                <th>분배여부</th>
+                <th>분배 제외</th>
               </tr>
             </thead>
             <tbody>
@@ -5778,7 +5779,7 @@ function DistributionAdminPage({ member }) {
                     <b>{money(row.finalAmount)}</b>
                   </td>
                   <td>
-                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={loading} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배여부`} />
+                    <input type="checkbox" checked={Boolean(row.distributed)} disabled={loading} onChange={(event) => toggleDistributed(row, event.target.checked)} aria-label={`${row.characterName} 분배 제외`} />
                   </td>
                 </tr>
               ))}
@@ -5794,14 +5795,19 @@ function DistributionAdminPage({ member }) {
 
 function PowerScoreModal({ onClose }) {
   const rows = [
-    ['0만 ~ 80만', '1점/만', '80점', '70만→80만: 10만 증가 = 10점'],
-    ['80만 ~ 90만', '1점/만', '10점', '85만→90만: 5만 증가 = 5점'],
-    ['90만 ~ 95만', '2점/만', '10점', '92만→95만: 3만 증가 = 6점'],
-    ['95만 ~ 100만', '3점/만', '15점', '97만→100만: 3만 증가 = 9점'],
-    ['100만 ~ 105만', '5점/만', '25점', '102만→105만: 3만 증가 = 15점'],
-    ['105만 ~ 110만', '7점/만', '35점', '107만→110만: 3만 증가 = 21점'],
-    ['110만 ~ 115만', '9점/만', '45점', '112만→115만: 3만 증가 = 27점'],
-    ['115만 이상', '12점/만', '무제한', '115만→120만: 5만 증가 = 60점'],
+    ['0만 ~ 110만', '1점/만', '110점', '100만→110만: 10만 증가 = 10점'],
+    ['110만 ~ 120만', '1점/만', '10점', '110만→120만: 10만 증가 = 10점'],
+    ['120만 ~ 125만', '2점/만', '10점', '120만→125만: 5만 증가 = 10점'],
+    ['125만 ~ 130만', '3점/만', '15점', '125만→130만: 5만 증가 = 15점'],
+    ['130만 ~ 135만', '3점/만', '15점', '엑셀 공백 구간을 앞 구간과 동일 적용'],
+    ['135만 ~ 140만', '4점/만', '20점', '135만→140만: 5만 증가 = 20점'],
+    ['140만 ~ 145만', '5점/만', '25점', '140만→145만: 5만 증가 = 25점'],
+    ['145만 ~ 150만', '6점/만', '30점', '145만→150만: 5만 증가 = 30점'],
+    ['150만 ~ 155만', '7점/만', '35점', '150만→155만: 5만 증가 = 35점'],
+    ['155만 ~ 160만', '8점/만', '40점', '155만→160만: 5만 증가 = 40점'],
+    ['160만 ~ 165만', '9점/만', '45점', '160만→165만: 5만 증가 = 45점'],
+    ['165만 ~ 170만', '10점/만', '50점', '165만→170만: 5만 증가 = 50점'],
+    ['170만 이상', '12점/만', '무제한', '170만→175만: 5만 증가 = 60점'],
   ];
 
   return (
@@ -5846,9 +5852,9 @@ function PowerScoreModal({ onClose }) {
         <div className="power-example green">
           <b>최종 예시: 85만 → 92만</b>
           <ul>
-            <li>성장점수: 9점</li>
+            <li>성장점수: 7점</li>
             <li>현재투력점수: 94점</li>
-            <li>최종 투력점수: 103점</li>
+            <li>최종 투력점수: 101점</li>
           </ul>
         </div>
       </div>

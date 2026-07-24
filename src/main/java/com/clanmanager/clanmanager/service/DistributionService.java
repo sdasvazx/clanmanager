@@ -212,7 +212,33 @@ public class DistributionService {
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("분배 결과에서 회원을 찾을 수 없습니다."))
                     .setDistributed(distributed);
+            DistributionResponseDto.ResultItemDto targetRow = response.getResults().stream()
+                    .filter(row -> row.getMemberId().equals(memberId))
+                    .findFirst()
+                    .orElseThrow();
+            targetRow.setFinalAmount(distributed
+                    ? 0L
+                    : Math.max(0L, safeAmount(targetRow.getParticipationAmount())
+                            + safeAmount(targetRow.getPowerAmount())
+                            - safeAmount(targetRow.getNonParticipationPenaltyDiamonds())));
+            long allocated = response.getResults().stream()
+                    .mapToLong(row -> safeAmount(row.getFinalAmount()))
+                    .sum();
+            response.setAllocatedDiamonds(allocated);
+            response.setRemainingDiamonds(Math.max(0L, safeAmount(response.getTotalDiamonds()) - allocated));
+            if (response.getClanSummaries() != null) {
+                response.getClanSummaries().forEach(summary -> {
+                    long clanAllocated = response.getResults().stream()
+                            .filter(row -> Objects.equals(row.getClanName(), summary.getClanName()))
+                            .mapToLong(row -> safeAmount(row.getFinalAmount()))
+                            .sum();
+                    summary.setAllocatedDiamonds(clanAllocated);
+                    summary.setRemainingDiamonds(Math.max(0L, safeAmount(summary.getTotalDiamonds()) - clanAllocated));
+                });
+            }
             snapshot.setResponseJson(writeJson(response));
+            snapshot.setAllocatedDiamonds(allocated);
+            snapshot.setRemainingDiamonds(response.getRemainingDiamonds());
             snapshotRepository.save(snapshot);
             return withSnapshotMeta(response, snapshot);
         } catch (JsonProcessingException e) {
@@ -224,7 +250,11 @@ public class DistributionService {
     public DistributionResponseDto depositDistributions(DistributionRequestDto request) {
         Member admin = requireAdmin(request.getCreatedByMemberId());
         DistributionResponseDto response = calculate(request);
+        Set<Long> excludedMemberIds = request.getExcludedMemberIds() == null
+                ? Set.of()
+                : new HashSet<>(request.getExcludedMemberIds());
         long totalAmount = response.getResults().stream()
+                .filter(row -> !excludedMemberIds.contains(row.getMemberId()))
                 .mapToLong(DistributionResponseDto.ResultItemDto::getFinalAmount)
                 .sum();
         if (totalAmount <= 0) {
@@ -243,6 +273,7 @@ public class DistributionService {
 
         AtomicLong runningBalance = new AtomicLong(vault.getBalanceDiamonds());
         response.getResults().stream()
+                .filter(row -> !excludedMemberIds.contains(row.getMemberId()))
                 .filter(row -> row.getFinalAmount() != null && row.getFinalAmount() > 0)
                 .forEach(row -> {
                     Member target = memberMap.get(row.getMemberId());
@@ -439,7 +470,7 @@ public class DistributionService {
     ) {
         double currentPower = toMan(member.getCombatPower());
         double previousPower = previousPowerMan(member, currentPower);
-        double growthScore = scoreBetween(previousPower, currentPower);
+        double growthScore = growthScoreBetween(previousPower, currentPower);
         double currentPowerScore = scoreBetween(0.0, currentPower);
         double powerScore = round1(growthScore + currentPowerScore);
         boolean participationEligible = nullToZero(row.getParticipationRate()) >= settings.participationCut();
@@ -691,6 +722,26 @@ public class DistributionService {
         score += segmentScore(fromPower, toPower, 105, 110, 7);
         score += segmentScore(fromPower, toPower, 110, 115, 9);
         score += segmentScore(fromPower, toPower, 115, Double.MAX_VALUE, 12);
+        return round1(score);
+    }
+
+    private double growthScoreBetween(double fromPower, double toPower) {
+        if (toPower <= fromPower) {
+            return 0.0;
+        }
+        double score = 0.0;
+        score += segmentScore(fromPower, toPower, 0, 110, 1);
+        score += segmentScore(fromPower, toPower, 110, 120, 1);
+        score += segmentScore(fromPower, toPower, 120, 125, 2);
+        score += segmentScore(fromPower, toPower, 125, 135, 3);
+        score += segmentScore(fromPower, toPower, 135, 140, 4);
+        score += segmentScore(fromPower, toPower, 140, 145, 5);
+        score += segmentScore(fromPower, toPower, 145, 150, 6);
+        score += segmentScore(fromPower, toPower, 150, 155, 7);
+        score += segmentScore(fromPower, toPower, 155, 160, 8);
+        score += segmentScore(fromPower, toPower, 160, 165, 9);
+        score += segmentScore(fromPower, toPower, 165, 170, 10);
+        score += segmentScore(fromPower, toPower, 170, Double.MAX_VALUE, 12);
         return round1(score);
     }
 
