@@ -26,6 +26,9 @@ public class Member {
     @Column(nullable = false)
     private String password;
 
+    @Column(name = "must_change_password", nullable = false, columnDefinition = "boolean default false")
+    private Boolean mustChangePassword;
+
     @Column(nullable = false)
     private Integer combatPower;
 
@@ -60,6 +63,7 @@ public class Member {
         this.level = this.level == null ? 0 : this.level;
         this.role = this.role == null ? MemberRole.MEMBER : this.role;
         this.active = this.active == null ? true : this.active;
+        this.mustChangePassword = this.mustChangePassword == null ? false : this.mustChangePassword;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }

@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -237,6 +238,27 @@ public class ClanVaultController {
                 .status(CLAIM_STATUS_PENDING)
                 .build());
         return DistributionClaimRequestResponseDto.from(saved);
+    }
+
+    @DeleteMapping("/distribution-claim-requests/{requestId}")
+    @Transactional
+    public Map<String, String> cancelDistributionClaimRequest(
+            @PathVariable Long requestId,
+            @RequestParam Long memberId
+    ) {
+        Member requester = findRequiredMember(memberId, "수령 신청 회원 정보가 필요합니다.");
+        DistributionClaimRequest claimRequest = distributionClaimRequestRepository.findWithLockByRequestId(requestId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 수령 신청입니다."));
+
+        if (!claimRequest.getRequester().getMemberId().equals(requester.getMemberId())) {
+            throw new SecurityException("본인의 수령 신청만 취소할 수 있습니다.");
+        }
+        if (!CLAIM_STATUS_PENDING.equals(claimRequest.getStatus())) {
+            throw new IllegalArgumentException("처리대기 중인 수령 신청만 취소할 수 있습니다.");
+        }
+
+        distributionClaimRequestRepository.delete(claimRequest);
+        return Map.of("message", "수령 신청을 취소했습니다.");
     }
 
     @PatchMapping("/distribution-claim-requests/{requestId}")
