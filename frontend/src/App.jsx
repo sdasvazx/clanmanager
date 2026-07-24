@@ -1197,12 +1197,10 @@ function AuthScreen({ onLogin }) {
             combatPower: Number(form.combatPower || 0),
           }),
         });
-        if (registration.approvalPending) {
-          setNotice(registration.message);
-          setIsRegister(false);
-          setForm((current) => ({ ...current, password: '', combatPower: '' }));
-          return;
-        }
+        setNotice(registration.message || '회원가입 신청이 접수되었습니다. 운영자 승인 후 로그인할 수 있습니다.');
+        setIsRegister(false);
+        setForm((current) => ({ ...current, password: '', combatPower: '' }));
+        return;
       }
       const loggedIn = await request('/auth/login', {
         method: 'POST',
@@ -1294,6 +1292,12 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
   const [collapsed, setCollapsed] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 760 : false));
   const [theme, setTheme] = useState(() => localStorage.getItem('clanTheme') || 'light');
   const [favoriteOnly, setFavoriteOnly] = useState(() => localStorage.getItem('clanFavoriteOnlyMenu') === 'true');
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [adminAlerts, setAdminAlerts] = useState({
+    registrations: [],
+    distributionClaims: [],
+    itemRequests: [],
+  });
   const selectPage = (id) => {
     setPage(id);
     if (typeof window !== 'undefined' && window.innerWidth <= 760) setCollapsed(true);
@@ -1316,6 +1320,41 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
   useEffect(() => {
     localStorage.setItem('clanFavoriteOnlyMenu', favoriteOnly ? 'true' : 'false');
   }, [favoriteOnly]);
+  useEffect(() => {
+    if (member.role !== 'ADMIN') return undefined;
+    let active = true;
+    const loadAdminAlerts = async () => {
+      const [registrations, distributionClaims, itemRequests] = await Promise.all([
+        request(`/members/pending-registrations?adminMemberId=${member.memberId}`).catch(() => []),
+        request(`/vault/distribution-claim-requests?memberId=${member.memberId}`).catch(() => []),
+        request('/management/item-requests').catch(() => []),
+      ]);
+      if (!active) return;
+      setAdminAlerts({
+        registrations: Array.isArray(registrations) ? registrations : [],
+        distributionClaims: (Array.isArray(distributionClaims) ? distributionClaims : []).filter((row) => row.status === '접수'),
+        itemRequests: (Array.isArray(itemRequests) ? itemRequests : []).filter((row) => row.status === '접수'),
+      });
+    };
+    loadAdminAlerts();
+    const timer = window.setInterval(loadAdminAlerts, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [member.memberId, member.role]);
+  const totalAdminAlerts = adminAlerts.registrations.length + adminAlerts.distributionClaims.length + adminAlerts.itemRequests.length;
+  useEffect(() => {
+    if (member.role !== 'ADMIN') return undefined;
+    document.title = totalAdminAlerts ? `(${totalAdminAlerts}) 클랜 매니저` : '클랜 매니저';
+    return () => {
+      document.title = '클랜 매니저';
+    };
+  }, [member.role, totalAdminAlerts]);
+  const openAlertPage = (target) => {
+    setAlertOpen(false);
+    selectPage(target);
+  };
   return (
     <div className={`shell ${collapsed ? 'collapsed' : ''}`}>
       <header className="topbar">
@@ -1370,6 +1409,40 @@ function Shell({ member, page, setPage, onLogout, children, favorites = [], togg
             );
           })}
         </nav>
+        {member.role === 'ADMIN' && (
+          <div className="sidebar-alert-wrap">
+            <button
+              type="button"
+              className={`sidebar-alert-button ${totalAdminAlerts ? 'active' : ''}`}
+              title="운영자 알림"
+              onClick={() => setAlertOpen((current) => !current)}
+            >
+              <span className="sidebar-alert-bell">🔔</span>
+              <span className="sidebar-alert-label">운영자 알림</span>
+              {totalAdminAlerts > 0 && <b>{totalAdminAlerts > 99 ? '99+' : totalAdminAlerts}</b>}
+            </button>
+            {alertOpen && (
+              <div className="sidebar-alert-popover">
+                <div>
+                  <strong>새 신청 알림</strong>
+                  <small>30초마다 갱신</small>
+                </div>
+                <button type="button" onClick={() => openAlertPage('member-admin')}>
+                  <span>회원가입 승인</span>
+                  <b>{adminAlerts.registrations.length}</b>
+                </button>
+                <button type="button" onClick={() => openAlertPage('ledger')}>
+                  <span>분배금 신청</span>
+                  <b>{adminAlerts.distributionClaims.length}</b>
+                </button>
+                <button type="button" onClick={() => openAlertPage('item-request')}>
+                  <span>아이템 신청</span>
+                  <b>{adminAlerts.itemRequests.length}</b>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <button type="button" className="side-note item-request-shortcut" onClick={() => selectPage('item-request')}>
           <b>아이템 신청</b>
           <small>신청내역 확인 및 지급 처리</small>
@@ -1522,11 +1595,6 @@ function Lobby({ member, setPage, favoritePages = [] }) {
   const [members, setMembers] = useState([]);
   const [participationSummary, setParticipationSummary] = useState(null);
   const [message, setMessage] = useState('');
-  const [adminAlerts, setAdminAlerts] = useState({
-    registrations: [],
-    distributionClaims: [],
-    itemRequests: [],
-  });
   const currentPeriod = getParticipationPeriod(getCurrentParticipationPeriodIndex());
   const load = async () => {
     const [noticeResult, memberResult, participationResult] = await Promise.allSettled([request('/notices'), request('/members'), request(`/participation?startDate=${currentPeriod.start}&endDate=${currentPeriod.end}`)]);
@@ -1541,38 +1609,6 @@ function Lobby({ member, setPage, favoritePages = [] }) {
   useEffect(() => {
     load();
   }, []);
-  useEffect(() => {
-    if (member.role !== 'ADMIN') return undefined;
-    let active = true;
-    const loadAdminAlerts = async () => {
-      const [registrations, distributionClaims, itemRequests] = await Promise.all([
-        request(`/members/pending-registrations?adminMemberId=${member.memberId}`).catch(() => []),
-        request(`/vault/distribution-claim-requests?memberId=${member.memberId}`).catch(() => []),
-        request('/management/item-requests').catch(() => []),
-      ]);
-      if (!active) return;
-      setAdminAlerts({
-        registrations: Array.isArray(registrations) ? registrations : [],
-        distributionClaims: (Array.isArray(distributionClaims) ? distributionClaims : []).filter((row) => row.status === '접수'),
-        itemRequests: (Array.isArray(itemRequests) ? itemRequests : []).filter((row) => row.status === '접수'),
-      });
-    };
-    loadAdminAlerts();
-    const timer = window.setInterval(loadAdminAlerts, 30000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [member.memberId, member.role]);
-  const totalAdminAlerts = adminAlerts.registrations.length + adminAlerts.distributionClaims.length + adminAlerts.itemRequests.length;
-  useEffect(() => {
-    if (member.role !== 'ADMIN') return undefined;
-    const originalTitle = document.title;
-    document.title = totalAdminAlerts ? `(${totalAdminAlerts}) 클랜 매니저` : '클랜 매니저';
-    return () => {
-      document.title = originalTitle;
-    };
-  }, [member.role, totalAdminAlerts]);
   const participationRows = useMemo(() => participationSummary?.rows || [], [participationSummary]);
   const quickActions = [
     ['participation', '참여율 조회'],
@@ -1590,34 +1626,6 @@ function Lobby({ member, setPage, favoritePages = [] }) {
   return (
     <>
       <NoticePanel member={member} notices={notices} onReload={load} />
-      {member.role === 'ADMIN' && (
-        <section className={`white-card admin-alert-card ${totalAdminAlerts ? 'has-alerts' : ''}`}>
-          <div className="section-heading">
-            <div>
-              <h2>🔔 운영자 알림</h2>
-              <p className="subtle">새 신청을 30초마다 자동으로 확인합니다.</p>
-            </div>
-            <span className={`admin-alert-total ${totalAdminAlerts ? 'active' : ''}`}>{totalAdminAlerts}건</span>
-          </div>
-          <div className="admin-alert-grid">
-            <button type="button" onClick={() => setPage('member-admin')}>
-              <span>회원가입 승인</span>
-              <b>{adminAlerts.registrations.length}건</b>
-              <small>{adminAlerts.registrations[0]?.characterName || '대기 신청 없음'}</small>
-            </button>
-            <button type="button" onClick={() => setPage('ledger')}>
-              <span>분배금 수령 신청</span>
-              <b>{adminAlerts.distributionClaims.length}건</b>
-              <small>{adminAlerts.distributionClaims[0]?.requesterName || '대기 신청 없음'}</small>
-            </button>
-            <button type="button" onClick={() => setPage('item-request')}>
-              <span>아이템 신청</span>
-              <b>{adminAlerts.itemRequests.length}건</b>
-              <small>{adminAlerts.itemRequests[0]?.requesterName || '대기 신청 없음'}</small>
-            </button>
-          </div>
-        </section>
-      )}
       {message && <div className="info-banner warning-banner">{message}</div>}
       <div className="page-title center">
         <h1>클랜 종합정보</h1>
