@@ -5817,9 +5817,9 @@ function PowerScoreModal({ onClose }) {
           ×
         </button>
         <h2>투력점수 산출근거</h2>
-        <p className="info-box">투력점수 = 성장점수 + 현재투력점수</p>
-        <h3>1. 성장점수 계산</h3>
-        <p>이전투력에서 현재투력까지의 증가량을 구간별로 계산합니다. 단위는 만 기준입니다.</p>
+        <p className="info-box">투력점수 = 이전투력 기준 누적점수 + 성장 추가점수</p>
+        <h3>1. 기준 누적점수 계산</h3>
+        <p>직전 기록의 투력을 아래 구간표로 환산합니다. 단위는 만 기준입니다.</p>
         <table className="power-score-table">
           <thead>
             <tr>
@@ -5839,22 +5839,21 @@ function PowerScoreModal({ onClose }) {
             ))}
           </tbody>
         </table>
-        <h3>2. 현재투력점수 계산</h3>
+        <h3>2. 성장 추가점수 계산</h3>
         <div className="power-example">
-          <b>예시: 92만인 경우</b>
+          <b>성장 추가점수는 1만당 3점</b>
           <ul>
-            <li>0~80만 통과: 80점</li>
-            <li>80~90만 통과: 10점</li>
-            <li>90~92만: 2만 × 2점 = 4점</li>
-            <li>합계: 94점</li>
+            <li>160만 기준 누적점수: 310점</li>
+            <li>160만→161만 성장: 1만 × 3점 = 3점</li>
+            <li>합계: 313점</li>
           </ul>
         </div>
         <div className="power-example green">
-          <b>최종 예시: 85만 → 92만</b>
+          <b>추가 예시: 160만 → 165만</b>
           <ul>
-            <li>성장점수: 7점</li>
-            <li>현재투력점수: 94점</li>
-            <li>최종 투력점수: 101점</li>
+            <li>기준 누적점수: 310점</li>
+            <li>성장 추가점수: 5만 × 3점 = 15점</li>
+            <li>최종 투력점수: 325점</li>
           </ul>
         </div>
       </div>
